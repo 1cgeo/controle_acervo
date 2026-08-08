@@ -7,7 +7,7 @@ import { renderUnauthorized } from '@pages/unauthorized.js';
 // acesso a nada. Para a segunda, a saída é a própria página, e não sair da
 // sessão: a conta existe e a senha funciona, e o que falta é a concessão.
 const CATALOGO = [
-  { code: 1, nome: 'Controle do Acervo', nome_abrev: 'acervo' },
+  { code: 1, nome: 'Acervo', nome_abrev: 'acervo' },
   { code: 2, nome: 'Mapoteca', nome_abrev: 'mapoteca' },
 ];
 

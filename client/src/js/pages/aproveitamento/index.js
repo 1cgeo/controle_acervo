@@ -6,7 +6,9 @@ import {
   getMapaEfetivo,
   getPeriodosEfetivo,
   getImpedimentos,
-  getUsuarios,
+  // `getMilitaresEfetivo`, e NUNCA `getUsuarios`: ver o comentário do
+  // `Promise.all` do `load()`, onde a troca é explicada.
+  getMilitaresEfetivo,
 } from '@services/plataforma-service.js';
 // SEM `openImpedimentoDialog` aqui: impedimento se cadastra a partir do MILITAR,
 // na ficha que a linha do mapa abre. Um botao geral pediria
@@ -483,7 +485,20 @@ export async function renderAproveitamento(container, ctx) {
         getImpedimentos(anoSelecionado),
         // A lista de quem PODE receber uma passagem é o cadastro inteiro, e não
         // quem já tem passagem: cadastrar a primeira de alguém é o caso comum.
-        cadastro.length ? Promise.resolve(cadastro) : getUsuarios(),
+        //
+        // ESTA CHAMADA ERA `getUsuarios()`, e é por isso que a tela morria.
+        // `GET /api/usuarios` é `verifyAdmin`, e ela sai no MESMO `Promise.all`
+        // das três rotas de `/efetivo`: o gerente do efetivo tomava 403 só nela e
+        // o `Promise.all` derrubava a tela INTEIRA com "necessita ser um
+        // administrador", com as outras três respondendo 200.
+        //
+        // A TELA NÃO PODE VOLTAR A PEDIR `/usuarios`, e não é só pelo 403: aquela
+        // rota devolve `login`, a flag de administrador e o perfil de cada
+        // pessoa em cada módulo. Para montar um seletor de nomes e nomear três
+        // divergências, ela pagava com o cadastro que diz quem manda no sistema.
+        // `GET /efetivo/militares` devolve as seis colunas que esta tela desenha,
+        // sob `consulta` no módulo Efetivo, que é o que a tela já exige.
+        cadastro.length ? Promise.resolve(cadastro) : getMilitaresEfetivo(),
       ]);
       if (disposed) return;
 
@@ -491,10 +506,11 @@ export async function renderAproveitamento(container, ctx) {
       periodos = todosPeriodos.filter(p => cruzaOAno(p, anoSelecionado));
       impedimentos = listaImpedimentos || [];
       cadastro = listaUsuarios || [];
-      // `GET /usuarios` chama a abreviatura do posto de `tipo_posto_grad`, e o
-      // resto desta tela a chama de `posto_abrev`. A tradução mora aqui, e não
-      // nos dois diálogos: dois lugares lendo dois nomes da mesma coisa é onde a
-      // lista de escolha nasceria sem posto.
+      // `GET /efetivo/militares` chama a abreviatura do posto de
+      // `tipo_posto_grad` (o nome da coluna do cadastro), e o resto desta tela a
+      // chama de `posto_abrev` (o nome que as consultas do efetivo lhe dão). A
+      // tradução mora aqui, e não nos dois diálogos: dois lugares lendo dois
+      // nomes da mesma coisa é onde a lista de escolha nasceria sem posto.
       usuarios = cadastro
         .filter(u => u.ativo)
         .map(u => ({

@@ -11,10 +11,23 @@ const { montarContexto } = require('./contexto')
  * Passa o ADMINISTRADOR GLOBAL e o GERENTE de qualquer módulo. Fora ficam
  * operador e consulta.
  *
- * Não é `verifyPerfil` porque aquele lê UM módulo por vez, e o PIT é o plano
- * anual da Divisão, que os três consomem. Não é `verifyLogin` porque aquele lê
- * `administrador` do TOKEN, que envelhece até o JWT_EXPIRACAO; aqui o perfil sai
- * do BANCO a cada requisição.
+ * QUEM O USA, desde 2026-08-08: a LEITURA do RPCMTec. A grade da execução do PIT
+ * saiu dele no mesmo dia (ela virou `verifyPerfil('consulta', 'producao')`,
+ * porque tem módulo próprio), e ele ficou sem chamador por algumas horas -- foi
+ * reaproveitado, e não recriado, quando o chefe decidiu que o gerente de
+ * qualquer módulo lê o relatório mensal inteiro. Um segundo middleware com a
+ * mesma pergunta seria dois lugares para a régua do gerente divergir.
+ *
+ * Não é `verifyPerfil` porque aquele lê UM módulo por vez, e o RPCMTec é a
+ * prestação de contas da Divisão inteira: as 34 subseções falam dos cinco
+ * módulos numa peça só, e o chefe assina uma. Não é `verifyLogin` porque aquele
+ * lê `administrador` do TOKEN, que envelhece até o JWT_EXPIRACAO; aqui o perfil
+ * sai do BANCO a cada requisição.
+ *
+ * ELE NÃO RECORTA A ESCRITA, e não é para recortar: ele responde "é gerente de
+ * ALGUM módulo?", que é a pergunta da leitura. Quem pergunta "é gerente DESTE
+ * módulo?" na hora de alterar uma subseção é `rpcmtec/verify_modulo_subsecao.js`,
+ * encadeado depois deste.
  *
  * Irmão de `auditoria/verify_rastreabilidade.js`, que faz a mesma pergunta e
  * ainda devolve QUAIS módulos a pessoa vê.

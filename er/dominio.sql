@@ -350,6 +350,19 @@ INSERT INTO dominio.tipo_perfil (code, nome) VALUES
 --
 -- O `code` E FIXO, e nao serial: `dgeo.usuario_perfil.modulo_id` o referencia, e
 -- o mapa `MODULO` de server/src/login/verify_perfil.js espelha estes numeros.
+--
+-- AS DUAS COLUNAS DE NOME NAO SAO A MESMA COISA, e confundi-las quebra a
+-- autorizacao inteira:
+--
+--   `nome`       ROTULO, e so isso. E o que a interface mostra no menu, no
+--                cabecalho da tela de usuarios e na pagina de perfil. Trocar e
+--                inocente, e foi trocado em 2026-08-08 (ver
+--                migrations/2026-08-08_rotulo_dos_modulos.sql).
+--   `nome_abrev` IDENTIFICADOR, e o codigo inteiro depende do valor exato:
+--                `verifyPerfil(nivel, 'acervo')`, o mapa `MODULO` de
+--                verify_perfil.js, o prefixo de rota `/api/orcamento/`, a chave
+--                do mapa `perfis` que o login devolve e o manifesto de modulo do
+--                client. NAO SE MEXE.
 CREATE TABLE dominio.modulo(
   code SMALLINT NOT NULL PRIMARY KEY,
   nome VARCHAR(255) NOT NULL,
@@ -357,9 +370,9 @@ CREATE TABLE dominio.modulo(
 );
 
 INSERT INTO dominio.modulo (code, nome, nome_abrev) VALUES
-(1, 'Controle do Acervo', 'acervo'),
+(1, 'Acervo', 'acervo'),
 (2, 'Mapoteca', 'mapoteca'),
-(3, 'Controle Orçamentário', 'orcamento'),
+(3, 'Orçamento', 'orcamento'),
 (4, 'Produção', 'producao'),
 (5, 'Efetivo', 'efetivo');
 

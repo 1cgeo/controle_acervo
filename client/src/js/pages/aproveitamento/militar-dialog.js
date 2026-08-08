@@ -18,9 +18,55 @@ import {
   createImpedimento,
   updateImpedimento,
   deleteImpedimento,
+  createMeuPeriodoEfetivo,
+  updateMeuPeriodoEfetivo,
+  deleteMeuPeriodoEfetivo,
+  createMeuImpedimento,
+  updateMeuImpedimento,
+  deleteMeuImpedimento,
 } from '@services/plataforma-service.js';
 import { criarHistorico } from '@components/historico/historico.js';
 import { isAdmin } from '@store/auth-store.js';
+
+/**
+ * QUEM GRAVA: as MESMAS telas, contra dois endereços.
+ *
+ * O formulário, as validações que espelham o banco e o par campo-data mais caixa
+ * "Sem previsão de saída" são idênticos nos dois casos, e o que muda é só a rota:
+ *
+ *   DIVISÃO  `/efetivo/periodos` e `/efetivo/impedimentos`, do GERENTE do
+ *            módulo Efetivo desde 2026-08-08. É o dado de pessoal ALHEIO, e o
+ *            militar viaja no corpo porque quem lança escolhe de quem é.
+ *   PRÓPRIO  `/efetivo/meu_periodo` e `/efetivo/meu_impedimento`, de quem tem
+ *            acesso ao sistema. O militar NÃO viaja no corpo: o servidor toma o
+ *            dono de `req.usuarioUuid`, e mandá-lo aqui seria uma chave
+ *            desconhecida, descartada com aviso no envelope.
+ *
+ * A INJEÇÃO É O QUE EVITA A CÓPIA. Sem ela, a seção "Meu aproveitamento" de
+ * `#/perfil` teria de repetir os dois formulários inteiros, e a segunda cópia
+ * seria a que ficaria para trás na primeira regra nova.
+ */
+export const API_DIVISAO = {
+  criarPeriodo: (payload, usuarioUuid) =>
+    createPeriodoEfetivo({ usuario_uuid: usuarioUuid, ...payload }),
+  atualizarPeriodo: updatePeriodoEfetivo,
+  excluirPeriodo: deletePeriodoEfetivo,
+  criarImpedimento: (payload, usuarioUuid) =>
+    createImpedimento({ usuario_uuid: usuarioUuid, ...payload }),
+  atualizarImpedimento: updateImpedimento,
+  excluirImpedimento: deleteImpedimento,
+};
+
+export const API_PROPRIO = {
+  // O `usuarioUuid` chega e é IGNORADO de propósito: a assinatura é a mesma da
+  // outra tabela para o diálogo não precisar saber em qual delas está.
+  criarPeriodo: (payload) => createMeuPeriodoEfetivo(payload),
+  atualizarPeriodo: updateMeuPeriodoEfetivo,
+  excluirPeriodo: deleteMeuPeriodoEfetivo,
+  criarImpedimento: (payload) => createMeuImpedimento(payload),
+  atualizarImpedimento: updateMeuImpedimento,
+  excluirImpedimento: deleteMeuImpedimento,
+};
 
 const dia = (valor) => (valor
   ? String(valor).slice(0, 10).split('-').reverse().join('/')
@@ -108,6 +154,7 @@ function campoFim(rotulo, rotuloCaixa, valorInicial) {
  */
 export function openPeriodoDialog({
   periodo = null, usuarios = [], usuarioUuid = null, nomeMilitar = null, onSaved = null,
+  api = API_DIVISAO,
 } = {}) {
   const isEdit = Boolean(periodo);
 
@@ -190,13 +237,12 @@ export function openPeriodoDialog({
           setOcupado(true);
           try {
             if (isEdit) {
-              await updatePeriodoEfetivo(periodo.id, payload);
+              await api.atualizarPeriodo(periodo.id, payload);
               showSuccess('Passagem atualizada com sucesso');
             } else {
-              await createPeriodoEfetivo({
-                usuario_uuid: pessoaField ? pessoaField.getValue() : usuarioUuid,
-                ...payload,
-              });
+              await api.criarPeriodo(
+                payload, pessoaField ? pessoaField.getValue() : usuarioUuid
+              );
               showSuccess('Passagem cadastrada com sucesso');
             }
             setOcupado(false);
@@ -223,6 +269,7 @@ export function openPeriodoDialog({
  */
 export function openImpedimentoDialog({
   impedimento = null, usuarioUuid = null, nomeMilitar = null, onSaved = null,
+  api = API_DIVISAO,
 } = {}) {
   const isEdit = Boolean(impedimento);
 
@@ -308,10 +355,10 @@ export function openImpedimentoDialog({
           setOcupado(true);
           try {
             if (isEdit) {
-              await updateImpedimento(impedimento.id, payload);
+              await api.atualizarImpedimento(impedimento.id, payload);
               showSuccess('Impedimento atualizado com sucesso');
             } else {
-              await createImpedimento({ usuario_uuid: usuarioUuid, ...payload });
+              await api.criarImpedimento(payload, usuarioUuid);
               showSuccess('Impedimento cadastrado com sucesso');
             }
             setOcupado(false);
@@ -330,31 +377,48 @@ export function openImpedimentoDialog({
 }
 
 /**
- * A ficha de UM militar: as passagens dele pela DGEO e os impedimentos, com o
- * que editar cada um.
+ * A FICHA de uma pessoa: as passagens dela pela DGEO e os impedimentos, com o
+ * que criar, editar e excluir cada um.
  *
- * É o que abre ao clicar na linha do mapa. O mapa responde "quanto", e esta
- * ficha responde "por quê", que é a pergunta seguinte e a única que leva a uma
- * correção.
+ * SEM MODAL, e é isso que a torna reaproveitável. `openMilitarDialog` a põe
+ * dentro de um modal, que é o que a linha do mapa de `#/aproveitamento` abre; a
+ * seção "Meu aproveitamento" de `#/perfil` a põe direto na página. As duas
+ * mostram o MESMO par de listas, e entre elas mudam três coisas: a rota que grava
+ * (`api`), o nome que os avisos usam e o texto do estado vazio.
  *
- * A FICHA SE REPINTA SEM FECHAR. Recarregar a tela por baixo e deixar a ficha
- * aberta com a lista velha faz quem acabou de lançar a saída de um militar ver a
- * passagem antiga ali, e lançar de novo. O `onSaved` DEVOLVE as listas novas
- * daquela pessoa, e é com elas que a ficha se repinta; quem não devolver nada
- * mantém a lista que tinha.
+ * A FICHA SE REPINTA SEM FECHAR. Recarregar a tela por baixo e deixar a ficha com
+ * a lista velha faz quem acabou de lançar a própria saída ver a passagem antiga
+ * ali, e lançar de novo. O `onSaved` DEVOLVE as listas novas, e é com elas que a
+ * ficha se repinta; quem não devolver nada mantém a lista que tinha.
  *
  * @param {Object} opcoes
- * @param {Object} opcoes.militar
- * @param {number} [opcoes.ano] - o ano da tela, que recorta as duas listas.
+ * @param {string} opcoes.usuarioUuid - de quem são as duas listas.
+ * @param {?string} [opcoes.nomeMilitar] - nulo na ficha do PRÓPRIO: "excluir a
+ *   passagem de Fulano" na página do Fulano é o nome dele escrito à toa.
+ * @param {number} [opcoes.ano] - a janela dos avisos de impedimento fora de
+ *   passagem.
  * @param {Array} [opcoes.periodos]
  * @param {Array} [opcoes.impedimentos]
+ * @param {Object} [opcoes.api] - `API_DIVISAO` ou `API_PROPRIO`.
+ * @param {Object} [opcoes.vazios] - `{periodos, impedimentos}`, o texto de cada
+ *   lista vazia.
  * @param {() => Promise<{periodos:Array, impedimentos:Array}|void>} [opcoes.onSaved]
+ * @returns {{element:HTMLElement}}
  */
-export function openMilitarDialog({
-  militar, ano = new Date().getFullYear(),
-  periodos = [], impedimentos = [], onSaved = null,
+export function criarFichaEfetivo({
+  usuarioUuid, nomeMilitar = null, ano = new Date().getFullYear(),
+  periodos = [], impedimentos = [], api = API_DIVISAO, vazios = {},
+  onSaved = null,
 } = {}) {
-  const nome = `${militar.posto_abrev} ${militar.nome_guerra}`.trim();
+  const nome = nomeMilitar;
+  // "de Fulano" só entra quando há um Fulano a nomear. Na ficha do próprio o
+  // sujeito da frase já é quem está lendo.
+  const doMilitar = nome ? ` de ${nome}` : '';
+
+  const textoVazioPassagens = vazios.periodos
+    || 'Nenhuma passagem cadastrada neste ano.';
+  const textoVazioImpedimentos = vazios.impedimentos
+    || 'Nenhum impedimento neste ano.';
 
   let listaPeriodos = periodos;
   let listaImpedimentos = impedimentos;
@@ -404,22 +468,17 @@ export function openMilitarDialog({
   // inteira trocaria o botão "Nova" a cada salvamento, e o foco morreria com o
   // nó que o continha.
   const secao = (titulo, corpo, botaoNovo) => el('div', {
-    style: { marginBottom: '20px' },
+    className: 'ficha-militar__secao',
   }, [
-    el('div', {
-      style: {
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: '4px',
-      },
-    }, [
-      el('h3', { style: { margin: '0', fontSize: '0.9375rem' }, textContent: titulo }),
+    el('div', { className: 'ficha-militar__secao-topo' }, [
+      el('h3', { className: 'ficha-militar__secao-titulo', textContent: titulo }),
       botaoNovo,
     ]),
     corpo,
   ]);
 
   const vazio = (texto) => el('p', {
-    style: { color: 'var(--text-secondary)' }, textContent: texto,
+    className: 'ficha-militar__vazio', textContent: texto,
   });
 
   function linhaDaPassagem(p) {
@@ -430,18 +489,18 @@ export function openMilitarDialog({
       p.observacao || '',
       [
         botaoIcone(ICONS.edit, 'Editar', () => openPeriodoDialog({
-          periodo: p, nomeMilitar: nome, onSaved: aposSalvar,
+          periodo: p, nomeMilitar: nome, onSaved: aposSalvar, api,
         })),
         botaoIcone(ICONS.delete, 'Excluir', async () => {
           const ok = await confirmDialog({
             title: 'Excluir passagem',
-            message: `Excluir a passagem de ${nome} iniciada em ${dia(p.data_inicio)}?`,
+            message: `Excluir a passagem${doMilitar} iniciada em ${dia(p.data_inicio)}?`,
             confirmLabel: 'Excluir',
             danger: true,
           });
           if (!ok) return;
           try {
-            await deletePeriodoEfetivo(p.id);
+            await api.excluirPeriodo(p.id);
             showSuccess('Passagem excluída');
             await aposSalvar();
           } catch (err) {
@@ -458,18 +517,20 @@ export function openMilitarDialog({
       `${dia(i.data_inicio)} até ${i.data_fim ? dia(i.data_fim) : 'Em curso'}`,
       [
         botaoIcone(ICONS.edit, 'Editar', () => openImpedimentoDialog({
-          impedimento: i, nomeMilitar: nome, onSaved: aposSalvar,
+          impedimento: i, nomeMilitar: nome, onSaved: aposSalvar, api,
         })),
         botaoIcone(ICONS.delete, 'Excluir', async () => {
           const ok = await confirmDialog({
             title: 'Excluir impedimento',
-            message: `Excluir "${i.descricao}" de ${nome}?`,
+            message: nome
+              ? `Excluir "${i.descricao}" de ${nome}?`
+              : `Excluir "${i.descricao}"?`,
             confirmLabel: 'Excluir',
             danger: true,
           });
           if (!ok) return;
           try {
-            await deleteImpedimento(i.id);
+            await api.excluirImpedimento(i.id);
             showSuccess('Impedimento excluído');
             await aposSalvar();
           } catch (err) {
@@ -545,40 +606,79 @@ export function openMilitarDialog({
   function pintar() {
     pintarCorpo(
       corpoPassagens, listaPeriodos, linhaDaPassagem, assinarPassagem,
-      'Nenhuma passagem cadastrada neste ano.'
+      textoVazioPassagens
     );
     pintarCorpo(
       corpoImpedimentos, listaImpedimentos, linhaDoImpedimento, assinarImpedimento,
-      'Nenhum impedimento neste ano.'
+      textoVazioImpedimentos
     );
   }
 
   pintar();
 
+  const element = el('div', { className: 'ficha-militar' }, [
+    secao('Passagens pela DGEO', corpoPassagens, el('button', {
+      className: 'btn btn--secondary btn--sm',
+      type: 'button',
+      onClick: () => openPeriodoDialog({
+        usuarioUuid, nomeMilitar: nome, onSaved: aposSalvar, api,
+      }),
+      textContent: 'Nova',
+    })),
+    secao('Impedimentos', corpoImpedimentos, el('button', {
+      className: 'btn btn--secondary btn--sm',
+      type: 'button',
+      onClick: () => openImpedimentoDialog({
+        usuarioUuid, nomeMilitar: nome, onSaved: aposSalvar, api,
+      }),
+      textContent: 'Novo',
+    })),
+  ]);
+
+  // SÓ O NÓ. Trocar a lista de fora seria uma segunda porta para o mesmo estado,
+  // e a ficha já tem uma: o `onSaved`, que devolve as listas novas depois de cada
+  // gravação. Quem monta a ficha antes de ter os dados a monta com listas vazias
+  // e a repinta por lá.
+  return { element };
+}
+
+/**
+ * A ficha de UM militar, num modal.
+ *
+ * É o que abre ao clicar na linha do mapa de `#/aproveitamento`. O mapa responde
+ * "quanto", e esta ficha responde "por quê", que é a pergunta seguinte e a única
+ * que leva a uma correção.
+ *
+ * @param {Object} opcoes
+ * @param {Object} opcoes.militar
+ * @param {number} [opcoes.ano] - o ano da tela, que recorta as duas listas.
+ * @param {Array} [opcoes.periodos]
+ * @param {Array} [opcoes.impedimentos]
+ * @param {() => Promise<{periodos:Array, impedimentos:Array}|void>} [opcoes.onSaved]
+ */
+export function openMilitarDialog({
+  militar, ano = new Date().getFullYear(),
+  periodos = [], impedimentos = [], onSaved = null,
+} = {}) {
+  const nome = `${militar.posto_abrev} ${militar.nome_guerra}`.trim();
+
+  const ficha = criarFichaEfetivo({
+    usuarioUuid: militar.usuario_uuid,
+    nomeMilitar: nome,
+    ano,
+    periodos,
+    impedimentos,
+    // A ficha do MAPA escreve o dado dos OUTROS, e por isso vai pelas rotas do
+    // gerente do Efetivo. A do próprio, em `#/perfil`, usa `API_PROPRIO`.
+    api: API_DIVISAO,
+    onSaved,
+  });
+
   openModal({
     title: nome,
     width: '640px',
     content: el('div', {}, [
-      secao('Passagens pela DGEO', corpoPassagens, el('button', {
-        className: 'btn btn--secondary btn--sm',
-        type: 'button',
-        onClick: () => openPeriodoDialog({
-          usuarioUuid: militar.usuario_uuid,
-          nomeMilitar: nome,
-          onSaved: aposSalvar,
-        }),
-        textContent: 'Nova',
-      })),
-      secao('Impedimentos', corpoImpedimentos, el('button', {
-        className: 'btn btn--secondary btn--sm',
-        type: 'button',
-        onClick: () => openImpedimentoDialog({
-          usuarioUuid: militar.usuario_uuid,
-          nomeMilitar: nome,
-          onSaved: aposSalvar,
-        }),
-        textContent: 'Novo',
-      })),
+      ficha.element,
       // O HISTORICO da PESSOA, RECOLHIDO. As passagens e os impedimentos caem
       // no mesmo agregado `usuario`, e e por isso que um painel so responde as
       // duas perguntas.

@@ -6,6 +6,11 @@ import { openModal } from '@components/modal/modal-base.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { criarHistorico } from '@components/historico/historico.js';
 import { estadoErro } from '@components/estado-erro.js';
+import { isAdmin, temPerfil } from '@store/auth-store.js';
+// `getUsuarios` é `verifyAdmin`, e desde 2026-08-08 o GERENTE também abre esta
+// tela. A chamada fica, protegida pelo `catch` que já existia: a lista só
+// alimenta o diálogo de metadados, que é do administrador. O gerente recebe
+// lista vazia e nunca chega a abrir aquele diálogo.
 import { getUsuarios } from '@services/plataforma-service.js';
 import {
   getDocumento, downloadRpcmtecPdf, fecharEdicao, reabrirEdicao, conferirHoje,
@@ -59,6 +64,33 @@ import { abrirDialogoEdicao } from './edicao-dialog.js';
  */
 
 const ORIGEM = { CALCULADA: 1, DIGITADA: 2, FIXA: 3 };
+
+/**
+ * A pessoa edita ESTA subseção?
+ *
+ * Desde 2026-08-08 o gerente de qualquer módulo LÊ o relatório inteiro e edita
+ * só as subseções do módulo dele. O administrador global edita todas, inclusive
+ * as de módulo NENHUM (`modulo: null`), que são as que não têm cadastro em
+ * módulo algum do SCA: finalidade, TI, equipamento técnico, divulgação e as
+ * lições do chefe.
+ *
+ * O `modulo` vem do SERVIDOR, junto de cada subseção, e não de um mapa copiado
+ * para cá. O mapa vive em `rpcmtec_estrutura.js`, que é a mesma fonte de que sai
+ * a guarda `verify_modulo_subsecao.js`: copiá-lo faria a tela oferecer o botão
+ * certo para o mapa errado no dia em que uma subseção mudasse de dono.
+ *
+ * ISTO É ERGONOMIA, e não segurança: quem barra é o servidor, que relê o perfil
+ * do banco a cada requisição. Aqui só se evita oferecer um botão que responderia
+ * 403 depois de a pessoa ter digitado a subseção inteira.
+ *
+ * @param {{modulo: string|null}} sub
+ * @returns {boolean}
+ */
+const podeEditarSubsecao = (sub) => {
+  if (isAdmin()) return true;
+  if (!sub.modulo) return false;
+  return temPerfil('gerente', sub.modulo);
+};
 
 export async function renderRpcmtecEdicao(container, ctx) {
   let disposed = false;
@@ -240,10 +272,22 @@ export async function renderRpcmtecEdicao(container, ctx) {
     // rota que o servia saiu do servidor. O RPCMTec é o relatório DAQUELE mês:
     // a linha que chega pronta não é relida, e o documento assinado passava a
     // afirmar sobre agosto o que aconteceu em julho.
+    // FECHAR, REABRIR e EDITAR METADADOS são do ADMINISTRADOR, e só dele. O
+    // gerente lê o relatório inteiro e edita a subseção da área dele, mas
+    // congelar é o ato que produz o documento que o chefe da Divisão assina, e
+    // os metadados dizem QUEM assina. O servidor cobra `verifyAdmin` nas três; o
+    // recorte daqui existe para não oferecer botão que responderia 403.
+    //
+    // "Conferir hoje" NÃO leva a marca: ela recalcula e mostra a diferença
+    // contra o congelado, sem gravar nada, e é leitura como o resto da tela.
+    const ehAdmin = isAdmin();
+
     if (!documento.fechada) {
-      itens.push({
-        chave: 'fechar', rotulo: 'Fechar e congelar', icone: ICONS.lock, aoClicar: fechar,
-      });
+      if (ehAdmin) {
+        itens.push({
+          chave: 'fechar', rotulo: 'Fechar e congelar', icone: ICONS.lock, aoClicar: fechar,
+        });
+      }
     } else {
       itens.push({
         chave: 'conferir',
@@ -251,17 +295,24 @@ export async function renderRpcmtecEdicao(container, ctx) {
         icone: ICONS.swapHoriz,
         aoClicar: conferir,
         titulo: 'Recalcula as subseções calculadas e mostra a diferença contra o congelado.',
-      }, {
-        chave: 'reabrir', rotulo: 'Reabrir', icone: ICONS.edit, aoClicar: reabrir,
+      });
+      if (ehAdmin) {
+        itens.push({
+          chave: 'reabrir', rotulo: 'Reabrir', icone: ICONS.edit, aoClicar: reabrir,
+        });
+      }
+    }
+
+    if (ehAdmin) {
+      itens.push({
+        chave: 'metadados',
+        rotulo: 'Editar metadados',
+        icone: ICONS.settings,
+        aoClicar: () => abrirDialogoEdicao({ edicao: documento, usuarios, onSaved: carregar }),
       });
     }
 
     itens.push({
-      chave: 'metadados',
-      rotulo: 'Editar metadados',
-      icone: ICONS.settings,
-      aoClicar: () => abrirDialogoEdicao({ edicao: documento, usuarios, onSaved: carregar }),
-    }, {
       chave: 'espaco',
     }, {
       chave: 'anuario', rotulo: 'Anuário (ODS)', icone: ICONS.download, aoClicar: baixarAnuario,
@@ -505,7 +556,7 @@ export async function renderRpcmtecEdicao(container, ctx) {
   function desenharSubsecao(sub) {
     const acoes = [];
 
-    if (sub.origem === ORIGEM.DIGITADA && !documento.fechada) {
+    if (sub.origem === ORIGEM.DIGITADA && !documento.fechada && podeEditarSubsecao(sub)) {
       acoes.push(botao(
         sub.preenchida ? 'Editar' : 'Preencher',
         ICONS.edit,
@@ -726,6 +777,10 @@ export async function renderRpcmtecEdicao(container, ctx) {
 
   let areaAnexosMontada = false;
 
+  // O anexo é o PDF ASSINADO: BAIXAR é de quem lê o relatório, e ANEXAR e
+  // EXCLUIR são do administrador, porque quem junta ou tira a assinatura do
+  // documento é quem responde por ele. O servidor cobra o mesmo (`verifyAdmin`
+  // no upload e no delete, gerente no download).
   const linhaDeAnexo = (anexo) => el('div', { className: 'rpcm-anexo' }, [
     svgIcon(ICONS.description, 16),
     el('span', { textContent: anexo.nome_original }),
@@ -742,12 +797,14 @@ export async function renderRpcmtecEdicao(container, ctx) {
       onClick: () => downloadAnexo(anexo.id, anexo.nome_original)
         .catch((err) => showError(err.message || 'Erro ao baixar o anexo')),
     }, [svgIcon(ICONS.download, 16)]),
-    el('button', {
-      className: 'btn btn--icon btn--danger-text',
-      type: 'button',
-      title: 'Excluir',
-      onClick: () => removerAnexo(anexo),
-    }, [svgIcon(ICONS.delete, 16)]),
+    ...(isAdmin()
+      ? [el('button', {
+        className: 'btn btn--icon btn--danger-text',
+        type: 'button',
+        title: 'Excluir',
+        onClick: () => removerAnexo(anexo),
+      }, [svgIcon(ICONS.delete, 16)])]
+      : []),
   ]);
 
   const avisoSemAnexo = () => el('p', {
@@ -788,9 +845,13 @@ export async function renderRpcmtecEdicao(container, ctx) {
           el('h3', { className: 'dashboard-section__title', textContent: 'RPCMTec assinado' }),
         ]),
         listaAnexos,
-        el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' } }, [
-          entradaAnexo, botaoEnviarAnexo,
-        ]),
+        // Sem o par escolher-arquivo + enviar para quem não é administrador: a
+        // lista continua, porque baixar o assinado é do gerente.
+        ...(isAdmin()
+          ? [el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' } }, [
+            entradaAnexo, botaoEnviarAnexo,
+          ])]
+          : []),
       );
     }
 

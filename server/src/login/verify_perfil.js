@@ -88,18 +88,32 @@ const verifyPerfil = (minimo, modulo = "acervo") => {
     // uma segunda vez seria dois lugares para divergir.
     montarContexto(req, decoded);
 
-    // Quem nao e administrador so mexe no proprio registro
-    const requestedUuid =
-      (req.params && req.params.usuario_uuid) ||
-      (req.body && req.body.usuario_uuid) ||
-      (req.query && req.query.usuario_uuid);
-
-    if (requestedUuid && decoded.uuid !== requestedUuid && !usuario.administrador) {
-      throw new AppError(
-        "Usuário só pode acessar sua própria informação",
-        httpCode.Unauthorized
-      );
-    }
+    // AQUI HAVIA UMA TRAVA DE `usuario_uuid`, e ela saiu em 2026-08-08.
+    //
+    // A regra era: quem nao e administrador global nao pode mandar um
+    // `usuario_uuid` diferente do proprio, em params, body ou query. Ela parecia
+    // dizer "cada um mexe no proprio registro", e nao dizia: ela lia um NOME DE
+    // CAMPO, e o campo com esse nome nas rotas que existem hoje e o ALVO do
+    // lancamento, nunca "o meu registro".
+    //
+    // O QUE ELA QUEBRAVA. Sob `verifyPerfil` so duas rotas carregam o campo:
+    // `POST /efetivo/periodos` e `POST /efetivo/impedimentos`, onde o uuid e o
+    // MILITAR de quem se lanca a passagem ou o impedimento. Com a trava, so o
+    // administrador global conseguia lancar pelos outros -- exatamente o
+    // trabalho que a regua nova poe no gerente do efetivo. Ela respondia 401
+    // ("Usuário só pode acessar sua própria informação") a quem tinha o perfil
+    // certo, antes mesmo do Joi.
+    //
+    // POR QUE TIRAR NAO ABRE PORTA NENHUMA. As rotas que sao mesmo da PROPRIA
+    // pessoa -- `GET`/`PUT /usuarios/perfil` e `PUT /usuarios/perfil/senha` --
+    // nunca leram uuid do pedido: elas usam `req.usuarioUuid`, que sai do token
+    // ja validado. Nao existe rota sob esta guarda em que o `usuario_uuid` do
+    // corpo signifique "de quem e o dado que eu posso ver". Quem recorta acesso
+    // aqui e o perfil no modulo, logo abaixo.
+    //
+    // A MESMA TRAVA CONTINUA EM `verify_login.js`, onde hoje nao alcanca rota
+    // nenhuma (nenhuma rota de `verifyLogin` recebe o campo). Se um dia uma
+    // receber, o mesmo 401 aparece la, e a leitura acima e a resposta.
 
     // Administrador da plataforma passa em qualquer modulo, em qualquer nivel
     if (usuario.administrador) {

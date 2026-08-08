@@ -1,20 +1,18 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { saveAuth } from '@store/auth-store.js';
 import { MODULOS, podeAbrirRota } from '@modules/registry.js';
+import {
+  acessoLoader, adminLoader, gerenteLoader, perfilLoader,
+} from '../../router.js';
 import { createSidebar, activeIdFromPath } from './sidebar.js';
 
 function logar({ administrador = false, perfis = {} } = {}) {
   saveAuth({ token: 't', administrador, uuid: 'u', perfis, modulos: [] }, 'x');
 }
 
-/** Acha um item de menu pelo id, entrando nos grupos colapsaveis. */
+/** Acha um item de menu pelo id. O menu e plano: nao ha grupo para entrar. */
 function acharItem(itens, id) {
-  for (const item of itens || []) {
-    if (item.id === id) return item;
-    const achado = acharItem(item.children, id);
-    if (achado) return achado;
-  }
-  return null;
+  return (itens || []).find(item => item.id === id) || null;
 }
 
 const ids = (raiz) => [...raiz.querySelectorAll('[data-id]')].map(e => e.dataset.id);
@@ -30,10 +28,10 @@ describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
 
     // Era o defeito: em #/usuarios o menu inteiro sumia e sobrava a plataforma.
     //
-    // Depois dos três módulos vêm PRODUÇÃO e EFETIVO, que se desenham como
+    // Depois dos três módulos vêm PIT e EFETIVO, que se desenham como
     // sistema sem ser módulo. A ordem é asserida inteira
-    // de propósito: a posição é metade do que ela comunica. Produção antes de
-    // Efetivo porque é a que fala do TRABALHO, e Efetivo é quem o faz.
+    // de propósito: a posição é metade do que ela comunica. PIT antes de
+    // Efetivo porque é a seção que fala do TRABALHO, e Efetivo é quem o faz.
     expect(modulosNaTela(sidebar)).toEqual([
       '#/acervo/dashboard',
       '#/mapoteca/dashboard',
@@ -64,7 +62,7 @@ describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
     const secoes = () => [...ctrl.sidebar.querySelectorAll('.sidebar__module')]
       .map(s => s.classList.contains('sidebar__module--open'));
 
-    // Cinco seções: os três módulos, Produção e Efetivo, nesta ordem.
+    // Cinco seções: os três módulos, PIT e Efetivo, nesta ordem.
     expect(secoes()).toEqual([false, false, true, false, false]);
     const antes = ids(ctrl.sidebar).length;
 
@@ -90,9 +88,10 @@ describe('sidebar: os tres modulos convivem, cada um colapsavel', () => {
     logar({ perfis: { orcamento: 3 } });
     const { sidebar } = createSidebar({ modulo: 'orcamento' });
 
-    // PRODUÇÃO aparece e EFETIVO não, e a diferença não é acidente: o plano
+    // PIT aparece e EFETIVO não, e a diferença não é acidente: o plano
     // anual da Divisão se LÊ com qualquer conta (o servidor cobra o
-    // administrador só na escrita), e o efetivo é verifyAdmin de ponta a ponta.
+    // administrador só na escrita), e a seção Efetivo pede perfil no módulo
+    // Efetivo, que esta conta não tem.
     expect(modulosNaTela(sidebar)).toEqual(['#/orcamento/dashboard', '#/metas']);
     expect(ids(sidebar)).not.toContain('usuarios');
     expect(ids(sidebar)).not.toContain('aproveitamento');
@@ -128,12 +127,12 @@ describe('sidebar: as metas do PIT sao de plataforma, e nao do orcamento', () =>
     const { sidebar } = createSidebar({ modulo: 'orcamento' });
 
     expect(ids(sidebar)).not.toContain('orcamento:metas');
-    // O grupo tinha dois filhos e ficou com um: o PDR subiu para o topo.
+    // O grupo tinha dois filhos, ficou com um, e depois nem grupo e mais: o PDR
+    // esta no topo do menu do modulo, como qualquer outra tela.
     expect(sidebar.querySelector('[data-id="orcamento:pdr"]').getAttribute('href'))
       .toBe('#/orcamento/pdr');
-    const rotulos = [...sidebar.querySelectorAll('.sidebar__group-header')]
-      .map(h => h.textContent);
-    expect(rotulos.some(r => r.includes('Orçamento'))).toBe(false);
+    // Nao ha cabeçalho de grupo nenhum na sidebar, com "Orçamento" ou sem.
+    expect(sidebar.querySelectorAll('.sidebar__group-header').length).toBe(0);
   });
 });
 
@@ -202,68 +201,94 @@ describe('sidebar: Efetivo e uma seção de sistema, como os modulos', () => {
     expect(ids(sidebar)).not.toContain('capacitacao_recebida');
   });
 
-  // O QUE MUDOU NA 1.33.0. A seção era `admin: true` INTEIRA, então o operador
-  // de Efetivo não veria nada, embora o servidor já o aceite em
-  // `/api/efetivo/periodos` e em `/rpcmtec/capacitacao/recebida`. A marca desceu
-  // para os dois itens que continuam sendo conta de sistema.
-  test('operador de Efetivo ve o aproveitamento e a capacitação recebida', () => {
+  // O OPERADOR É O CASO QUE MAIS CONFUNDE: ele vê o dashboard e a capacitação
+  // recebida, que são LEITURA e pedem consulta, e NÃO vê o aproveitamento,
+  // embora seja um nível acima de consulta. A régua daquela tela é uma LISTA
+  // (consulta e gerente), e não um mínimo hierárquico: o operador ficou com o
+  // PRÓPRIO aproveitamento, em '#/perfil', e quem lança pelos outros é o
+  // gerente. A rota cobra o mesmo em `perfilLoader('efetivo', ['consulta',
+  // 'gerente'])`, então o menu não esconde nada que ele possa abrir.
+  test('operador de Efetivo ve as telas de leitura, e NAO o aproveitamento', () => {
     logar({ perfis: { efetivo: 2 } });
     const { sidebar } = createSidebar({ modulo: null });
 
     const lista = ids(sidebar);
-    expect(lista).toContain('aproveitamento');
+    expect(lista).toContain('acessos');
     expect(lista).toContain('capacitacao_recebida');
-    // E NAO ve o que e conta de sistema: quem entrou e quando, e quem tem
-    // acesso a que. As duas sao verifyAdmin no servidor.
-    expect(lista).not.toContain('acessos');
+    expect(lista).not.toContain('aproveitamento');
+    // E NAO ve o que e conta de sistema: quem tem acesso a que. E verifyAdmin no
+    // servidor.
     expect(lista).not.toContain('usuarios');
   });
 
-  // O cabeçalho é um LINK, e a home da seção é `#/acessos`, que é do
-  // administrador. Sem calcular a home, clicar no nome da seção que é dele
-  // jogaria o operador em /unauthorized.
-  test('para o operador, o cabeçalho leva ao aproveitamento, e nao ao dashboard', () => {
+  // O cabeçalho é um LINK, e a home da seção é `#/acessos` para TODO MUNDO que
+  // enxerga a seção. Ela já foi calculada, e desviava o operador para
+  // '#/aproveitamento' porque o dashboard era do gerente; com o dashboard aberto
+  // à consulta, não sobrou ninguém para desviar.
+  test('o cabeçalho leva ao dashboard tambem para o operador, sem desvio', () => {
     logar({ perfis: { efetivo: 2 } });
     const { sidebar } = createSidebar({ modulo: null });
 
     const efetivo = [...sidebar.querySelectorAll('.sidebar__module-header')]
       .find(h => h.textContent.includes('Efetivo'));
-    expect(efetivo.getAttribute('href')).toBe('#/aproveitamento');
+    expect(efetivo.getAttribute('href')).toBe('#/acessos');
   });
 
-  // A hierarquia vale: o GERENTE do efetivo satisfaz o operador. Sem este caso,
-  // um `visivel` que comparasse o nível por igualdade passaria despercebido.
-  test('gerente de Efetivo tambem ve as duas telas', () => {
+  // O GERENTE vê TUDO o que é do módulo, inclusive o aproveitamento, que o
+  // operador não vê. É o outro lado da lista não hierárquica: quem lança pelos
+  // outros é ele.
+  test('gerente de Efetivo ve as telas do modulo, inclusive o aproveitamento', () => {
     logar({ perfis: { efetivo: 3 } });
     const { sidebar } = createSidebar({ modulo: null });
 
-    expect(ids(sidebar)).toContain('aproveitamento');
-    expect(ids(sidebar)).toContain('capacitacao_recebida');
+    const lista = ids(sidebar);
+    expect(lista).toContain('acessos');
+    expect(lista).toContain('aproveitamento');
+    expect(lista).toContain('capacitacao_recebida');
+    // E continua sem a Gestão, que e conta de sistema e so do administrador.
+    expect(lista).not.toContain('usuarios');
   });
 
-  // CONSULTA em Efetivo não abre tela nenhuma da seção: a mais baixa dela é o
-  // aproveitamento, que exige operador. A seção inteira some, e é a resposta
-  // certa, e não um menu que abre para levar 403.
-  test('consulta em Efetivo nao ve tela nenhuma da seção', () => {
+  // CONSULTA em Efetivo passou a VER a seção INTEIRA. Antes ela sumia, porque a
+  // tela mais baixa exigia operador; pela régua nova, quem tem consulta no
+  // módulo LÊ as telas do módulo, e as três rotas desceram para consulta em
+  // `index.js`.
+  test('consulta em Efetivo ve a seção e as tres telas do modulo', () => {
     logar({ perfis: { efetivo: 1 } });
     const { sidebar } = createSidebar({ modulo: null });
 
-    expect(ids(sidebar)).not.toContain('aproveitamento');
-    expect(ids(sidebar)).not.toContain('capacitacao_recebida');
+    const efetivo = [...sidebar.querySelectorAll('.sidebar__module-header')]
+      .find(h => h.textContent.includes('Efetivo'));
+    expect(efetivo).toBeTruthy();
+    expect(efetivo.getAttribute('href')).toBe('#/acessos');
+
+    const lista = ids(sidebar);
+    expect(lista).toContain('acessos');
+    expect(lista).toContain('aproveitamento');
+    expect(lista).toContain('capacitacao_recebida');
+    // E NAO ve a Gestão, que e conta de sistema: continua so do administrador.
+    expect(lista).not.toContain('usuarios');
   });
 });
 
-// PRODUÇÃO reúne metas, execução mensal, Extra-PIT e capacitação. "Metas do
-// PIT" é a primeira tela da seção, e não um item solto de plataforma, porque as
+// A seção PIT reúne metas, execução mensal, Extra-PIT e capacitação. "PIT do
+// ano" é a primeira tela dela, e não um item solto de plataforma, porque as
 // quatro se leem JUNTAS.
-describe('sidebar: Produção reúne o plano anual e o que acontece com ele', () => {
+//
+// O RÓTULO é "PIT" e o MÓDULO de permissão continua 'producao': o módulo é
+// `dominio.modulo` code 4 e se chama Produção no banco. Os casos abaixo asserem
+// os dois lados de propósito, para o rótulo não arrastar o módulo junto.
+describe('sidebar: a seção PIT reúne o plano anual e o que acontece com ele', () => {
   test('as quatro telas estão na seção, e o cabeçalho leva às metas', () => {
     logar({ administrador: true });
     const { sidebar } = createSidebar({ modulo: null });
 
     const producao = [...sidebar.querySelectorAll('.sidebar__module-header')]
-      .find(h => h.textContent.includes('Produção'));
+      .find(h => h.textContent.includes('PIT'));
     expect(producao).toBeTruthy();
+    // O rótulo é EXATAMENTE "PIT", e a rota da home NÃO acompanhou: '#/metas' é
+    // o endereço que a execução e a rastreabilidade apontam.
+    expect(producao.querySelector('.sidebar__item-label').textContent).toBe('PIT');
     expect(producao.getAttribute('href')).toBe('#/metas');
 
     const itens = [...sidebar.querySelectorAll(
@@ -274,43 +299,53 @@ describe('sidebar: Produção reúne o plano anual e o que acontece com ele', ()
     expect(itens[1].getAttribute('href')).toBe('#/execucao_pit');
   });
 
-  // A seção NÃO se restringe, e o item de capacitação sim. A diferença não é
-  // descuido: metas e Extra-PIT são `authLoader` (o servidor cobra o perfil só
-  // na escrita), e a capacitação ministrada é rota própria, guardada por
-  // `verifyPerfil('operador', 'producao')` desde a 1.33.0. Oferecê-la a quem
-  // levaria 403 é o desencontro que o `podeAbrirRota` existe para evitar do lado
-  // dos módulos.
-  test('quem nao tem perfil em Producao ve o plano, e nao ve a capacitação', () => {
+  // A seção NÃO se restringe, e DUAS das quatro telas sim. A diferença não é
+  // descuido: as metas e o Extra-PIT são `acessoLoader`, porque cadastrar NC,
+  // item de PDR ou pedido de impressão obriga a escolher a meta que financia ou
+  // cumpre, e quem trabalha na mapoteca precisa ler o plano sem ter perfil em
+  // Produção. A execução e a capacitação ministrada são do MÓDULO. Oferecê-las a
+  // quem levaria 403 é o desencontro que o `podeAbrirRota` existe para evitar do
+  // lado dos módulos.
+  test('quem nao tem perfil em Producao ve o plano, e nao ve a execução nem a capacitação', () => {
     logar({ perfis: { mapoteca: 3 } });
     const { sidebar } = createSidebar({ modulo: 'mapoteca' });
 
     const lista = ids(sidebar);
     expect(lista).toContain('metas');
-    expect(lista).toContain('execucao_pit');
     expect(lista).toContain('extra_pit');
+    expect(lista).not.toContain('execucao_pit');
     expect(lista).not.toContain('capacitacao_ministrada');
   });
 
-  // O QUE MUDOU NA 1.33.0. O item era `admin: true`, e agora ele segue o módulo
-  // PRODUÇÃO. Sem este caso, a mudança poderia ter apenas escondido o item de
-  // todo mundo e os casos acima continuariam verdes.
-  test('operador de Producao ve a capacitação ministrada', () => {
-    logar({ perfis: { producao: 2 } });
-    const { sidebar } = createSidebar({ modulo: null });
-
-    expect(ids(sidebar)).toContain('capacitacao_ministrada');
-    // E NAO a recebida, que e do modulo Efetivo: as duas saem da mesma tabela e
-    // so o modulo as separa.
-    expect(ids(sidebar)).not.toContain('capacitacao_recebida');
-  });
-
-  test('consulta em Producao nao ve a capacitação ministrada', () => {
+  // A EXECUÇÃO deixou de ser "administrador ou gerente de qualquer módulo" e
+  // passou a ser do MÓDULO Produção, na consulta. Sem este caso, a mudança
+  // poderia ter apenas escondido a grade de todo mundo e o caso acima
+  // continuaria verde.
+  test('consulta em Producao ve a execução e a capacitação ministrada', () => {
     logar({ perfis: { producao: 1 } });
     const { sidebar } = createSidebar({ modulo: null });
 
-    expect(ids(sidebar)).not.toContain('capacitacao_ministrada');
-    // Mas ve o plano anual, que e de qualquer pessoa logada.
-    expect(ids(sidebar)).toContain('metas');
+    const lista = ids(sidebar);
+    expect(lista).toContain('execucao_pit');
+    expect(lista).toContain('capacitacao_ministrada');
+    // E NAO a recebida, que e do modulo Efetivo: as duas saem da mesma tabela e
+    // so o modulo as separa.
+    expect(lista).not.toContain('capacitacao_recebida');
+    // E o plano anual, que e de qualquer conta com acesso.
+    expect(lista).toContain('metas');
+  });
+
+  // O GERENTE de outro módulo perdeu a grade: ela seguia `ehGerenteDeAlgumModulo`
+  // e agora segue o módulo Produção. Quem responde pela mapoteca não lê mais a
+  // execução do PIT, e a rota diz o mesmo.
+  test('gerente de outro modulo nao ve mais a execução do PIT', () => {
+    logar({ perfis: { mapoteca: 3 } });
+    const { sidebar } = createSidebar({ modulo: 'mapoteca' });
+
+    expect(ids(sidebar)).not.toContain('execucao_pit');
+    // Mas continua vendo a Rastreabilidade, que ESSA segue sendo do gerente de
+    // qualquer modulo: as duas reguas sao diferentes de proposito.
+    expect(ids(sidebar)).toContain('rastreabilidade');
   });
 
   test('setActive marca a execução e ABRE a seção que a contem', () => {
@@ -324,43 +359,52 @@ describe('sidebar: Produção reúne o plano anual e o que acontece com ele', ()
   });
 });
 
-// A Rastreabilidade e o TERCEIRO estado de visibilidade da sidebar. Os outros
-// dois sao "de todo mundo" (Metas do PIT) e "so do administrador" (RPCMTec);
-// esta e do administrador global E do gerente de qualquer modulo, porque cada
-// gerente ve o recorte do modulo dele. O recorte de verdade e do servidor
-// (verifyRastreabilidade); o que se prova aqui e que o MENU nao oferece a tela a
+// Os DOIS itens soltos de plataforma seguem a MESMA regua: administrador global
+// OU gerente de qualquer modulo, porque cada gerente ve o recorte do modulo
+// dele. O RPCMTec chegou aqui depois: era so do administrador, porque o
+// relatorio traz valor de credito, de empenho e de liquidacao. O recorte de
+// verdade e do servidor; o que se prova aqui e que o MENU nao oferece a tela a
 // quem levaria 403, nem a esconde de quem pode abri-la.
-describe('sidebar: Rastreabilidade e do administrador E do gerente', () => {
-  test('o administrador global ve o item', () => {
+describe('sidebar: Rastreabilidade e RPCMTec sao do administrador E do gerente', () => {
+  test('o administrador global ve os dois itens', () => {
     logar({ administrador: true });
     const { sidebar } = createSidebar({ modulo: null });
 
     expect(sidebar.querySelector('[data-id="rastreabilidade"]').getAttribute('href'))
       .toBe('#/rastreabilidade');
+    expect(sidebar.querySelector('[data-id="rpcmtec"]').getAttribute('href'))
+      .toBe('#/rpcmtec');
   });
 
-  test('gerente de UM modulo ve o item, mesmo sem ser administrador', () => {
+  test('gerente de UM modulo ve os dois, mesmo sem ser administrador', () => {
     logar({ perfis: { mapoteca: 3 } });
     const { sidebar } = createSidebar({ modulo: 'mapoteca' });
 
     expect(ids(sidebar)).toContain('rastreabilidade');
-    // E continua sem ver o que e so do administrador, na mesma seção.
+    // O RPCMTec deixou de ser admin-only: gerente responde pela area inteira, e
+    // le o relatorio inteiro. A ESCRITA continua recortada no servidor.
+    expect(ids(sidebar)).toContain('rpcmtec');
+    // E continua sem ver o que e so do administrador.
     expect(ids(sidebar)).not.toContain('usuarios');
   });
 
-  test('operador nao ve: para ele a tela seria uma varredura que responde 403', () => {
+  test('operador nao ve: para ele as telas seriam uma varredura que responde 403', () => {
     logar({ perfis: { mapoteca: 2, acervo: 1 } });
     const { sidebar } = createSidebar({ modulo: 'mapoteca' });
 
     expect(ids(sidebar)).not.toContain('rastreabilidade');
+    expect(ids(sidebar)).not.toContain('rpcmtec');
   });
 
-  test('fica FORA do grupo Usuários: aquele grupo e sobre pessoas, este item e sobre dados', () => {
+  // Ela e ITEM SOLTO de plataforma, ao lado do RPCMTec, e nao mora dentro da
+  // seção Efetivo: aquela seção e sobre PESSOAS, e este item e sobre o que
+  // aconteceu com os DADOS.
+  test('fica FORA da seção Efetivo, que e sobre pessoas, e este item e sobre dados', () => {
     logar({ administrador: true });
     const { sidebar } = createSidebar({ modulo: null });
 
     const item = sidebar.querySelector('[data-id="rastreabilidade"]');
-    expect(item.closest('.sidebar__group')).toBeNull();
+    expect(item.closest('.sidebar__module')).toBeNull();
   });
 });
 
@@ -419,14 +463,21 @@ describe('sidebar: o menu nunca oferece tela que o guarda recusa', () => {
     expect(sidebar.querySelector('[data-id="usuarios"]').getAttribute('href')).toBe('#/usuarios');
   });
 
-  test('setActive marca o item e abre o grupo que o contem', () => {
+  // A nota de empenho MORAVA num grupo colapsavel ("Execução"), e este caso
+  // provava que setActive abria o grupo. O grupo acabou, e a intencao continua a
+  // mesma: marcar o item ativo nao basta se ele ficar escondido dentro de uma
+  // seção fechada. Quem abre agora e a SEÇÃO do modulo, um nivel acima.
+  test('setActive marca o item e abre a seção que o contem', () => {
     logar({ administrador: true });
     const ctrl = createSidebar({ modulo: 'orcamento' });
     ctrl.setActive('orcamento:notas_empenho');
 
     const item = ctrl.sidebar.querySelector('[data-id="orcamento:notas_empenho"]');
     expect(item.classList.contains('sidebar__item--active')).toBe(true);
-    expect(item.closest('.sidebar__group').classList.contains('sidebar__group--open')).toBe(true);
+    // O item esta DIRETO na lista da seção, sem nivel intermediario.
+    expect(item.closest('.sidebar__group')).toBeNull();
+    expect(item.parentElement.classList.contains('sidebar__module-items')).toBe(true);
+    expect(item.closest('.sidebar__module').classList.contains('sidebar__module--open')).toBe(true);
   });
 
   test('o mesmo id em modulos diferentes nao se confunde', () => {
@@ -438,6 +489,141 @@ describe('sidebar: o menu nunca oferece tela que o guarda recusa', () => {
       .classList.contains('sidebar__item--active')).toBe(true);
     expect(ctrl.sidebar.querySelector('[data-id="orcamento:dashboard"]')
       .classList.contains('sidebar__item--active')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// O MENU DE CADA SEÇÃO E PLANO.
+//
+// Existiram dois grupos colapsaveis ("Materiais" na mapoteca e "Execução" no
+// orcamento), e os dois foram achatados. Dentro de uma seção que ja abre e
+// fecha, o grupo era um segundo clique para chegar a uma tela e escondia telas
+// de quem nao sabia que elas existiam. A maquina de grupo saiu de sidebar.js, e
+// estes casos existem para o grupo nao voltar por descuido: um `children` novo
+// num manifesto nao desenharia grupo nenhum -- desenharia um link quebrado,
+// porque o item de grupo nao tem `path`.
+// ---------------------------------------------------------------------------
+describe('sidebar: o menu de cada seção e plano, sem grupo colapsavel', () => {
+  test('nenhum item de menu de nenhum modulo declara `children`', () => {
+    for (const modulo of MODULOS) {
+      for (const item of modulo.menu || []) {
+        expect(item.children, `${modulo.id}: o item "${item.id}" voltou a ser grupo`)
+          .toBeUndefined();
+        // O corolario: todo item navega, porque so o cabeçalho de grupo nao
+        // tinha rota.
+        expect(item.path, `${modulo.id}: o item "${item.id}" nao aponta rota nenhuma`)
+          .toBeTruthy();
+      }
+    }
+  });
+
+  test('a sidebar nao desenha grupo nenhum, em perfil nenhum', () => {
+    for (const cenario of [
+      { administrador: true },
+      { perfis: { acervo: 3, mapoteca: 3, orcamento: 3, producao: 3, efetivo: 3 } },
+      { perfis: { acervo: 2, mapoteca: 2, orcamento: 2, producao: 2, efetivo: 2 } },
+      { perfis: { acervo: 1, mapoteca: 1, orcamento: 1, producao: 1, efetivo: 1 } },
+    ]) {
+      localStorage.clear();
+      logar(cenario);
+      const { sidebar } = createSidebar({ modulo: null });
+
+      expect(sidebar.querySelectorAll('.sidebar__group').length).toBe(0);
+      expect(sidebar.querySelectorAll('.sidebar__group-header').length).toBe(0);
+      expect(sidebar.querySelectorAll('.sidebar__subitem').length).toBe(0);
+      // E os itens continuam la: o achatamento promoveu, nao apagou.
+      expect(ids(sidebar).length).toBeGreaterThan(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// O MENU DE PLATAFORMA E A GUARDA DA ROTA NAO PODEM DIVERGIR.
+//
+// Nos modulos quem impede a divergencia e `podeAbrirRota`, que le o manifesto: o
+// teste la em cima cobra isso. As telas de PLATAFORMA nao tem manifesto, e a
+// regua delas mora em dois lugares -- o `visivel` do item, aqui na sidebar, e o
+// `guard` da rota, em index.js. Ja aconteceu de um mudar sem o outro, e o
+// sintoma e mudo dos dois lados: o menu esconde tela permitida, ou oferece tela
+// que responde /unauthorized.
+//
+// A TABELA ABAIXO ESPELHA index.js, e e a unica copia aceitavel: ela usa os
+// MESMOS guardas do router, entao so o par (rota, guarda) esta repetido. Item de
+// plataforma novo sem entrada aqui reprova, de proposito.
+// ---------------------------------------------------------------------------
+const GUARDA_DA_ROTA = {
+  '/usuarios': adminLoader,
+  '/acessos': perfilLoader('efetivo', 'consulta'),
+  '/rastreabilidade': gerenteLoader,
+  '/rpcmtec': gerenteLoader,
+  '/metas': acessoLoader,
+  '/execucao_pit': perfilLoader('producao', 'consulta'),
+  '/extra_pit': acessoLoader,
+  '/aproveitamento': perfilLoader('efetivo', ['consulta', 'gerente']),
+  '/capacitacao_ministrada': perfilLoader('producao', 'consulta'),
+  '/capacitacao_recebida': perfilLoader('efetivo', 'consulta'),
+};
+
+const PERSONAS = [
+  { nome: 'administrador', auth: { administrador: true } },
+  { nome: 'gerente em tudo', auth: { perfis: { acervo: 3, mapoteca: 3, orcamento: 3, producao: 3, efetivo: 3 } } },
+  { nome: 'operador em tudo', auth: { perfis: { acervo: 2, mapoteca: 2, orcamento: 2, producao: 2, efetivo: 2 } } },
+  { nome: 'consulta em tudo', auth: { perfis: { acervo: 1, mapoteca: 1, orcamento: 1, producao: 1, efetivo: 1 } } },
+];
+
+/** So as rotas de PLATAFORMA: as de modulo ja tem `podeAbrirRota` cobrando. */
+function rotasDePlataforma(sidebar) {
+  const links = [...sidebar.querySelectorAll('a[href^="#/"]')]
+    .map(a => a.getAttribute('href').slice(1))
+    .filter(rota => !MODULOS.some(m => rota === `/${m.id}` || rota.startsWith(`/${m.id}/`)));
+  return [...new Set(links)];
+}
+
+describe('sidebar: o menu de plataforma nao diverge da guarda da rota', () => {
+  test('todo link de plataforma que a sidebar mostra passa na guarda, em toda persona', () => {
+    for (const persona of PERSONAS) {
+      localStorage.clear();
+      logar(persona.auth);
+      const { sidebar } = createSidebar({ modulo: null });
+
+      const rotas = rotasDePlataforma(sidebar);
+      // Cabeçalho de seção conta: ele e um LINK, e mandar a pessoa para uma home
+      // que ela nao alcança e o mesmo defeito.
+      expect(rotas.length, `${persona.nome}: nenhum link de plataforma na tela`)
+        .toBeGreaterThan(0);
+
+      for (const rota of rotas) {
+        const guarda = GUARDA_DA_ROTA[rota];
+        expect(
+          typeof guarda,
+          `${persona.nome}: a sidebar mostra ${rota}, que nao esta na tabela de guardas`
+        ).toBe('function');
+        expect(
+          guarda(),
+          `${persona.nome}: a sidebar mostra ${rota}, que o guarda de index.js recusaria`
+        ).toBe(true);
+      }
+    }
+  });
+
+  // O outro lado: esconder tela permitida tambem e divergencia. A consulta e a
+  // persona que mais sofreu com isso, porque a regua inteira desceu para ela.
+  test('consulta em tudo alcança as telas de leitura da plataforma', () => {
+    logar(PERSONAS[3].auth);
+    const { sidebar } = createSidebar({ modulo: null });
+
+    const rotas = rotasDePlataforma(sidebar);
+    for (const rota of [
+      '/metas', '/extra_pit', '/execucao_pit', '/capacitacao_ministrada',
+      '/acessos', '/aproveitamento', '/capacitacao_recebida',
+    ]) {
+      expect(rotas, `a consulta deixou de ver ${rota}`).toContain(rota);
+    }
+    // E o que ela NAO alcança continua fora: a Gestão e do administrador, e o
+    // RPCMTec e do gerente para cima.
+    expect(rotas).not.toContain('/usuarios');
+    expect(rotas).not.toContain('/rpcmtec');
+    expect(rotas).not.toContain('/rastreabilidade');
   });
 });
 
@@ -468,11 +654,12 @@ describe('activeIdFromPath', () => {
 //
 // Ela esta logada e nao esta no sistema: o menu inteiro e dela e nao tem nada.
 // A tela dela e '#/perfil', que mora no menu da pessoa na navbar, e nao aqui.
-// Antes disto, "Produção" continuava desenhada, e era a unica coisa na sidebar
-// de quem nao tinha acesso a nada -- um sistema oferecido a quem levaria 403.
+// Antes disto, a seção do PIT continuava desenhada, e era a unica coisa na
+// sidebar de quem nao tinha acesso a nada -- um sistema oferecido a quem
+// levaria 403.
 // ---------------------------------------------------------------------------
 describe('sidebar: quem ainda nao tem acesso a nada', () => {
-  test('nao ve seção nenhuma, nem a de Produção', () => {
+  test('nao ve seção nenhuma, nem a do PIT', () => {
     logar({ perfis: {} });
     const { sidebar } = createSidebar({ modulo: null });
 

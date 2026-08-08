@@ -35,17 +35,15 @@ export default {
     // SEM um grupo "Orçamento" aqui dentro: grupo colapsável com um item só
     // esconde a tela atrás de um clique e nomeia o módulo dentro do módulo.
     { id: 'pdr', label: 'PDR', icon: ICONS.dataUsage, path: '/pdr' },
-    {
-      id: 'execucao-group',
-      label: 'Execução',
-      icon: ICONS.localShipping,
-      children: [
-        { id: 'notas_credito', label: 'Notas de Crédito', icon: ICONS.description, path: '/notas_credito' },
-        { id: 'notas_empenho', label: 'Empenhos', icon: ICONS.assignment, path: '/notas_empenho' },
-        { id: 'licitacoes', label: 'Licitações', icon: ICONS.storage, path: '/licitacoes' },
-        { id: 'rpnp', label: 'RPNP', icon: ICONS.schedule, path: '/rpnp' },
-      ],
-    },
+    // MENU PLANO: o grupo colapsavel "Execução" saiu, e os quatro itens ficaram
+    // no lugar exato onde ele estava, na mesma ordem que tinham dentro dele. O
+    // cabecalho cobrava um clique a mais para chegar a uma tela que ja cabia na
+    // lista, e nenhuma delas e rara: nota de credito, empenho, licitacao e RPNP
+    // sao o dia a dia do modulo.
+    { id: 'notas_credito', label: 'Notas de Crédito', icon: ICONS.description, path: '/notas_credito' },
+    { id: 'notas_empenho', label: 'Empenhos', icon: ICONS.assignment, path: '/notas_empenho' },
+    { id: 'licitacoes', label: 'Licitações', icon: ICONS.storage, path: '/licitacoes' },
+    { id: 'rpnp', label: 'RPNP', icon: ICONS.schedule, path: '/rpnp' },
     // SEM item de RPCMTec: ele e tela de PLATAFORMA (#/rpcmtec). Daqui sairia
     // so a secao do PDR, e o relatorio e da Divisao inteira.
     //

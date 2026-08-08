@@ -2,13 +2,38 @@
 
 // Rotas do RPCMTec, o relatório mensal da Divisão.
 //
-// GUARDA DA EDIÇÃO: `verifyAdmin`, e não `verifyPerfil`. O relatório cruza os
-// TRÊS módulos numa peça só, e traz valor de crédito, de empenho e de
-// liquidação. Um `verifyPerfil('consulta', 'acervo')` entregaria o orçamento
-// inteiro a quem só cataloga carta; e não existe "perfil de RPCMTec", porque não
-// existe módulo RPCMTec -- ele é rota de PLATAFORMA, como usuários e views
-// materializadas (ver CLAUDE.md, modelo de autorização). Quem assina o relatório
-// é o chefe, e quem o gera administra o sistema.
+// A GUARDA MUDOU EM 2026-08-08, por decisão do chefe, e passou a ter TRÊS
+// níveis, porque as três coisas que se fazem aqui são diferentes:
+//
+//   LER              `verifyGerente`  administrador global OU gerente de
+//                    QUALQUER módulo. O relatório inteiro: as 34 subseções, o
+//                    documento, o PDF, os anexos e as duas planilhas que sobem
+//                    para a DSG no mesmo envio (Anuário e RTM).
+//
+//   ESCREVER         `verifyGerente` + `verifyModuloSubsecao()`. O gerente
+//   UMA SUBSEÇÃO     altera as subseções DO MÓDULO EM QUE ELE É GERENTE, e só
+//                    elas. O mapa subseção -> módulo é a chave `modulo` de
+//                    `rpcmtec_estrutura.js`, e a conferência é
+//                    `verify_modulo_subsecao.js`.
+//
+//   ASSINAR          `verifyAdmin`. Criar e excluir a edição do mês, editar os
+//                    metadados dela (assinante e data de assinatura), FECHAR,
+//                    REABRIR e mexer no anexo assinado. Congelar o documento que
+//                    o chefe da Divisão assina não é ato de gerente de módulo, e
+//                    reabrir depois de assinado, menos ainda.
+//
+// O QUE ISTO REVERTE. Tudo aqui era `verifyAdmin`, e a razão escrita era que o
+// relatório traz valor de crédito, de empenho e de liquidação, e que liberá-lo
+// por perfil de UM módulo entregaria o orçamento a quem só cataloga carta. O
+// chefe decidiu o contrário para a LEITURA: gerente responde pela área e vê tudo
+// dela, e o RPCMTec é a prestação de contas da Divisão inteira, que os gerentes
+// conferem antes de o chefe assinar. A objeção continua valendo para a ESCRITA,
+// e é exatamente o que o recorte por módulo guarda: o gerente da mapoteca lê a
+// seção 4 e não altera uma linha dela.
+//
+// Não existe "perfil de RPCMTec", porque não existe módulo RPCMTec: ele continua
+// sendo rota de PLATAFORMA, sem prefixo de módulo (ver CLAUDE.md, modelo de
+// autorização). O que ele ganhou foi um dono POR SUBSEÇÃO.
 //
 // A CAPACITAÇÃO É A EXCEÇÃO, desde a 1.33.0, e ela mora aqui por endereço e não
 // por natureza: capacitação é CADASTRO, e não relatório. Ela virou duas rotas,
@@ -18,8 +43,9 @@ const express = require('express')
 
 const { schemaValidation, asyncHandler, httpCode, AppError } = require('../utils')
 const { domainConstants: { TIPO_CAPACITACAO } } = require('../utils')
-const { verifyAdmin, verifyPerfil } = require('../login')
+const { verifyAdmin, verifyGerente, verifyPerfil } = require('../login')
 
+const verifyModuloSubsecao = require('./verify_modulo_subsecao')
 const edicaoCtrl = require('./rpcmtec_edicao_ctrl')
 const subsecaoCtrl = require('./rpcmtec_subsecao_ctrl')
 const capacitacaoCtrl = require('./rpcmtec_capacitacao_ctrl')
@@ -45,12 +71,16 @@ const doisDigitos = mes => String(mes).padStart(2, '0')
 //
 // Os dados vêm de `mapoteca/anuario_ctrl`, que é onde a entrega é registrada, e
 // o arquivo sai da planilha-semente da DSG (ver rpcmtec/anuario_ods.js).
+//
+// `verifyGerente` como o resto da LEITURA: os dois botões que baixam estas
+// planilhas ficam na barra da tela da edição, que qualquer gerente abre. Deixá-
+// -los no administrador daria a essa tela dois botões que respondem 403.
 // ---------------------------------------------------------------------------
 
 // Prévia em tela, no envelope JSON.
 router.get(
   '/anuario',
-  verifyAdmin,
+  verifyGerente,
   schemaValidation({ query: rpcmtecSchema.gerarQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await anuarioCtrl.getAnuarioEstatistico({
@@ -66,7 +96,7 @@ router.get(
 
 router.get(
   '/anuario/ods',
-  verifyAdmin,
+  verifyGerente,
   schemaValidation({ query: rpcmtecSchema.gerarQuery }),
   asyncHandler(async (req, res, next) => {
     const { ano, mes } = req.query
@@ -101,7 +131,7 @@ router.get(
 
 router.get(
   '/rtm/ods',
-  verifyAdmin,
+  verifyGerente,
   schemaValidation({ query: rpcmtecSchema.gerarQuery }),
   asyncHandler(async (req, res, next) => {
     // O RTM e ACUMULADO ate o mes escolhido: 2026 com marco traz janeiro,
@@ -158,23 +188,35 @@ router.get(
  * As seis rotas de um tipo de capacitação, num molde só.
  *
  * MOLDE, e não doze blocos escritos à mão: o que muda entre ministrada e
- * recebida é o caminho, o `tipo_id` e a guarda. Doze cópias divergiriam na
+ * recebida é o caminho, o `tipo_id` e as guardas. Doze cópias divergiriam na
  * primeira correção aplicada a uma só, e o preço dessa divergência aqui é uma
  * das duas ficar sem recorte de tipo.
+ *
+ * DUAS GUARDAS, E NÃO UMA, desde 2026-08-08. O molde recebia UM middleware e o
+ * repetia nas seis rotas, o que amarrava ler e escrever ao mesmo nível: quem
+ * pudesse LISTAR os cursos podia também APAGÁ-LOS. A régua nova dos três módulos
+ * separa as duas coisas (consulta LÊ, operador lança, gerente responde pela
+ * área), e um molde de guarda única não sabe expressá-la.
+ *
+ * O PARÂMETRO CONTINUA SENDO O MIDDLEWARE PRONTO, e não o nome do nível: é o que
+ * mantém o módulo VISÍVEL na chamada, onde `modulo_em_toda_rota.test.js` o lê.
+ * Um molde que montasse `verifyPerfil(nivel, modulo)` por dentro esconderia o
+ * módulo do único teste que cobra o argumento esquecido.
  *
  * A ORDEM IMPORTA: '/anos' é declarada antes de '/:id', senão 'anos' cairia na
  * rota do id e reprovaria na validação de parâmetro.
  *
  * @param {string} caminho - 'ministrada' ou 'recebida'
  * @param {number} tipoId - dominio.tipo_capacitacao
- * @param {Function} guarda - o middleware de autorização daquele tipo
+ * @param {Function} leitura - autorização das três rotas que só respondem
+ * @param {Function} escrita - autorização das três que gravam
  */
-const rotasDeCapacitacao = (caminho, tipoId, guarda) => {
+const rotasDeCapacitacao = (caminho, tipoId, leitura, escrita) => {
   const base = `/capacitacao/${caminho}`
 
   router.get(
     base,
-    guarda,
+    leitura,
     schemaValidation({ query: rpcmtecSchema.capacitacaoQuery }),
     asyncHandler(async (req, res, next) => {
       const dados = await capacitacaoCtrl.listar(req.query.ano, tipoId)
@@ -187,7 +229,7 @@ const rotasDeCapacitacao = (caminho, tipoId, guarda) => {
 
   router.get(
     `${base}/anos`,
-    guarda,
+    leitura,
     asyncHandler(async (req, res, next) => {
       const dados = await capacitacaoCtrl.anos(tipoId)
 
@@ -199,7 +241,7 @@ const rotasDeCapacitacao = (caminho, tipoId, guarda) => {
 
   router.get(
     `${base}/:id`,
-    guarda,
+    leitura,
     schemaValidation({ params: rpcmtecSchema.idParams }),
     asyncHandler(async (req, res, next) => {
       const dados = await capacitacaoCtrl.getPorId(req.params.id, tipoId)
@@ -218,7 +260,7 @@ const rotasDeCapacitacao = (caminho, tipoId, guarda) => {
 
   router.post(
     base,
-    guarda,
+    escrita,
     schemaValidation({ body: rpcmtecSchema.criarCapacitacao }),
     asyncHandler(async (req, res, next) => {
       const dados = await capacitacaoCtrl.criar(
@@ -233,7 +275,7 @@ const rotasDeCapacitacao = (caminho, tipoId, guarda) => {
 
   router.put(
     `${base}/:id`,
-    guarda,
+    escrita,
     schemaValidation({
       params: rpcmtecSchema.idParams,
       body: rpcmtecSchema.atualizarCapacitacao
@@ -251,7 +293,7 @@ const rotasDeCapacitacao = (caminho, tipoId, guarda) => {
 
   router.delete(
     `${base}/:id`,
-    guarda,
+    escrita,
     schemaValidation({ params: rpcmtecSchema.idParams }),
     asyncHandler(async (req, res, next) => {
       await capacitacaoCtrl.deletar(
@@ -267,17 +309,23 @@ const rotasDeCapacitacao = (caminho, tipoId, guarda) => {
 
 // MINISTRADA é serviço que a Divisão PRESTA, e alimenta a 2.6: é trabalho de
 // produção, e o módulo é Produção.
+//
+// A LEITURA DESCEU PARA CONSULTA em 2026-08-08, e a escrita ficou onde estava. O
+// curso que a Divisão deu não é segredo dentro dela, e exigir o nível de quem
+// LANÇA para quem só CONFERE fechava a tela da 2.6 para o resto de Produção.
 rotasDeCapacitacao(
   'ministrada',
   TIPO_CAPACITACAO.MINISTRADA,
+  verifyPerfil('consulta', 'producao'),
   verifyPerfil('operador', 'producao')
 )
 
 // RECEBIDA é gente nossa EM CURSO, e alimenta a 6.2: é dado de pessoal, e o
-// módulo é Efetivo.
+// módulo é Efetivo. Mesma separação da ministrada, no compartimento do Efetivo.
 rotasDeCapacitacao(
   'recebida',
   TIPO_CAPACITACAO.RECEBIDA,
+  verifyPerfil('consulta', 'efetivo'),
   verifyPerfil('operador', 'efetivo')
 )
 
@@ -290,7 +338,7 @@ rotasDeCapacitacao(
 
 router.get(
   '/',
-  verifyAdmin,
+  verifyGerente,
   schemaValidation({ query: rpcmtecSchema.listarQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await edicaoCtrl.listar({ ano: req.query.ano })
@@ -303,7 +351,7 @@ router.get(
 
 router.get(
   '/anos',
-  verifyAdmin,
+  verifyGerente,
   asyncHandler(async (req, res, next) => {
     const dados = await edicaoCtrl.anos()
 
@@ -313,10 +361,12 @@ router.get(
   })
 )
 
-// Download do RPCMTec assinado, fora do envelope JSON.
+// Download do RPCMTec assinado, fora do envelope JSON. LER o assinado é ler o
+// relatório: quem confere o mês precisa do documento que foi de fato assinado, e
+// não só do PDF que o sistema emite hoje.
 router.get(
   '/anexo/:anexoId/download',
-  verifyAdmin,
+  verifyGerente,
   schemaValidation({ params: rpcmtecSchema.anexoIdParams }),
   asyncHandler(async (req, res, next) => {
     const arquivo = await edicaoCtrl.getAnexoParaDownload(req.params.anexoId)
@@ -330,6 +380,8 @@ router.get(
   })
 )
 
+// APAGAR o anexo continua do administrador: o arquivo aqui é o documento
+// assinado, e sumir com ele é desfazer a assinatura.
 router.delete(
   '/anexo/:anexoId',
   verifyAdmin,
@@ -345,7 +397,7 @@ router.delete(
 
 router.get(
   '/:id',
-  verifyAdmin,
+  verifyGerente,
   schemaValidation({ params: rpcmtecSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await edicaoCtrl.getPorId(req.params.id)
@@ -362,7 +414,7 @@ router.get(
 // divergiriam e quem confere veria diferença onde não há.
 router.get(
   '/:id/documento',
-  verifyAdmin,
+  verifyGerente,
   schemaValidation({ params: rpcmtecSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await edicaoCtrl.montar(req.params.id)
@@ -376,7 +428,7 @@ router.get(
 // Download binário do PDF, fora do envelope JSON.
 router.get(
   '/:id/pdf',
-  verifyAdmin,
+  verifyGerente,
   schemaValidation({ params: rpcmtecSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     const edicao = await edicaoCtrl.montar(req.params.id)
@@ -393,7 +445,7 @@ router.get(
 // O que o banco diria HOJE, ao lado do congelado. Só em edição fechada.
 router.get(
   '/:id/conferir',
-  verifyAdmin,
+  verifyGerente,
   schemaValidation({ params: rpcmtecSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await edicaoCtrl.conferirHoje(req.params.id)
@@ -404,6 +456,10 @@ router.get(
   })
 )
 
+// CRIAR, EDITAR OS METADADOS E EXCLUIR a edição do mês continuam do
+// ADMINISTRADOR. A edição é o documento, e não o conteúdo de uma área: abrir o
+// mês, dizer QUEM ASSINA e em que data, e apagar o mês inteiro são atos de quem
+// responde pelo relatório, não de quem responde por uma das nove seções dele.
 router.post(
   '/',
   verifyAdmin,
@@ -454,6 +510,11 @@ router.delete(
 // POST, e não PUT: fechar e reabrir são ATOS, e não a gravação de um campo. O
 // fechamento congela os 34 blocos e recusa a edição com subseção por
 // preencher; a reabertura descongela e preserva o digitado.
+//
+// OS DOIS SÃO DO ADMINISTRADOR, e ficaram de fora do recorte por módulo de
+// propósito. Fechar é congelar o documento que o chefe da Divisão assina, e a
+// peça é UMA: um gerente de módulo congelaria também as oito seções que não são
+// dele. Reabrir é o inverso, e mexe no que já foi assinado.
 // ---------------------------------------------------------------------------
 
 // O corpo carrega SÓ o "eu li o aviso da conferência". Sem ele, a rota responde
@@ -496,12 +557,23 @@ router.post(
 )
 
 // ---------------------------------------------------------------------------
-// Subseções digitadas
+// Subseções: o RECORTE POR MÓDULO
+//
+// As quatro rotas abaixo mudam UMA subseção, e é nelas que o `modulo` da
+// estrutura vira permissão. A dupla é sempre a mesma, e nesta ordem:
+//
+//   `verifyGerente`            autentica, lê `dgeo.usuario` do banco e exige
+//                              gerente em ALGUM módulo;
+//   `verifyModuloSubsecao()`   exige gerente NO MÓDULO DAQUELA subseção.
+//
+// Duas guardas, e não uma, porque são duas perguntas: a primeira é quem a pessoa
+// é, a segunda é de quem é a subseção. Ver `verify_modulo_subsecao.js`.
 // ---------------------------------------------------------------------------
 
 router.put(
   '/:id/subsecao/:numero',
-  verifyAdmin,
+  verifyGerente,
+  verifyModuloSubsecao(),
   schemaValidation({
     params: rpcmtecSchema.subsecaoParams,
     body: rpcmtecSchema.gravarSubsecao
@@ -529,9 +601,16 @@ router.put(
 // POST, e não PUT: a importação não grava o corpo que recebeu. Ela LÊ o CSV,
 // cruza com o que já está na tabela e decide o que muda. O Resumo, que é a
 // coluna escrita por pessoa, não vem no corpo e não se perde.
+//
+// A GUARDA RECEBE O NÚMERO PRONTO, porque aqui ele está no caminho e não em
+// `req.params`. Hoje a 5.1 é `modulo: null` (não existe módulo de TI), então
+// isto continua valendo só para o administrador -- mas por CONSEQUÊNCIA do mapa,
+// e não por um `verifyAdmin` escrito à mão que ficaria para trás no dia em que a
+// 5.1 ganhar dono.
 router.post(
   '/:id/subsecao/5.1/importar',
-  verifyAdmin,
+  verifyGerente,
+  verifyModuloSubsecao('5.1'),
   schemaValidation({
     params: rpcmtecSchema.idParams,
     body: rpcmtecSchema.importarRepositorios
@@ -556,9 +635,15 @@ router.post(
 // preenchida e continua precisando de olho humano: o número pode estar certo e
 // o CADASTRO que o alimenta, errado. Quem confere o relatório antes de assinar
 // percorre os 34 blocos, e até aqui não tinha onde registrar por onde já passou.
+//
+// É AQUI QUE O RECORTE POR MÓDULO RENDE MAIS. Conferir vale para as três
+// origens, então esta rota alcança os 34 blocos, e não os 13 digitados: com ela
+// recortada, cada gerente carimba o que é da área dele e o administrador deixa
+// de ser o único par de olhos antes da assinatura.
 router.put(
   '/:id/subsecao/:numero/revisao',
-  verifyAdmin,
+  verifyGerente,
+  verifyModuloSubsecao(),
   schemaValidation({
     params: rpcmtecSchema.subsecaoParams,
     body: rpcmtecSchema.revisarSubsecao
@@ -584,7 +669,8 @@ router.put(
 // que ficar vazia: o fechamento a cobra de novo.
 router.delete(
   '/:id/subsecao/:numero',
-  verifyAdmin,
+  verifyGerente,
+  verifyModuloSubsecao(),
   schemaValidation({ params: rpcmtecSchema.subsecaoParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await subsecaoCtrl.limpar(
@@ -614,7 +700,7 @@ router.delete(
 
 router.get(
   '/:id/anexos',
-  verifyAdmin,
+  verifyGerente,
   schemaValidation({ params: rpcmtecSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await edicaoCtrl.listarAnexos(req.params.id)
@@ -627,6 +713,9 @@ router.get(
 
 // O multer vem ANTES da validação do corpo: sem ele, `req.body` do multipart
 // chega vazio. Mesma ordem do anexo da revisão do PIT.
+//
+// ANEXAR é do ADMINISTRADOR: o arquivo que sobe aqui é o RPCMTec ASSINADO, e
+// dizer "este é o documento assinado do mês" é ato de assinatura, não de área.
 router.post(
   '/:id/anexos',
   verifyAdmin,

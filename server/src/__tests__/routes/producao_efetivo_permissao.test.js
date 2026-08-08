@@ -34,7 +34,9 @@
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { conn } = require('../helpers/db')
-const { generateAdminToken, generateUserToken, USER_UUID } = require('../helpers/auth')
+const {
+  generateAdminToken, generateUserToken, USER_UUID, ADMIN_UUID
+} = require('../helpers/auth')
 
 const MODULO = { acervo: 1, mapoteca: 2, orcamento: 3, producao: 4, efetivo: 5 }
 const NIVEL = { consulta: 1, operador: 2, gerente: 3 }
@@ -94,6 +96,20 @@ const comoUsuario = (metodo, caminho, corpo) => {
 // ---------------------------------------------------------------------------
 const ROTAS = [
   // --- PRODUCAO: a execucao mensal do PIT (subsecao 2.1) ---
+  //
+  // AS LEITURAS eram `verifyGerente` ate 2026-08-08, e a troca conserta dois
+  // erros de uma vez: elas exigiam GERENTE para OLHAR o que o operador LANCA, e
+  // aceitavam o gerente de QUALQUER modulo (o da mapoteca lia a grade da
+  // producao). Agora e consulta, no compartimento PRODUCAO.
+  ['get', '/api/metas/execucao?ano=2026', 'producao', 'consulta', null],
+  ['get', '/api/metas/execucao/resumo?ano=2026', 'producao', 'consulta', null],
+  ['get', '/api/metas/execucao/meta/1', 'producao', 'consulta', null],
+  ['get', '/api/metas/execucao/diagnostico?ano=2026', 'producao', 'consulta', null],
+  // O ENSAIO acompanha, e nao por simetria: ele devolve o planejado e o
+  // realizado meta a meta, que e o dado de `/execucao`. Deixado no
+  // `verifyGerente`, seria a porta pela qual o gerente da mapoteca leria a grade
+  // que acabou de perder.
+  ['get', '/api/metas/execucao/ensaio?ano=2026', 'producao', 'consulta', null],
   ['post', '/api/metas/execucao', 'producao', 'operador', { meta_id: 1, mes: 3 }],
   ['delete', '/api/metas/execucao/1', 'producao', 'operador', null],
 
@@ -109,39 +125,53 @@ const ROTAS = [
   ['delete', '/api/metas/extra/1/versoes/1', 'producao', 'operador', null],
 
   // --- PRODUCAO: a capacitacao MINISTRADA (subsecao 2.6) ---
-  ['get', '/api/rpcmtec/capacitacao/ministrada', 'producao', 'operador', null],
-  ['get', '/api/rpcmtec/capacitacao/ministrada/anos', 'producao', 'operador', null],
-  ['get', '/api/rpcmtec/capacitacao/ministrada/1', 'producao', 'operador', null],
+  //
+  // LER desceu para CONSULTA em 2026-08-08. As seis rotas saiam do MESMO molde
+  // com UMA guarda, e por isso quem pudesse LISTAR podia tambem APAGAR. O molde
+  // passou a receber duas.
+  ['get', '/api/rpcmtec/capacitacao/ministrada', 'producao', 'consulta', null],
+  ['get', '/api/rpcmtec/capacitacao/ministrada/anos', 'producao', 'consulta', null],
+  ['get', '/api/rpcmtec/capacitacao/ministrada/1', 'producao', 'consulta', null],
   ['post', '/api/rpcmtec/capacitacao/ministrada', 'producao', 'operador', {}],
   ['put', '/api/rpcmtec/capacitacao/ministrada/1', 'producao', 'operador', {}],
   ['delete', '/api/rpcmtec/capacitacao/ministrada/1', 'producao', 'operador', null],
 
   // --- EFETIVO: a capacitacao RECEBIDA (subsecao 6.2) ---
-  ['get', '/api/rpcmtec/capacitacao/recebida', 'efetivo', 'operador', null],
-  ['get', '/api/rpcmtec/capacitacao/recebida/anos', 'efetivo', 'operador', null],
-  ['get', '/api/rpcmtec/capacitacao/recebida/1', 'efetivo', 'operador', null],
+  ['get', '/api/rpcmtec/capacitacao/recebida', 'efetivo', 'consulta', null],
+  ['get', '/api/rpcmtec/capacitacao/recebida/anos', 'efetivo', 'consulta', null],
+  ['get', '/api/rpcmtec/capacitacao/recebida/1', 'efetivo', 'consulta', null],
   ['post', '/api/rpcmtec/capacitacao/recebida', 'efetivo', 'operador', {}],
   ['put', '/api/rpcmtec/capacitacao/recebida/1', 'efetivo', 'operador', {}],
   ['delete', '/api/rpcmtec/capacitacao/recebida/1', 'efetivo', 'operador', null],
 
   // --- EFETIVO: o aproveitamento (subsecao 6.1) ---
-  ['get', '/api/efetivo/periodos', 'efetivo', 'operador', null],
-  ['post', '/api/efetivo/periodos', 'efetivo', 'operador', {}],
-  ['put', '/api/efetivo/periodos/1', 'efetivo', 'operador', {}],
-  ['delete', '/api/efetivo/periodos/1', 'efetivo', 'operador', null],
-  ['get', '/api/efetivo/impedimentos', 'efetivo', 'operador', null],
-  ['post', '/api/efetivo/impedimentos', 'efetivo', 'operador', {}],
-  ['put', '/api/efetivo/impedimentos/1', 'efetivo', 'operador', {}],
-  ['delete', '/api/efetivo/impedimentos/1', 'efetivo', 'operador', null],
+  //
+  // OS DOIS SENTIDOS, na mesma tela. LER desceu para CONSULTA, porque ninguem
+  // conseguia OLHAR o aproveitamento sem poder escreve-lo. ESCREVER subiu para
+  // GERENTE, porque lancar a passagem e o impedimento DOS OUTROS e dado de
+  // pessoal alheio, nominal, que vira numero assinado na 6.1.
+  ['get', '/api/efetivo/periodos', 'efetivo', 'consulta', null],
+  ['post', '/api/efetivo/periodos', 'efetivo', 'gerente', {}],
+  ['put', '/api/efetivo/periodos/1', 'efetivo', 'gerente', {}],
+  ['delete', '/api/efetivo/periodos/1', 'efetivo', 'gerente', null],
+  ['get', '/api/efetivo/impedimentos', 'efetivo', 'consulta', null],
+  ['post', '/api/efetivo/impedimentos', 'efetivo', 'gerente', {}],
+  ['put', '/api/efetivo/impedimentos/1', 'efetivo', 'gerente', {}],
+  ['delete', '/api/efetivo/impedimentos/1', 'efetivo', 'gerente', null],
 
-  // --- EFETIVO: as duas leituras AGREGADAS, que sao do GERENTE ---
-  // Elas resumem a Divisao inteira num quadro so, e responder "quem esteve
-  // disponivel em cada semana do ano" e pergunta de quem responde pelo efetivo.
-  ['get', '/api/efetivo/mapa?ano=2026', 'efetivo', 'gerente', null],
-  ['get', '/api/efetivo/mes?ano=2026&mes=3', 'efetivo', 'gerente', null],
+  // --- EFETIVO: as leituras AGREGADAS ---
+  // Elas resumem a Divisao inteira num quadro so. Eram de GERENTE, e desceram
+  // para CONSULTA junto com o resto da leitura da tela.
+  ['get', '/api/efetivo/mapa?ano=2026', 'efetivo', 'consulta', null],
+  ['get', '/api/efetivo/mes?ano=2026&mes=3', 'efetivo', 'consulta', null],
   // A divergencia nasceu aqui, e nao em /api/usuarios (verifyAdmin), justamente
   // para o dashboard do efetivo deixar de ser do administrador global.
-  ['get', '/api/efetivo/divergencias?ano=2026&mes=3', 'efetivo', 'gerente', null]
+  ['get', '/api/efetivo/divergencias?ano=2026&mes=3', 'efetivo', 'consulta', null],
+  // O cadastro MINIMO de militar, criado em 2026-08-08 pelo mesmo motivo da
+  // divergencia: a tela pedia a lista de gente a `GET /api/usuarios`
+  // (verifyAdmin) no MESMO Promise.all das rotas daqui, tomava 403 e morria
+  // inteira dizendo que e preciso ser administrador.
+  ['get', '/api/efetivo/militares', 'efetivo', 'consulta', null]
 ]
 
 const rotulo = ([metodo, caminho, modulo, nivel]) =>
@@ -219,20 +249,31 @@ describe('Producao e Efetivo sao compartimentos', () => {
     expect(execucao.body.message).toMatch(/módulo producao/i)
   })
 
-  // O GERENTE do efetivo satisfaz o OPERADOR (a hierarquia), mas o operador NAO
-  // satisfaz o gerente. E o que separa o cadastro do aproveitamento da leitura
-  // agregada da Divisao.
-  it('operador de Efetivo cadastra, e nao le o mapa anual', async () => {
+  // A HIERARQUIA, no sentido em que ela passou a valer depois de 2026-08-08. O
+  // gerente satisfaz o operador e a consulta; o contrario nao vale.
+  //
+  // ESTE CASO ESTAVA ESCRITO AO CONTRARIO ate a regra nova ("operador cadastra,
+  // e nao le o mapa anual"), e a inversao e o resumo da mudanca: quem tem o
+  // modulo LE a tela inteira, e escrever o dado de pessoal ALHEIO passou a ser
+  // do gerente. Trocar so o nivel esperado deixaria o arquivo provando a metade
+  // errada, entao o caso foi reescrito no sentido novo.
+  it('operador de Efetivo LE a tela inteira, e nao lanca a passagem de ninguem', async () => {
     await definePerfil(MODULO.efetivo, NIVEL.operador)
 
+    // A leitura, inclusive a AGREGADA, que era o que ele nao alcancava.
     expect((await comoUsuario('get', '/api/efetivo/periodos')).status).toBe(200)
-
-    const mapa = await comoUsuario('get', '/api/efetivo/mapa?ano=2026')
-    expect(mapa.status).toBe(403)
-    expect(mapa.body.message).toMatch(/perfil gerente no módulo efetivo/i)
-
-    await definePerfil(MODULO.efetivo, NIVEL.gerente)
     expect((await comoUsuario('get', '/api/efetivo/mapa?ano=2026')).status).toBe(200)
+    expect((await comoUsuario('get', '/api/efetivo/militares')).status).toBe(200)
+
+    // E a escrita, que ele PERDEU.
+    const criacao = await comoUsuario('post', '/api/efetivo/periodos', {})
+    expect(criacao.status).toBe(403)
+    expect(criacao.body.message).toMatch(/perfil gerente no módulo efetivo/i)
+
+    // O gerente escreve. Sem esta linha, um 403 em toda escrita satisfaria o
+    // caso, inclusive se a rota tivesse virado do administrador global.
+    await definePerfil(MODULO.efetivo, NIVEL.gerente)
+    expect((await comoUsuario('post', '/api/efetivo/periodos', {})).status).not.toBe(403)
   })
 
   // Requisito de sempre, e o que o `verifyPerfil` promete: a flag global vale
@@ -245,6 +286,71 @@ describe('Producao e Efetivo sao compartimentos', () => {
     expect((await admin('/api/rpcmtec/capacitacao/recebida')).status).toBe(200)
     expect((await admin('/api/efetivo/periodos')).status).toBe(200)
     expect((await admin('/api/efetivo/mapa?ano=2026')).status).toBe(200)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// O RECORTE DE CAMPO de `GET /api/efetivo/militares`.
+//
+// E ELE QUE PAGA A GUARDA MAIS BAIXA, e nao o contrario. A rota existe para a
+// tela do aproveitamento parar de pedir o cadastro inteiro a `GET /api/usuarios`
+// (verifyAdmin) so para montar um seletor de nomes. Se ela devolvesse as mesmas
+// colunas com uma guarda mais fraca, teria PIORADO o sistema em vez de
+// conserta-lo: `login`, `administrador`, `senha_definida` e os perfis por modulo
+// dizem quem manda no sistema, e continuam so em `/api/usuarios`.
+//
+// AQUI SE LE A RESPOSTA DE VERDADE, contra o banco. Provar isto com o banco
+// dublado seria provar que o duble nao inventou uma coluna.
+// ---------------------------------------------------------------------------
+describe('O cadastro minimo de militar nao carrega dado de plataforma', () => {
+  const CAMPOS = [
+    'uuid', 'nome', 'nome_guerra', 'tipo_posto_grad_id', 'tipo_posto_grad', 'ativo'
+  ]
+
+  const PROIBIDOS = ['login', 'administrador', 'senha', 'senha_definida', 'perfis']
+
+  it('devolve os seis campos da tela, e nenhum a mais', async () => {
+    await definePerfil(MODULO.efetivo, NIVEL.consulta)
+
+    const res = await comoUsuario('get', '/api/efetivo/militares')
+    expect(res.status).toBe(200)
+
+    // A VARIANCIA primeiro: uma lista vazia satisfaria sozinha todo o resto.
+    expect(res.body.dados.length).toBeGreaterThan(0)
+
+    for (const militar of res.body.dados) {
+      // Igualdade de CONJUNTO, e nao so ausencia dos proibidos: uma coluna nova
+      // acrescentada por descuido amanha tambem tem de reprovar aqui.
+      expect(Object.keys(militar).sort()).toEqual([...CAMPOS].sort())
+    }
+  })
+
+  it('nao devolve login nem a flag de administrador, que sao de plataforma', async () => {
+    await definePerfil(MODULO.efetivo, NIVEL.consulta)
+
+    const res = await comoUsuario('get', '/api/efetivo/militares')
+
+    // O CONTROLE: a conta administradora da semente ESTA na lista. Sem ela, a
+    // ausencia da flag seria a ausencia da linha, e nao o recorte.
+    const admin = res.body.dados.find(m => m.uuid === ADMIN_UUID)
+    expect(admin).toBeDefined()
+    expect(admin.nome_guerra).toBeTruthy()
+
+    for (const proibido of PROIBIDOS) {
+      expect(admin).not.toHaveProperty(proibido)
+    }
+  })
+
+  // A ORDEM e a mesma das outras consultas do efetivo (posto decrescente, depois
+  // nome de guerra): o seletor fica ao lado do mapa, e duas ordens diferentes na
+  // mesma tela leem-se como lista errada.
+  it('sai na ordem do posto, e nao alfabetica pelo nome completo', async () => {
+    await definePerfil(MODULO.efetivo, NIVEL.consulta)
+
+    const res = await comoUsuario('get', '/api/efetivo/militares')
+    const postos = res.body.dados.map(m => Number(m.tipo_posto_grad_id))
+
+    expect(postos).toEqual([...postos].sort((a, b) => b - a))
   })
 })
 
@@ -267,11 +373,19 @@ describe('O operador de Producao NAO alcanca o que continua sendo do administrad
     ['post', '/api/metas/revisoes/1/publicar', {}],
     ['put', '/api/metas/revisoes/1/meta/1', {}],
     ['post', '/api/metas/exercicios', {}],
-    // A EDICAO do RPCMTec: o relatorio que o chefe assina.
+    // A EDICAO do RPCMTec: o relatorio que o chefe assina. Criar, editar os
+    // metadados e FECHAR sao atos de assinatura, e nao de area.
     ['post', '/api/rpcmtec', {}],
     ['put', '/api/rpcmtec/1', {}],
     ['post', '/api/rpcmtec/1/fechar', null],
-    ['put', '/api/rpcmtec/1/subsecao/2.1', {}],
+    // A SUBSECAO DE OUTRO MODULO. A `2.1` saiu desta lista em 2026-08-08: ela e
+    // de PRODUCAO, e pela regra nova o gerente do modulo edita a subsecao dele.
+    // Entraram no lugar a `4.2`, que e do ORCAMENTO, e a `7.1`, que nao e de
+    // modulo nenhum (equipamento tecnico nao tem cadastro em modulo algum) --
+    // as duas continuam fechadas para o gerente de Producao, e sao elas que
+    // provam que o recorte novo RECORTA em vez de so afrouxar.
+    ['put', '/api/rpcmtec/1/subsecao/4.2', {}],
+    ['put', '/api/rpcmtec/1/subsecao/7.1', {}],
     // O cadastro de usuarios, que e a porta que da a flag global a alguem.
     ['put', `/api/usuarios/${USER_UUID}`, { administrador: true, ativo: true }]
   ]

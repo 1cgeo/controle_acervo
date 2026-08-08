@@ -209,6 +209,27 @@ export const exportacoesEfetivo = (ano, mes) => [
   },
 ];
 
+/**
+ * O CADASTRO MINIMO de militar, para a tela do aproveitamento.
+ *
+ * POR QUE ELA NAO E `getUsuarios`. `GET /api/usuarios` e `verifyAdmin`, e a tela
+ * `#/aproveitamento` a pedia no MESMO `Promise.all` das rotas de `/efetivo`: o
+ * gerente do efetivo tomava 403 numa das quatro e a tela INTEIRA morria dizendo
+ * "necessita ser um administrador", com as outras tres respondendo 200. Voltar a
+ * pedir `/usuarios` aqui e reabrir isso -- e, pior, e pagar com a flag global o
+ * preco de um seletor de nomes.
+ *
+ * O RECORTE DE CAMPO E O QUE PERMITE A GUARDA MAIS BAIXA (consulta em Efetivo):
+ * daqui saem `uuid`, `nome`, `nome_guerra`, `tipo_posto_grad_id`,
+ * `tipo_posto_grad` e `ativo`, e nada mais. `login`, `administrador`,
+ * `senha_definida` e os perfis por modulo dizem quem manda no sistema e
+ * continuam so em `/usuarios`.
+ *
+ * `ativo` VEM JUNTO porque e flag de LOGIN, e e ela que sustenta o rodape de
+ * divergencia ("acessa o SCA e nao tem passagem no ano").
+ */
+export const getMilitaresEfetivo = () => apiGet('/efetivo/militares');
+
 export const getPeriodosEfetivo = (ano) =>
   apiGet(ano ? `/efetivo/periodos?ano=${ano}` : '/efetivo/periodos');
 export const createPeriodoEfetivo = (body) => apiPost('/efetivo/periodos', body);
@@ -220,6 +241,30 @@ export const getImpedimentos = (ano) =>
 export const createImpedimento = (body) => apiPost('/efetivo/impedimentos', body);
 export const updateImpedimento = (id, body) => apiPut(`/efetivo/impedimentos/${id}`, body);
 export const deleteImpedimento = (id) => apiDelete(`/efetivo/impedimentos/${id}`);
+
+// ---- O PROPRIO aproveitamento (#/perfil), de quem tem acesso ao sistema ----
+//
+// AS OITO ROTAS ACIMA SAO DO GERENTE do Efetivo desde 2026-08-08, e a tela
+// `#/aproveitamento` deixou de abrir para o operador. Estas sao a outra metade
+// da regra: cada pessoa cuida do PROPRIO aproveitamento na pagina dela. Sem
+// elas, ninguem abaixo do gerente teria como declarar o proprio impedimento, e o
+// aproveitamento da 6.1 do RPCMTec depende de cada um declarar o seu.
+//
+// O DONO NAO VIAJA NO CORPO. `usuario_uuid` nao entra em nenhum destes corpos: o
+// servidor o toma de `req.usuarioUuid`, e no PUT e no DELETE confere que a linha
+// e da propria pessoa antes de tocar nela (404 quando nao for). Acrescentar o
+// campo aqui nao mudaria nada no banco e faria a tela mentir sobre o contrato.
+export const getMeuPeriodoEfetivo = () => apiGet('/efetivo/meu_periodo');
+export const createMeuPeriodoEfetivo = (body) => apiPost('/efetivo/meu_periodo', body);
+export const updateMeuPeriodoEfetivo = (id, body) =>
+  apiPut(`/efetivo/meu_periodo/${id}`, body);
+export const deleteMeuPeriodoEfetivo = (id) => apiDelete(`/efetivo/meu_periodo/${id}`);
+
+export const getMeuImpedimento = () => apiGet('/efetivo/meu_impedimento');
+export const createMeuImpedimento = (body) => apiPost('/efetivo/meu_impedimento', body);
+export const updateMeuImpedimento = (id, body) =>
+  apiPut(`/efetivo/meu_impedimento/${id}`, body);
+export const deleteMeuImpedimento = (id) => apiDelete(`/efetivo/meu_impedimento/${id}`);
 
 // ---- Capacitacao: DUAS rotas, uma por tipo ----
 //

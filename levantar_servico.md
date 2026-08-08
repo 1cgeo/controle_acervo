@@ -104,6 +104,14 @@ caminho de máquina e segredo com valor neste repositório, que é PÚBLICO.
   senha.
 - **Interface em branco, ou 404 nos assets** -> `base` no `client/vite.config.js` tem de ser `'/'`, e
   o `build/` precisa ter sido gerado (`npm run build`).
+- **A tela chama rota que não existe, e o erro fala de OUTRO campo** ("Erro de validação dos
+  Parâmetros: `id` must be a number" no RPCMTec, na capacitação ou no dashboard) -> o `build/` que a
+  porta do servidor serve está VELHO. Ele é uma cópia, e não se atualiza com o fonte: enquanto o
+  `npm run dev-client` (3003) mostra o código de agora, a porta do servidor mostra o build da última
+  vez que alguém rodou `npm run build`. Quando uma rota é renomeada no meio, o bundle antigo chama o
+  endereço antigo, ele cai na rota de parâmetro (`/rpcmtec/:id`) e a mensagem acusa o `id`, que
+  ninguém mandou. Rode `npm run build` e recarregue com Ctrl+F5. Medido em 2026-08-08, com um build
+  de seis dias antes.
 - **Módulo some do seletor** -> a pessoa não tem linha em `dgeo.usuario_perfil` para aquele módulo, e
   não é `administrador`. Conceder é ato explícito, pela tela de usuários. Se `modulos` vier vazio no
   corpo do `POST /api/login`, o problema está no banco, não na tela.

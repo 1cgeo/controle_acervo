@@ -9,7 +9,8 @@
 //   o GERADOR      sabe quais subseções ele deve calcular;
 //   a TELA         sabe quais campos mostrar e quais deixar editáveis;
 //   o PDF          sabe a ordem, os títulos e a grade de coluna;
-//   o FECHAMENTO   sabe o que exigir antes de congelar.
+//   o FECHAMENTO   sabe o que exigir antes de congelar;
+//   a AUTORIZAÇÃO  sabe de que módulo é cada subseção (`modulo`, abaixo).
 //
 // MEDIDO no OOXML de uma edição real, no padrão de nove seções. Título,
 // cabeçalho de tabela e grade de coluna são valores LIDOS daquele arquivo, e não
@@ -25,6 +26,32 @@ const ORIGEM = {
   DIGITADA: 2,
   FIXA: 3
 }
+
+// O `modulo` de cada subseção: DE QUE ÁREA ela fala, no `nome_abrev` de
+// `dominio.modulo`. Entrou em 2026-08-08, quando o chefe recortou a escrita do
+// RPCMTec por módulo: LER o relatório inteiro é de qualquer gerente, e ESCREVER
+// uma subseção é do gerente do módulo dela. Quem cobra é
+// `rpcmtec/verify_modulo_subsecao.js`.
+//
+// O CRITÉRIO É A ORIGEM DO DADO, e não o número da seção. Por isso a 2.2, a 2.4
+// e a 2.7 são do ACERVO embora morem na seção do PIT (o que elas contam sai de
+// `acervo.versao` e de `acervo.produto`), e a 3.3 é de PRODUÇÃO embora more na
+// seção da Mapoteca (o Extra-PIT é `pit.demanda_extra`). Recortar por seção
+// entregaria o Extra-PIT a quem atende balcão e o estado do acervo a quem não
+// cataloga nada.
+//
+// `modulo: null` NÃO é esquecimento: é "de módulo nenhum", e essas ficam com o
+// ADMINISTRADOR. São a finalidade (1.1), o desenvolvimento e a TI (5.1 e 5.2), o
+// equipamento técnico (7.1), a divulgação (8.1 a 8.5) e as lições do chefe (9.1
+// a 9.3). Nenhuma delas tem cadastro em módulo algum do SCA, e não existe módulo
+// de TI nem de comunicação social: dar dono a elas por semelhança seria conceder
+// acesso que ninguém decidiu conceder. O dia em que uma ganhar cadastro, ela
+// ganha módulo aqui, numa linha.
+//
+// A CHAVE É OBRIGATÓRIA em toda subseção, inclusive nas de módulo nenhum, e
+// `verify_modulo_subsecao.js` recusa CARREGAR se faltar em alguma: sem isso,
+// subseção nova nasceria muda e cairia no administrador por omissão, que é
+// decisão demais para se tomar por descuido.
 
 // O texto da 1.1, idêntico em todas as edições desde fevereiro/2025.
 const TEXTO_FINALIDADE =
@@ -56,6 +83,7 @@ const SECOES = [
     subsecoes: [
       {
         numero: '1.1',
+        modulo: null,
         // SEM título: no documento a 1.1 é o próprio parágrafo, e não um
         // rótulo seguido de texto. O desenhador imprime "1.1. O Relatório...".
         titulo: null,
@@ -71,6 +99,7 @@ const SECOES = [
     subsecoes: [
       {
         numero: '2.1',
+        modulo: 'producao',
         titulo: 'Estado Atual do PIT',
         origem: ORIGEM.CALCULADA,
         fonte: 'pit.meta_vigente e pit.execucao',
@@ -81,6 +110,7 @@ const SECOES = [
       },
       {
         numero: '2.2',
+        modulo: 'acervo',
         titulo: 'Totais do Mês e do Ano',
         // CALCULADA desde 2026-08-05. Ela era digitada com fonte 'SAP', e nao
         // precisava ser: o que ela conta e a versao REGULAR que ficou pronta no
@@ -94,6 +124,7 @@ const SECOES = [
       },
       {
         numero: '2.3',
+        modulo: 'producao',
         titulo: 'Execução por Lote de Produção',
         origem: ORIGEM.DIGITADA,
         fonte: 'SAP',
@@ -103,6 +134,7 @@ const SECOES = [
       },
       {
         numero: '2.4',
+        modulo: 'acervo',
         titulo: 'Entregas detalhada de produtos finais (BDGEx, IGW, EBGeo) no mês',
         // CALCULADA desde 2026-08-05, pela mesma razao da 2.2. O identificador
         // que a coluna 'UUID BDGEx' pede E o `uuid_versao`: e com ele que o
@@ -121,6 +153,7 @@ const SECOES = [
       },
       {
         numero: '2.5',
+        modulo: 'producao',
         titulo: 'Atividades de campo',
         origem: ORIGEM.DIGITADA,
         fonte: 'SAP',
@@ -129,6 +162,7 @@ const SECOES = [
       },
       {
         numero: '2.6',
+        modulo: 'producao',
         titulo: 'Capacitações externas',
         origem: ORIGEM.CALCULADA,
         fonte: 'rpcmtec.capacitacao, tipo Ministrada',
@@ -139,6 +173,7 @@ const SECOES = [
       },
       {
         numero: '2.7',
+        modulo: 'acervo',
         titulo: 'Estado do Acervo',
         origem: ORIGEM.CALCULADA,
         fonte: 'acervo.produto recortado pela área de suprimento',
@@ -155,6 +190,7 @@ const SECOES = [
     subsecoes: [
       {
         numero: '3.1',
+        modulo: 'mapoteca',
         titulo: 'Totais do Mês e do Ano',
         origem: ORIGEM.CALCULADA,
         fonte: 'mapoteca.pedido',
@@ -164,6 +200,7 @@ const SECOES = [
       },
       {
         numero: '3.2',
+        modulo: 'mapoteca',
         titulo: 'Entregas da mapoteca',
         origem: ORIGEM.CALCULADA,
         fonte: 'mapoteca.pedido, cliente militar',
@@ -174,6 +211,7 @@ const SECOES = [
       },
       {
         numero: '3.3',
+        modulo: 'producao',
         titulo: 'Extra-PIT',
         origem: ORIGEM.CALCULADA,
         fonte: 'pit.demanda_extra',
@@ -184,6 +222,7 @@ const SECOES = [
       },
       {
         numero: '3.4',
+        modulo: 'mapoteca',
         titulo: 'LAI e atendimento à órgãos públicos',
         origem: ORIGEM.CALCULADA,
         fonte: 'mapoteca.pedido, cliente civil e órgão público',
@@ -204,6 +243,7 @@ const SECOES = [
     subsecoes: [
       {
         numero: '4.1',
+        modulo: 'orcamento',
         titulo: 'Execução por ND',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.pdr_item e orcamento.nota_credito',
@@ -214,6 +254,7 @@ const SECOES = [
       },
       {
         numero: '4.2',
+        modulo: 'orcamento',
         titulo: 'Situação dos créditos recebidos',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.nota_credito, classificação PDR',
@@ -223,6 +264,7 @@ const SECOES = [
       },
       {
         numero: '4.3',
+        modulo: 'orcamento',
         titulo: 'Situação RPNP',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.rpnp',
@@ -232,6 +274,7 @@ const SECOES = [
       },
       {
         numero: '4.4',
+        modulo: 'orcamento',
         titulo: 'GCALC DSG',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.licitacao, tipo GCALC DSG',
@@ -241,6 +284,7 @@ const SECOES = [
       },
       {
         numero: '4.5',
+        modulo: 'orcamento',
         titulo: 'Demais Licitações da atividade-fim',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.licitacao, tipos Própria e Participante',
@@ -250,6 +294,7 @@ const SECOES = [
       },
       {
         numero: '4.6',
+        modulo: 'orcamento',
         titulo: 'Recebimento de material',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.recebimento_material',
@@ -259,6 +304,7 @@ const SECOES = [
       },
       {
         numero: '4.7',
+        modulo: 'orcamento',
         titulo: 'Situação de créditos Extra-PDR',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.nota_credito, classificação Extra-PDR',
@@ -275,6 +321,7 @@ const SECOES = [
     subsecoes: [
       {
         numero: '5.1',
+        modulo: null,
         titulo: 'Repositórios trabalhados (https://1cgeo.github.io/github_dashboard/)',
         origem: ORIGEM.DIGITADA,
         fonte: 'CLI do github_dashboard',
@@ -284,6 +331,7 @@ const SECOES = [
       },
       {
         numero: '5.2',
+        modulo: null,
         titulo: 'Backup',
         origem: ORIGEM.DIGITADA,
         cabecalhos: ['Dado ou sistema', 'Último backup completo',
@@ -298,6 +346,7 @@ const SECOES = [
     subsecoes: [
       {
         numero: '6.1',
+        modulo: 'efetivo',
         titulo: 'Aproveitamento do efetivo',
         origem: ORIGEM.CALCULADA,
         fonte: 'dgeo.efetivo_periodo e dgeo.impedimento',
@@ -310,6 +359,7 @@ const SECOES = [
       },
       {
         numero: '6.2',
+        modulo: 'efetivo',
         titulo: 'Capacitação do efetivo',
         origem: ORIGEM.CALCULADA,
         fonte: 'rpcmtec.capacitacao, tipo Recebida',
@@ -325,6 +375,7 @@ const SECOES = [
     subsecoes: [
       {
         numero: '7.1',
+        modulo: null,
         titulo: 'Equipamento Técnico Indisponível',
         origem: ORIGEM.DIGITADA,
         cabecalhos: ['Equipamento', 'Data indisponibilidade',
@@ -333,6 +384,7 @@ const SECOES = [
       },
       {
         numero: '7.2',
+        modulo: 'mapoteca',
         titulo: 'Estoque de Insumos de Impressão - Papel',
         origem: ORIGEM.CALCULADA,
         pendencia: 'Nenhum papel em estoque',
@@ -345,6 +397,7 @@ const SECOES = [
       },
       {
         numero: '7.3',
+        modulo: 'mapoteca',
         titulo: 'Estoque de Insumos de Impressão - Tintas',
         origem: ORIGEM.CALCULADA,
         pendencia: 'Nenhuma tinta em estoque',
@@ -368,6 +421,7 @@ const SECOES = [
     subsecoes: [
       {
         numero: '8.1',
+        modulo: null,
         titulo: 'Publicações em BI das atividades e metas de produção concluídas',
         origem: ORIGEM.DIGITADA,
         cabecalhos: COLUNAS_BI,
@@ -375,6 +429,7 @@ const SECOES = [
       },
       {
         numero: '8.2',
+        modulo: null,
         titulo: 'Publicações em BI das atividades de desenvolvimento',
         origem: ORIGEM.DIGITADA,
         cabecalhos: COLUNAS_BI,
@@ -382,6 +437,7 @@ const SECOES = [
       },
       {
         numero: '8.3',
+        modulo: null,
         titulo: 'Relatórios, Ordens de Instrução e Ordens de Serviço',
         origem: ORIGEM.DIGITADA,
         fonte: 'doc_dgeo, página índice de relatórios',
@@ -390,6 +446,7 @@ const SECOES = [
       },
       {
         numero: '8.4',
+        modulo: null,
         titulo: 'Matérias de comunicação social',
         origem: ORIGEM.DIGITADA,
         cabecalhos: ['Título', 'Link de acesso'],
@@ -397,6 +454,7 @@ const SECOES = [
       },
       {
         numero: '8.5',
+        modulo: null,
         titulo: 'Artigos publicados e apresentações em congressos/conferências/etc',
         origem: ORIGEM.DIGITADA,
         cabecalhos: ['Título', 'Evento', 'Data', 'Militares'],
@@ -408,9 +466,9 @@ const SECOES = [
     numero: 9,
     titulo: '9. BOAS PRÁTICAS, LIÇÕES APRENDIDAS E OPORTUNIDADES DE MELHORIA',
     subsecoes: [
-      { numero: '9.1', titulo: 'Boas práticas', origem: ORIGEM.DIGITADA, texto: true },
-      { numero: '9.2', titulo: 'Lições aprendidas', origem: ORIGEM.DIGITADA, texto: true },
-      { numero: '9.3', titulo: 'Oportunidade de melhoria', origem: ORIGEM.DIGITADA, texto: true }
+      { numero: '9.1', modulo: null, titulo: 'Boas práticas', origem: ORIGEM.DIGITADA, texto: true },
+      { numero: '9.2', modulo: null, titulo: 'Lições aprendidas', origem: ORIGEM.DIGITADA, texto: true },
+      { numero: '9.3', modulo: null, titulo: 'Oportunidade de melhoria', origem: ORIGEM.DIGITADA, texto: true }
     ]
   }
 ]

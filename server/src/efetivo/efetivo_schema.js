@@ -71,4 +71,19 @@ models.criarImpedimento = Joi.object().keys({
 
 models.atualizarImpedimento = Joi.object().keys({ ...impedimento })
 
+// --- O PRÓPRIO aproveitamento ------------------------------------------------
+//
+// OS MESMOS CAMPOS, MENOS O MILITAR. O dono sai de `req.usuarioUuid`, que veio do
+// token já validado, e nunca do pedido: declarar `usuario_uuid` aqui seria
+// oferecer no contrato justamente o campo que estas rotas existem para não ler.
+// Quem o mandar assim mesmo cai no `stripUnknown` do `schemaValidation`, que o
+// descarta e avisa no envelope.
+//
+// SÃO OS SCHEMAS DE ATUALIZAÇÃO REAPROVEITADOS, e não cópias: `atualizarPeriodo`
+// e `atualizarImpedimento` já são exatamente "o registro sem o militar", que é o
+// corpo destas rotas. Duas declarações do mesmo conjunto divergiriam no primeiro
+// campo novo, e a que ficasse para trás seria a do próprio, que é a menos olhada.
+models.meuPeriodo = models.atualizarPeriodo
+models.meuImpedimento = models.atualizarImpedimento
+
 module.exports = models

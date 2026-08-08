@@ -10,7 +10,10 @@ const { asyncHandler, httpCode, AppError } = require('../utils')
 // de carga, onde um nome de campo errado descartado em silencio grava meia meta.
 const schemaValidation = require('../utils/schema_validation_estrito')
 
-const { verifyAcesso, verifyAdmin, verifyGerente, verifyPerfil } = require('../login')
+// SEM `verifyGerente` desde 2026-08-08: a grade da execução era a última rota do
+// sistema a usá-lo, e ela passou a cobrar consulta no módulo PRODUÇÃO. O
+// middleware continua em `login/`, sem chamador.
+const { verifyAcesso, verifyAdmin, verifyPerfil } = require('../login')
 
 const pitCtrl = require('./pit_ctrl')
 const execucaoCtrl = require('./pit_execucao_ctrl')
@@ -65,10 +68,19 @@ router.get(
 // ANTES de '/:id', como '/anos': o Express casa na ordem de declaração, e
 // 'execucao' cairia na rota do id e reprovaria na validação de parâmetro.
 //
-// LER é do GERENTE de qualquer módulo e do administrador global: o PIT é o
-// compromisso do ano, e quem responde por ele é quem responde pelo módulo. Com
-// o módulo PRODUÇÃO (1.33.0), o Gerente de Produção passa a satisfazer o
-// `verifyGerente` sem nenhuma mudança aqui, que é exatamente o desenho pedido.
+// LER é da CONSULTA EM PRODUÇÃO desde 2026-08-08, e era `verifyGerente`
+// (gerente de QUALQUER módulo, ou o administrador global). Duas coisas estavam
+// erradas no desenho antigo, e a régua nova conserta as duas:
+//
+//   O NÍVEL. Exigir gerente para OLHAR a grade era dizer que quem lança a
+//   execução não pode conferir o resultado do que lançou, porque lançar é do
+//   operador. A régua nova é a mesma dos três módulos: consulta LÊ, operador
+//   lança, gerente responde pela área.
+//
+//   O MÓDULO. O `verifyGerente` aceitava o gerente de QUALQUER módulo, inclusive
+//   quem nunca tocou em produção, e ao mesmo tempo recusava o operador de
+//   Produção. O compartimento certo para a grade do PIT é PRODUÇÃO, que é o
+//   módulo que a escreve.
 //
 // ESCREVER é do OPERADOR DE PRODUÇÃO desde a 1.33.0, e era do administrador
 // global. Lançar quanto uma meta entregou em março é o trabalho de quem toca a
@@ -86,7 +98,7 @@ router.get(
 // atrasado?" não se responde um mês por vez.
 router.get(
   '/execucao',
-  verifyGerente,
+  verifyPerfil('consulta', 'producao'),
   schemaValidation({ query: pitSchema.gradeQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.grade(req.query.ano)
@@ -99,7 +111,7 @@ router.get(
 
 router.get(
   '/execucao/resumo',
-  verifyGerente,
+  verifyPerfil('consulta', 'producao'),
   schemaValidation({ query: pitSchema.resumoQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.resumoDoAno(req.query.ano, req.query.mes)
@@ -112,7 +124,7 @@ router.get(
 
 router.get(
   '/execucao/meta/:metaId',
-  verifyGerente,
+  verifyPerfil('consulta', 'producao'),
   schemaValidation({ params: pitSchema.metaIdParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.listarDaMeta(req.params.metaId)
@@ -134,7 +146,7 @@ router.get(
 // meta a meta, que é o dado de `/execucao`.
 router.get(
   '/execucao/diagnostico',
-  verifyGerente,
+  verifyPerfil('consulta', 'producao'),
   schemaValidation({ query: pitSchema.gradeQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.diagnostico(req.query.ano)
@@ -369,12 +381,20 @@ router.delete(
 // para virar uma meta de Manual para automática, e responde inclusive na meta
 // que ainda está Manual, que é justamente a que interessa olhar.
 //
-// LER é do GERENTE e do administrador, como o resto da grade. O ensaio devolve o
-// planejado e o realizado meta a meta, ou seja, o MESMO dado de `/execucao`:
-// uma guarda mais fraca aqui seria o caminho de volta para quem a grade barra.
+// MESMA GUARDA DA GRADE, e ela acompanhou a mudança de 2026-08-08. O ensaio
+// devolve o planejado e o realizado meta a meta, ou seja, o MESMO dado de
+// `/execucao`: guarda diferente aqui é o caminho de volta para quem a grade
+// barra.
+//
+// ELA NÃO ESTAVA NA LISTA de rotas a mudar, e mudou assim mesmo, porque deixar o
+// `verifyGerente` aqui não seria "mais rígido": ele aceita o gerente de QUALQUER
+// módulo, inclusive quem não tem uma linha em Produção. Com a grade cobrando
+// consulta em PRODUÇÃO, o gerente da mapoteca perderia `/execucao` e continuaria
+// lendo o mesmo dado por este endereço. A régua nova é por COMPARTIMENTO, e não
+// só por nível, e um endereço fora dela reabre o compartimento.
 router.get(
   '/execucao/ensaio',
-  verifyGerente,
+  verifyPerfil('consulta', 'producao'),
   schemaValidation({ query: pitSchema.ensaioQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.ensaio(req.query.ano, req.query.meta_id)

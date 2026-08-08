@@ -32,37 +32,39 @@ import { renderConsumoList } from './pages/consumo/list.js';
 import { renderPlottersList } from './pages/plotters/list.js';
 import { renderPlotterDetails } from './pages/plotters/details.js';
 
-// Os dois conjuntos de tela da mapoteca. Sao LISTAS de perfil, e nao nivel
-// minimo, porque o operador daqui nao e consulta com mais poder:
+// Os conjuntos de tela da mapoteca. Sao LISTAS de perfil, e nao nivel minimo,
+// porque o operador daqui nao e consulta com mais poder:
 //
-//  - EXECUCAO: as duas telas de quem trabalha o pedido. O operador ve SO estas.
-//  - LEITURA:  o resto do modulo, que e gestao e cadastro. O operador NAO ve.
+//  - EXECUCAO: as telas de quem trabalha o pedido. O operador as ve.
+//  - LEITURA:  a gestao e o cadastro do modulo. O operador NAO ve.
+//  - TODOS:    a tela que os tres perfis abrem, cada um pelo seu motivo.
 //
-// O gerente aparece nas duas listas: ele executa e gerencia. O administrador
+// O gerente aparece em todas as listas: ele executa e gerencia. O administrador
 // global passa em qualquer lista, sem precisar de linha de perfil.
 const EXECUCAO = ['operador', 'gerente'];
 const LEITURA = ['consulta', 'gerente'];
+const TODOS = ['consulta', 'operador', 'gerente'];
 
 export default {
   id: 'mapoteca',
   icon: ICONS.print,
   home: '/dashboard',
 
-  // Ordem e agrupamento: Dashboard abre o
-  // modulo, Atender pedidos vem logo depois, e Consumo de material mora dentro
-  // de Materiais, junto do catalogo e do estoque.
+  // Ordem: Dashboard abre o modulo, Atender pedidos vem logo depois, e o trio de
+  // material (catalogo, estoque, consumo) fica entre Pedidos e Plotters.
+  //
+  // MENU PLANO, SEM GRUPO COLAPSAVEL. O grupo "Materiais" saiu: ele cobrava um
+  // clique a mais para chegar a uma tela que ja cabia na lista. Os tres itens
+  // estao no lugar exato onde o grupo estava e na mesma ordem que tinham dentro
+  // dele, entao quem ja sabia onde clicar continua sabendo, com um passo a menos.
   //
   // Nenhum item repete a restricao: o sidebar pergunta ao registry, que le
   // `perfis`/`perfil` da ROTA (podeAbrirRota). Repetir a mao foi o que fez o item
   // Configuracao do orcamento aparecer para todo mundo e cair no 403.
   //
   // O QUE ISSO FAZ COM O OPERADOR, que e quem usa Consumo todo dia: ele nao tem
-  // leitura no modulo, entao dos tres filhos de Materiais so Consumo aparece
-  // para ele (o sidebar filtra filho a filho por podeAbrirRota, e esconde o
-  // grupo inteiro quando nenhum sobra). Ele passa a ver "Materiais" com um item
-  // dentro, em vez do item solto no topo. O grupo ABRE SOZINHO quando a rota
-  // ativa e de um filho, entao estando em /consumo ele ja encontra o menu
-  // aberto e marcado. Para gerente e administrador os tres filhos aparecem.
+  // leitura no modulo, entao Tipos de Material e Estoque somem para ele e
+  // Consumo de material fica visivel, solto, sem cabecalho para abrir antes.
   menu: [
     { id: 'dashboard', label: 'Dashboard', icon: ICONS.dashboard, path: '/dashboard' },
     { id: 'atendimento', label: 'Atender pedidos', icon: ICONS.localShipping, path: '/atendimento' },
@@ -72,16 +74,9 @@ export default {
     // pedido. Um pedido pode misturar item de acervo e item avulso a vontade.
     //
     { id: 'pedidos', label: 'Pedidos', icon: ICONS.assignment, path: '/pedidos' },
-    {
-      id: 'materiais-group',
-      label: 'Materiais',
-      icon: ICONS.layers,
-      children: [
-        { id: 'materiais', label: 'Tipos de Material', icon: ICONS.category, path: '/materiais' },
-        { id: 'estoque', label: 'Estoque', icon: ICONS.storage, path: '/estoque' },
-        { id: 'consumo', label: 'Consumo de material', icon: ICONS.dataUsage, path: '/consumo' },
-      ],
-    },
+    { id: 'materiais', label: 'Tipos de Material', icon: ICONS.category, path: '/materiais' },
+    { id: 'estoque', label: 'Estoque', icon: ICONS.storage, path: '/estoque' },
+    { id: 'consumo', label: 'Consumo de material', icon: ICONS.dataUsage, path: '/consumo' },
     { id: 'plotters', label: 'Plotters', icon: ICONS.print, path: '/plotters' },
     // SEM item de RPCMTec: ele e tela de PLATAFORMA (#/rpcmtec). O relatorio e
     // da Divisao inteira, e daqui sairia so metade dele.
@@ -91,11 +86,15 @@ export default {
   // '/pedidos/:id'), senao o wizard cai no detalhe do pedido 'novo'.
   //
   // O perfil aqui e LISTA (`perfis`), e nao nivel minimo (`perfil`): na mapoteca o
-  // OPERADOR nao e "consulta com mais poder", e um papel com duas telas proprias.
-  // Com nivel minimo ele veria dashboard, clientes, pedidos e
-  // o resto, porque operador e um nivel acima de consulta.
+  // OPERADOR nao e "consulta com mais poder", e um papel com telas proprias. Com
+  // nivel minimo ele veria clientes, pedidos e o cadastro de material, porque
+  // operador e um nivel acima de consulta. Cada tela que ele ve esta listada
+  // uma a uma, de proposito.
   rotas: [
-    { path: '/dashboard', render: renderDashboard, perfis: LEITURA },
+    // TODOS, e nao LEITURA: quem atende o pedido precisa ver a fila e o que esta
+    // pendente. Deixar o operador fora do dashboard era esconder dele justamente
+    // o painel do trabalho que e dele.
+    { path: '/dashboard', render: renderDashboard, perfis: TODOS },
     { path: '/clientes', render: renderClientesList, perfis: LEITURA },
     { path: '/clientes/:id', render: renderClienteDetails, perfis: LEITURA },
     { path: '/pedidos', render: renderPedidosList, perfis: LEITURA },
@@ -108,7 +107,10 @@ export default {
     { path: '/materiais', render: renderMateriaisList, perfis: LEITURA },
     { path: '/materiais/:id', render: renderMaterialDetails, perfis: LEITURA },
     { path: '/estoque', render: renderEstoqueList, perfis: LEITURA },
-    { path: '/consumo', render: renderConsumoList, perfis: EXECUCAO },
+    // TODOS, e nao EXECUCAO: quem tem consulta entra para LER o consumo. Lancar
+    // consumo continua sendo do operador, e quem barra a escrita e o
+    // verifyPerfil('operador', 'mapoteca') do servidor, nao esta lista.
+    { path: '/consumo', render: renderConsumoList, perfis: TODOS },
     { path: '/plotters', render: renderPlottersList, perfis: LEITURA },
     { path: '/plotters/:id', render: renderPlotterDetails, perfis: LEITURA },
   ],

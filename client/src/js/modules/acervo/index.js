@@ -2,7 +2,8 @@
 // O contrato do manifesto esta em modules/registry.js.
 //
 // As rotas abaixo viram '#/acervo/<path>'. O guarda de cada uma sai de `perfil`
-// (nivel minimo NO MODULO). Escrever continua barrado no BACKEND por
+// (nivel minimo NO MODULO) ou de `admin: true` (administrador global, hoje so a
+// tela de administracao). Escrever continua barrado no BACKEND por
 // verifyPerfil(nivel, 'acervo'): o guarda de client so evita a pessoa abrir uma
 // tela que nao vai poder usar.
 //
@@ -59,11 +60,15 @@ export default {
     // consulta o acervo consulta os pontos. IMPORTAR exige gerente, e o guarda
     // disso e o backend: a tela e so de leitura, nao ha upload aqui.
     { path: '/ponto_controle', render: renderPontoControle, perfil: 'consulta' },
-    // OPERADOR, e nao consulta: e o menor nivel que faz alguma coisa nesta tela.
-    // O proprio GET de volume e operador no servidor, entao quem tem so consulta
-    // abriria uma pagina que so sabe mostrar erro. Excluir, dentro dela, e
-    // gerente, e quem barra e o verifyPerfil.
-    { path: '/administracao', render: renderAdministracao, perfil: 'operador' },
+    // ADMINISTRADOR GLOBAL, e nao operador nem gerente do acervo. O chefe separou
+    // "trabalhar no acervo" de "administrar o acervo": esta tela mexe em volume de
+    // armazenamento, tipo de produto e o que sustenta o modulo, e isso ficou com a
+    // flag global, do mesmo jeito que '/orcamento/configuracao'.
+    //
+    // E a UNICA excecao a regra nova de que o gerente ve tudo da area dele: nem o
+    // gerente do acervo abre esta. Quem barra de verdade continua sendo o
+    // servidor; `admin: true` so evita oferecer a tela a quem levaria 403.
+    { path: '/administracao', render: renderAdministracao, admin: true },
     // GERENTE, que e exatamente o que a rota GET /api/acervo/auditoria cobra
     // (o administrador global passa por cima de qualquer modulo). Nao ha nivel a
     // escolher aqui: pedir menos abriria uma tela que so sabe mostrar 403, e a

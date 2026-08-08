@@ -13,7 +13,9 @@ module.exports = {
   verifyAdmin: require('./verify_admin'),
   verifyPerfil: require('./verify_perfil'),
   // Administrador global OU gerente de qualquer módulo, lendo o perfil do BANCO.
-  // Guarda a leitura do PIT, que não é de módulo nenhum.
+  // Guarda a LEITURA do RPCMTec, que é a prestação de contas da Divisão inteira
+  // e não cabe em módulo nenhum. A escrita de subseção encadeia
+  // `rpcmtec/verify_modulo_subsecao.js` depois dele.
   verifyGerente: require('./verify_gerente'),
   // `senha` e `loginCtrl.conferirSenha` saem daqui porque autenticar e o que
   // ESTA feature faz. `usuario/` importa dos dois em vez de chamar o bcrypt por

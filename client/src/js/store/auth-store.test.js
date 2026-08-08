@@ -7,9 +7,9 @@ import {
 } from './auth-store.js';
 
 const CATALOGO = [
-  { code: 1, nome: 'Controle do Acervo', nome_abrev: 'acervo' },
+  { code: 1, nome: 'Acervo', nome_abrev: 'acervo' },
   { code: 2, nome: 'Mapoteca', nome_abrev: 'mapoteca' },
-  { code: 3, nome: 'Controle Orçamentário', nome_abrev: 'orcamento' },
+  { code: 3, nome: 'Orçamento', nome_abrev: 'orcamento' },
 ];
 
 describe('auth-store: sessao', () => {
@@ -123,8 +123,8 @@ describe('auth-store: catalogo de modulos do servidor', () => {
   test('o NOME do modulo sai do catalogo, nao de rotulo decorado', () => {
     saveAuth({ token: 't', administrador: true, uuid: 'u', perfis: {}, modulos: CATALOGO }, 'x');
     expect(getCatalogoModulos()).toHaveLength(3);
-    expect(nomeModulo('orcamento')).toBe('Controle Orçamentário');
-    expect(nomeModulo('acervo')).toBe('Controle do Acervo');
+    expect(nomeModulo('orcamento')).toBe('Orçamento');
+    expect(nomeModulo('acervo')).toBe('Acervo');
   });
 
   test('sem catalogo, cai no proprio nome_abrev em vez de quebrar', () => {
@@ -256,9 +256,14 @@ describe('auth-store: acesso ao sistema', () => {
       'x'
     );
 
+    // A ORDEM E ALFABETICA PELO NOME, e nao a de insercao do mapa `perfis`: a
+    // lista se le, e quem le procura pelo nome do modulo. Mapoteca vem antes de
+    // Orcamento. Quando os rotulos eram "Controle Orcamentario" e "Mapoteca",
+    // esta mesma asercao saia na ordem inversa -- por isso ela pina a ordem, e
+    // nao so o conteudo.
     expect(meusAcessos()).toEqual([
-      { modulo: 'orcamento', nome: 'Controle Orçamentário', nivel: 3, perfil: 'Gerente' },
       { modulo: 'mapoteca', nome: 'Mapoteca', nivel: 2, perfil: 'Operador' },
+      { modulo: 'orcamento', nome: 'Orçamento', nivel: 3, perfil: 'Gerente' },
     ]);
   });
 });

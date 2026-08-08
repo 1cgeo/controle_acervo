@@ -2,7 +2,7 @@
 
 Sistema de gerenciamento de dados geoespaciais produzidos pelo Serviço Geográfico do Exército Brasileiro (DSG/1CGEO). Gerencia produtos geográficos versionados (cartas, ortoimagens, modelos digitais de elevação), seus arquivos, volumes de armazenamento, a mapoteca física e o controle orçamentário da divisão.
 
-São **três módulos na mesma plataforma**: `acervo`, `mapoteca` e `orcamento`, com um servidor, um banco e uma interface web.
+São **cinco módulos de autorização na mesma plataforma**, com um servidor, um banco e uma interface web: `acervo`, `mapoteca` e `orcamento`, que têm tela própria e prefixo de rota, mais `producao` e `efetivo`, que nasceram na 1.33.0 e guardam telas de PLATAFORMA (a execução do PIT, o Extra-PIT, a capacitação e o aproveitamento do efetivo), para haver como dar menos que a flag global nesse trabalho.
 
 A **autenticação é do próprio SCA**: ele guarda o hash bcrypt em `dgeo.usuario.senha`, valida o login sozinho e cadastra gente pela interface. Não há serviço de autenticação externo, e por isso não há um segundo serviço a subir para alguém conseguir entrar.
 
@@ -33,9 +33,14 @@ Os CLIs são irmãos do client web, não scripts auxiliares: o client serve huma
 ### Instalação
 
 ```bash
-npm run install-all   # dependências do servidor e da interface
-npm run config        # configuração interativa (cria banco e config.env)
+npm run install-all              # dependências do servidor e da interface
+npm run config                   # configuração interativa (cria banco e config.env)
+git config core.hooksPath .githooks   # liga o pre-commit desta máquina
 ```
+
+O terceiro comando não é opcional num clone novo: este repositório é PÚBLICO, e o guard
+`scripts/check_vazamento.py` (fail-closed, em `.githooks/pre-commit`) é o que barra segredo, IP
+interno e caminho de máquina antes do commit. Sem `core.hooksPath` apontado, o hook nem roda.
 
 A configuração pergunta os dados do **primeiro administrador** (login, senha, nome, nome de guerra e posto/graduação) e o cria no banco: é com ele que se entra no sistema pela primeira vez.
 
@@ -97,7 +102,7 @@ Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
 | `/api/acessos` | plataforma | Histórico de acesso: quem entrou hoje, logins por dia, mês, usuário e cliente (admin) |
 | `/api/metas` | plataforma | Metas do PIT (o plano anual da Divisão), a execução mensal delas (`/execucao`), as revisões (`/revisoes`) e as demandas Extra-PIT (`/extra`). Ler a meta exige só login; ler a GRADE de execução exige gerente de algum módulo ou administrador; LANÇAR a execução e cadastrar Extra-PIT exige operador em **produção**; alterar a META e a REVISÃO exige administrador, porque mudar o PIT é ato da DSG |
 | `/api/rpcmtec` | plataforma | A edição mensal do RPCMTec, o documento e o PDF assinado, o Anuário Estatístico e o RTM/META4 (ODS): tudo admin, porque cruza os três módulos e traz valor de crédito. A **capacitação** é a exceção, e são DUAS rotas: `/capacitacao/ministrada` (operador em **produção**, subseção 2.6) e `/capacitacao/recebida` (operador em **efetivo**, 6.2). O `tipo_id` não vai no corpo: quem o fixa é a rota |
-| `/api/efetivo` | plataforma | Passagem de cada pessoa pela DGEO, impedimentos e o aproveitamento agregado por semana, mês e ano. Módulo **efetivo**, inclusive na leitura: operador no cadastro, gerente no mapa anual e no resumo mensal |
+| `/api/efetivo` | plataforma | Passagem de cada pessoa pela DGEO, impedimentos e o aproveitamento agregado por semana, mês e ano. Módulo **efetivo**, inclusive na leitura: **consulta** lê a tela inteira, **gerente** escreve o dado dos outros (2026-08-08). O PRÓPRIO aproveitamento tem porta separada (`/meu_periodo` e `/meu_impedimento`), sob `verifyAcesso`: o dono sai do token, e o `:id` alheio responde 404 |
 | `/api/acervo` | acervo | Operações do acervo, downloads, visões materializadas |
 | `/api/arquivo` | acervo | Upload (do plugin e do navegador), download e catalogação de arquivos |
 | `/api/produtos` | acervo | CRUD de produtos e versões, e o quadro da folha do SCN (`/folha`) |
@@ -134,7 +139,7 @@ arquivo grande. Ver `docs/decisoes.md`.
 **Formato padrão de resposta:**
 
 ```json
-{ "version": "1.26.0", "success": true, "message": "...", "dados": { }, "error": null }
+{ "version": "1.38.0", "success": true, "message": "...", "dados": { }, "error": null }
 ```
 
 ### Segurança
@@ -204,7 +209,7 @@ Cada feature segue o padrão de 4 arquivos (`index.js`, `*_ctrl.js`, `*_route.js
 
 ## Interface web
 
-Uma SPA só, em `client/`, servida na raiz pelo Express. Trocar de módulo é trocar de rota (`#/acervo/...`, `#/mapoteca/...`, `#/orcamento/...`), sem recarregar e sem novo login. O seletor mostra só os módulos em que a pessoa tem perfil; quem é administrador global vê os três.
+Uma SPA só, em `client/`, servida na raiz pelo Express. Trocar de módulo é trocar de rota (`#/acervo/...`, `#/mapoteca/...`, `#/orcamento/...`), sem recarregar e sem novo login. O seletor mostra só os módulos em que a pessoa tem perfil; quem é administrador global vê todos.
 
 ```
 client/src/js/
@@ -243,7 +248,7 @@ Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e 
 | `acervo` | projeto, lote, produto, versao, arquivo, download, miniatura, sessões de upload |
 | `ponto_controle` | pontos de controle geodésico e seus arquivos |
 | `mapoteca` | cliente, pedido, produto_pedido, impressao_item, plotter, estoque_material |
-| `orcamento` | 12 tabelas: configuracao, dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, arquivo |
+| `orcamento` | 11 tabelas: dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, arquivo. Não há `configuracao`: ela foi podada na 1.34.0 |
 | `pit` | `meta` (as metas do ano, com o que cada uma promete), `execucao` (o planejado e o realizado de cada mês) e `demanda_extra` (o Extra-PIT). Dado de referência, fora dos módulos |
 | `rpcmtec` | `edicao` (o metadado da edição mensal), `capacitacao` e `capacitacao_militar` (a ENTRADA digitada das subseções 2.6 e 6.2, com quem da Divisão participou ligado ao cadastro). As tabelas CALCULADAS do relatório continuam sendo consultas, nunca gravadas |
 | `auditoria` | `evento`: o rastro de quem mudou o quê, nos três módulos e na plataforma. Único schema sem UPDATE e sem DELETE para a aplicação |
@@ -260,9 +265,9 @@ A ordem tem razões: `limites` vem antes de `acervo`, que não o referencia mas 
 
 `create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois. O `globalSetup` LÊ a ordem do `create_config.js` em vez de copiá-la, porque a cópia apodrece.
 
-A versão do schema é **1.26.0**, carimbada em `public.versao` por `er/versao.sql`. O piso que o boot exige, `MIN_DATABASE_VERSION` (em `server/src/config.js`), é **1.25.0**.
+São DOIS números, e eles não são o mesmo: a versão do schema é carimbada em `public.versao` por `er/versao.sql`, e o piso que o boot exige é `MIN_DATABASE_VERSION`, em `server/src/config.js`. Leia os dois arquivos em vez de confiar num número escrito aqui, que envelhece a cada migração.
 
-Os dois divergem de propósito. O piso só sobe quando uma migração ACRESCENTA schema, tabela ou coluna que o código passa a ler. A 1.26.0 apenas removeu uma função e um índice que nada usava, então um banco em 1.25.0 roda esta versão sem faltar nada, e ninguém precisa migrar por obrigação.
+Eles divergem de propósito. O piso só sobe quando uma migração ACRESCENTA schema, tabela ou coluna que o código passa a ler; migração que só remove o que ninguém usava deixa o piso onde está, e assim um banco atrás da última versão continua rodando sem faltar nada, e ninguém precisa migrar por obrigação.
 
 ### Atualização de banco existente
 

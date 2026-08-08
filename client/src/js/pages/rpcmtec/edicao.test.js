@@ -50,6 +50,7 @@ vi.mock('@components/modal/confirm-dialog.js', () => ({
   confirmDialog: vi.fn(() => Promise.resolve(true)),
 }));
 
+import { saveAuth } from '@store/auth-store.js';
 import { renderRpcmtecEdicao } from '@pages/rpcmtec/edicao.js';
 import {
   getDocumento, fecharEdicao, revisarSubsecao,
@@ -90,6 +91,9 @@ function doc({ pendentes = ['3.1'], preenchida31 = false, revisoes = {} } = {}) 
           numero: '3.1',
           revisao: revisaoDe('3.1'),
           titulo: 'Atividades realizadas',
+          // O MODULO vem do servidor desde 2026-08-08, e e o que diz quem edita
+          // esta subsecao. A 3.1 e da mapoteca; a 6.x, do efetivo.
+          modulo: 'mapoteca',
           origem: 2,
           fonte: null,
           cabecalhos: ['Atividade', 'Observação'],
@@ -106,6 +110,7 @@ function doc({ pendentes = ['3.1'], preenchida31 = false, revisoes = {} } = {}) 
             numero: '6.1',
             revisao: revisaoDe('6.1'),
             titulo: 'Aproveitamento do efetivo',
+            modulo: 'efetivo',
             origem: 1,
             fonte: 'dgeo.efetivo_periodo e dgeo.impedimento',
             pendencia: PENDENCIA_6_1,
@@ -172,7 +177,12 @@ const botaoPor = (container, rotulo) => [...container.querySelectorAll('button')
 describe('renderRpcmtecEdicao', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
+    localStorage.clear();
     vi.clearAllMocks();
+    // ADMINISTRADOR por padrao: os casos deste bloco retratam quem fecha, reabre
+    // e edita metadados, e esses tres atos ficaram do administrador global em
+    // 2026-08-08. O recorte do GERENTE tem bloco proprio no fim do arquivo.
+    saveAuth({ token: 't', administrador: true, uuid: 'u', perfis: {}, modulos: [] }, 'x');
     getDocumento.mockImplementation(() => Promise.resolve(doc()));
   });
 
@@ -648,5 +658,101 @@ describe('renderRpcmtecEdicao', () => {
 
       cleanup();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// O RECORTE DO GERENTE (2026-08-08).
+//
+// O RPCMTec deixou de ser só do administrador: quem é gerente de QUALQUER módulo
+// LÊ o relatório inteiro, e edita só as subseções do módulo dele. Fechar,
+// reabrir e editar metadados continuam do administrador, porque congelar é o ato
+// que produz o documento que o chefe da Divisão assina, e os metadados dizem
+// QUEM assina.
+//
+// Quem barra de verdade é o servidor (`verifyGerente` mais
+// `verify_modulo_subsecao.js`, lendo o perfil do BANCO a cada requisição). O que
+// se prova aqui é a ERGONOMIA: não oferecer um botão que responderia 403 depois
+// de a pessoa ter digitado a subseção inteira.
+// ---------------------------------------------------------------------------
+describe('RPCMTec: o gerente lê tudo e edita só o módulo dele', () => {
+  const logarGerenteDe = (modulo) => {
+    localStorage.clear();
+    saveAuth(
+      { token: 't', administrador: false, uuid: 'u', perfis: { [modulo]: 3 }, modulos: [] },
+      'x'
+    );
+  };
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    localStorage.clear();
+    vi.clearAllMocks();
+    getDocumento.mockImplementation(() => Promise.resolve(doc()));
+  });
+
+  test('o gerente da mapoteca preenche a 3.1 e NÃO preenche a 6.1', async () => {
+    logarGerenteDe('mapoteca');
+    const { container, cleanup } = await montar();
+
+    const acoesDe = (numero) => [...subsecao(container, numero).querySelectorAll('button')]
+      .map(b => b.textContent.trim());
+
+    expect(acoesDe('3.1')).toContain('Preencher');
+    expect(acoesDe('6.1')).not.toContain('Preencher');
+    expect(acoesDe('6.1')).not.toContain('Editar');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O outro lado, para o caso acima não passar por acaso: trocando o módulo do
+  // gerente, troca a subseção que ele alcança.
+  test('o gerente do efetivo alcança a 6.1, e não a 3.1', async () => {
+    logarGerenteDe('efetivo');
+    const { container, cleanup } = await montar();
+
+    const acoesDe = (numero) => [...subsecao(container, numero).querySelectorAll('button')]
+      .map(b => b.textContent.trim());
+
+    expect(acoesDe('3.1')).not.toContain('Preencher');
+    // A 6.1 é CALCULADA, então ela não tem botão de preencher nem para quem a
+    // alcança: o que se prova é que a 3.1 sumiu por MÓDULO, e não por origem.
+    expect(acoesDe('3.1')).not.toContain('Editar');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('o gerente não fecha, não reabre e não edita metadados', async () => {
+    logarGerenteDe('mapoteca');
+    const { container, cleanup } = await montar();
+
+    expect(botaoPor(container, 'Fechar e congelar')).toBeUndefined();
+    expect(botaoPor(container, 'Editar metadados')).toBeUndefined();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A LEITURA CONTINUA INTEIRA: o gerente vê as quatro subseções e as duas
+  // saídas em ODS. Sem este caso, esconder tudo passaria nos dois de cima.
+  test('o gerente continua vendo o relatório inteiro e as saídas', async () => {
+    logarGerenteDe('mapoteca');
+    const { container, cleanup } = await montar();
+
+    for (const numero of ['3.1', '6.1', '6.2', '6.3']) {
+      expect(subsecao(container, numero)).toBeTruthy();
+    }
+    expect(botaoPor(container, 'Anuário (ODS)')).toBeTruthy();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('o administrador continua com os três atos de assinatura', async () => {
+    saveAuth({ token: 't', administrador: true, uuid: 'u', perfis: {}, modulos: [] }, 'x');
+    const { container, cleanup } = await montar();
+
+    expect(botaoPor(container, 'Fechar e congelar')).toBeTruthy();
+    expect(botaoPor(container, 'Editar metadados')).toBeTruthy();
+
+    if (typeof cleanup === 'function') cleanup();
   });
 });

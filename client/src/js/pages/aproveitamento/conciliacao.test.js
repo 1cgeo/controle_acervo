@@ -23,7 +23,10 @@ vi.mock('@services/plataforma-service.js', async () => {
     getMapaEfetivo: vi.fn(() => Promise.resolve({ ano: 2026, semanas: [], anual: [] })),
     getPeriodosEfetivo: vi.fn(() => Promise.resolve([])),
     getImpedimentos: vi.fn(() => Promise.resolve([])),
-    getUsuarios: vi.fn(() => Promise.resolve([])),
+    // `getMilitaresEfetivo`, e nao `getUsuarios`: a lista de gente desta tela sai
+    // de `GET /efetivo/militares` desde 2026-08-08. Ver o caso do irmao
+    // `index.test.js` que guarda a troca.
+    getMilitaresEfetivo: vi.fn(() => Promise.resolve([])),
   };
 });
 
@@ -31,7 +34,7 @@ import { renderAproveitamento } from '@pages/aproveitamento/index.js';
 import {
   getMapaEfetivo,
   getPeriodosEfetivo,
-  getUsuarios,
+  getMilitaresEfetivo,
 } from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
 
@@ -56,7 +59,8 @@ const PERIODOS = [
   },
 ];
 
-const USUARIOS = [
+// O que `GET /efetivo/militares` devolve: seis colunas, e nenhuma de plataforma.
+const MILITARES = [
   { uuid: 'u1', nome_guerra: 'Antigo', tipo_posto_grad: 'Cap', tipo_posto_grad_id: 10, ativo: true },
   { uuid: 'u2', nome_guerra: 'Beltrano', tipo_posto_grad: '2º Sgt', tipo_posto_grad_id: 5, ativo: false },
   { uuid: 'u3', nome_guerra: 'Ciclano', tipo_posto_grad: '1º Ten', tipo_posto_grad_id: 9, ativo: true },
@@ -89,7 +93,7 @@ const MAPA = { ano: CORRENTE, semanas: SEMANAS, anual: ANUAL };
 function comDadosDeSempre() {
   getMapaEfetivo.mockResolvedValue(MAPA);
   getPeriodosEfetivo.mockResolvedValue(PERIODOS);
-  getUsuarios.mockResolvedValue(USUARIOS);
+  getMilitaresEfetivo.mockResolvedValue(MILITARES);
 }
 
 async function montar(query = new URLSearchParams()) {

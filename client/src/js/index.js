@@ -80,17 +80,15 @@ router.add('/usuarios', withLayout(renderUsuariosList), { guard: adminLoader });
 // Dashboard do efetivo: quem esta na Divisao no mes, quanto rendeu e quanto o
 // impedimento custou, mais o historico de login (`dgeo.login`) numa aba atras.
 //
-// GERENTE DO EFETIVO, e nao mais `adminLoader`. A tela ABRE na aba Efetivo, e
-// tudo o que ela le sai de `/efetivo/*`, que cobra `verifyPerfil('gerente',
-// 'efetivo')`. O que a prendia no administrador global era a conta de
-// divergencia, feita no cliente sobre `GET /usuarios`: quem responde pelo
-// efetivo via o menu "Efetivo" e levava /unauthorized no proprio dashboard.
+// CONSULTA NO EFETIVO, pela regua nova: consulta LE as telas do modulo. Era
+// `perfilLoader('efetivo', 'gerente')`, e antes disso `adminLoader`. O que
+// baixou foi a PORTA DA TELA, e nao o que ela mostra.
 //
-// A ABA ACESSOS CONTINUA DO ADMINISTRADOR, e ela mesma se esconde de quem nao e
-// (`renderAcessos`). O servidor cobra verifyAdmin em todas as rotas de
-// /api/acessos, e a guarda daqui nao afrouxa isso.
+// A ABA ACESSOS CONTINUA DO ADMINISTRADOR GLOBAL, e ela mesma se esconde de
+// quem nao e (`renderAcessos`). O servidor cobra verifyAdmin em todas as rotas
+// de /api/acessos, e afrouxar a porta da tela nao afrouxa a aba.
 router.add('/acessos', withLayout(renderAcessos), {
-  guard: perfilLoader('efetivo', 'gerente'),
+  guard: perfilLoader('efetivo', 'consulta'),
 });
 
 // Rastreabilidade: o que foi ALTERADO nos modulos, quando e por quem. E a outra
@@ -146,25 +144,41 @@ router.add('/revisoes_pit', withLayout(renderPitAno), {
 
 // Execucao do PIT: a grade do ano, com o planejado e o realizado de cada mes.
 //
-// `gerenteLoader`, e nao `authLoader`: a leitura e do gerente de qualquer modulo
-// e do administrador. O PIT e o compromisso do ano, e quem responde por ele e
-// quem responde pelo modulo. O servidor cobra o mesmo, com `verifyGerente`,
-// lendo o perfil do BANCO.
-router.add('/execucao_pit', withLayout(renderExecucaoPit), { guard: gerenteLoader });
+// CONSULTA EM PRODUCAO, e nao mais `gerenteLoader`: a execucao do plano anual e
+// a tela de LEITURA da area de Producao, e pela regua nova quem tem consulta no
+// modulo le as telas do modulo. Ler a grade nao move nada; escrever continua
+// sendo do administrador, e quem barra e o servidor.
+router.add('/execucao_pit', withLayout(renderExecucaoPit), {
+  guard: perfilLoader('producao', 'consulta'),
+});
 
-// Extra-PIT: a excecao AUTORIZADA ao plano anual (subsecao 3.3). Mesma guarda,
-// pela mesma razao.
+// Extra-PIT: a excecao AUTORIZADA ao plano anual (subsecao 3.3).
+//
+// `acessoLoader`, o MESMO de '/metas' e pela mesma razao. As duas NAO desceram
+// para `perfilLoader('producao', ...)` quando o resto da regua mudou, e e
+// deliberado: cadastrar NC, item de PDR ou pedido de impressao obriga a escolher
+// a meta que financia ou cumpre, entao quem trabalha na mapoteca ou no orcamento
+// precisa ler o plano do ano sem ter perfil em Producao.
 router.add('/extra_pit', withLayout(renderExtraPitList), { guard: acessoLoader });
 
 // Aproveitamento do efetivo (6.1): o cadastro de quem esteve na Divisao e do que
 // impediu cada um.
 //
-// `perfilLoader('efetivo', 'operador')` desde a 1.33.0, e era `adminLoader`. O
-// servidor cobra o MESMO em /api/efetivo/periodos e /impedimentos. Ate a 1.32.0
-// so havia a flag global para guardar isto, e foi por isso que 5 das 7 contas
-// que trabalham no sistema viraram administradoras.
+// LISTA DE PERFIS, e a lista NAO E HIERARQUICA: passam consulta e gerente, e o
+// OPERADOR fica de fora. E de proposito, e e a mesma forma que a mapoteca ja usa
+// (`ehDeAlgumPerfil`, em store/auth-store.js).
+//
+// O operador ficou com o PROPRIO aproveitamento, em '#/perfil', e nao com o da
+// Divisao inteira; quem lanca pelos outros e o gerente, e quem so le e a
+// consulta. Com o minimo hierarquico o operador veria esta tela por ser um nivel
+// ACIMA de consulta, que e o contrario do que foi pedido: era
+// `perfilLoader('efetivo', 'operador')` desde a 1.33.0, e `adminLoader` antes.
+//
+// O menu decide pelo MESMO campo, entao nao ha item de sidebar que abra uma tela
+// recusada aqui. O recorte de verdade e do servidor, em /api/efetivo/periodos e
+// /impedimentos.
 router.add('/aproveitamento', withLayout(renderAproveitamento), {
-  guard: perfilLoader('efetivo', 'operador'),
+  guard: perfilLoader('efetivo', ['consulta', 'gerente']),
 });
 
 // A capacitacao e DUAS telas, em dois lugares do menu, e agora tambem DUAS
@@ -176,25 +190,35 @@ router.add('/aproveitamento', withLayout(renderAproveitamento), {
 // A GUARDA DAQUI ESPELHA A DO SERVIDOR, e nao e ela que decide: quem barra e o
 // `verifyPerfil`, lendo o perfil do BANCO a cada requisicao. Isto so evita abrir
 // uma tela que responderia 403.
+//
+// CONSULTA nas duas, e nao mais operador: abrir a lista de capacitacao e LER, e
+// pela regua nova quem tem consulta no modulo le as telas dele. O operador
+// continua sendo o unico que LANCA, e isso e recorte de botao e de rota de
+// escrita, nao da porta da tela.
 router.add('/capacitacao_ministrada', withLayout(renderCapacitacaoMinistrada), {
-  guard: perfilLoader('producao', 'operador'),
+  guard: perfilLoader('producao', 'consulta'),
 });
 router.add('/capacitacao_recebida', withLayout(renderCapacitacaoRecebida), {
-  guard: perfilLoader('efetivo', 'operador'),
+  guard: perfilLoader('efetivo', 'consulta'),
 });
 
 // RPCMTec: o relatorio mensal da Divisao, inteiro, numa tela so. Rota de
 // PLATAFORMA porque a mesma edicao fala de acervo, mapoteca e orcamento, e o
 // chefe assina uma so.
 //
-// `adminLoader`, e nao `authLoader`: o relatorio traz valor de credito, de
-// empenho e de liquidacao, e liberar por perfil de um modulo entregaria o
-// orcamento a quem so cataloga carta. O backend cobra o mesmo com verifyAdmin.
-router.add('/rpcmtec', withLayout(renderRpcmtec), { guard: adminLoader });
+// `gerenteLoader`, e nao mais `adminLoader`: QUALQUER GERENTE LE O RELATORIO
+// INTEIRO. Isto REVERTE a decisao de admin-only, que existia porque o RPCMTec
+// traz valor de credito, de empenho e de liquidacao e liberar por perfil de um
+// modulo entregaria o orcamento a quem so cataloga carta. O chefe pediu o
+// contrario: gerente responde pela area inteira, e ve tudo dela.
+//
+// A ESCRITA CONTINUA RECORTADA, e quem a barra e o servidor. A guarda daqui so
+// evita abrir uma tela que responderia 403.
+router.add('/rpcmtec', withLayout(renderRpcmtec), { guard: gerenteLoader });
 // A EDICAO de um mes. Rota propria, e nao estado dentro da lista, porque
 // consultar o RPCMTec de um mes passado e a operacao mais comum da tela e
 // precisa de endereco: quem manda "veja o de marco" manda um link.
-router.add('/rpcmtec/:id', withLayout(renderRpcmtecEdicao), { guard: adminLoader });
+router.add('/rpcmtec/:id', withLayout(renderRpcmtecEdicao), { guard: gerenteLoader });
 
 // Consulta PUBLICA de pedido da mapoteca pelo localizador (RN04). Sem sessao e
 // sem guarda: quem pediu acompanha o pedido pelo codigo XXXX-XXXX-XXXX, sem

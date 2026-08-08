@@ -32,22 +32,22 @@ describe('manifesto do modulo mapoteca', () => {
     }
   });
 
-  // O perfil de OPERADOR da mapoteca tem DUAS telas: atender
-  // pedidos e consumo de material. As duas sao execucao; o resto do modulo e
-  // consulta (ou gerente, no caso do wizard). O perfil na rota tambem decide o
-  // menu, pelo registry.podeAbrirRota, entao este campo e o que esconde o item de
-  // quem so consulta.
-  test('as telas de operador sao exatamente atendimento e consumo', () => {
+  // O perfil de OPERADOR da mapoteca tem TRES telas: o dashboard, atender
+  // pedidos e consumo de material. O resto do modulo e leitura (ou gerente, no
+  // caso do wizard). O perfil na rota tambem decide o menu, pelo
+  // registry.podeAbrirRota, entao este campo e o que esconde o item de quem so
+  // consulta.
+  test('as telas de operador sao exatamente dashboard, atendimento e consumo', () => {
     const deOperador = mapoteca.rotas
       .filter(r => (r.perfis || []).includes('operador'))
       .map(r => r.path)
       .sort();
-    expect(deOperador).toEqual(['/atendimento', '/consumo']);
+    expect(deOperador).toEqual(['/atendimento', '/consumo', '/dashboard']);
 
-    // E o operador NAO entra em mais nada: o resto do modulo e leitura, e o
-    // conjunto (em vez de nivel minimo) e o que faz isso valer.
+    // E o operador NAO entra em mais nada: o resto do modulo e cadastro e
+    // gestao, e o conjunto (em vez de nivel minimo) e o que faz isso valer.
     const semOperador = mapoteca.rotas.filter(r => !(r.perfis || []).includes('operador'));
-    expect(semOperador).toHaveLength(11);
+    expect(semOperador).toHaveLength(10);
     for (const rota of semOperador) {
       expect(rota.perfis).not.toContain('operador');
     }
@@ -57,6 +57,20 @@ describe('manifesto do modulo mapoteca', () => {
     // A restricao NAO se repete no item de menu: repetir a mao foi o que deixou o
     // item "Configuracao" do orcamento visivel para todo mundo.
     expect(menu.perfil).toBeUndefined();
+  });
+
+  // O dashboard passou a ser dos TRES perfis: quem atende o pedido precisa ver a
+  // fila e o que esta pendente. O consumo tambem: quem tem consulta entra para
+  // LER, e o lancamento continua sendo do operador, barrado no servidor.
+  test('dashboard e consumo abrem para os tres perfis do modulo', () => {
+    const perfisDe = (path) => mapoteca.rotas.find(r => r.path === path).perfis;
+    expect(perfisDe('/dashboard')).toEqual(['consulta', 'operador', 'gerente']);
+    expect(perfisDe('/consumo')).toEqual(['consulta', 'operador', 'gerente']);
+    // E o que NAO mudou: o cadastro de material e o estoque seguem sem operador,
+    // e o atendimento segue sem consulta.
+    expect(perfisDe('/materiais')).toEqual(['consulta', 'gerente']);
+    expect(perfisDe('/estoque')).toEqual(['consulta', 'gerente']);
+    expect(perfisDe('/atendimento')).toEqual(['operador', 'gerente']);
   });
 
   test('a rota estatica /pedidos/novo vem ANTES de /pedidos/:id', () => {
@@ -83,16 +97,18 @@ describe('manifesto do modulo mapoteca', () => {
     expect(JSON.stringify(mapoteca.menu)).not.toContain('/usuarios');
   });
 
-  // Ordem e agrupamento sao decisao do chefe, nao acidente de
-  // edicao: Dashboard abre, Atender pedidos vem logo depois, e Consumo mora
-  // dentro de Materiais. Sem este teste, um item novo inserido no meio da lista
-  // desfaz a ordem sem ninguem notar.
-  test('a ordem do menu comeca por Dashboard e Atender pedidos', () => {
-    const topo = mapoteca.menu.map(i => i.id);
-    expect(topo.slice(0, 2)).toEqual(['dashboard', 'atendimento']);
-    expect(topo).not.toContain('consumo');
+  // A ordem do menu e decisao do chefe, nao acidente de edicao: Dashboard abre,
+  // Atender pedidos vem logo depois, e o trio de material fica entre Pedidos e
+  // Plotters, exatamente onde o grupo colapsavel "Materiais" estava. Sem este
+  // teste, um item novo inserido no meio da lista desfaz a ordem sem ninguem
+  // notar.
+  test('a ordem do menu e a que o chefe pediu, do Dashboard aos Plotters', () => {
+    expect(mapoteca.menu.map(i => i.id)).toEqual([
+      'dashboard', 'atendimento', 'clientes', 'pedidos',
+      'materiais', 'estoque', 'consumo', 'plotters',
+    ]);
     // Produtos avulsos nao e categoria de pedido: mora DENTRO de Pedidos.
-    expect(topo).not.toContain('avulsos');
+    expect(mapoteca.menu.map(i => i.id)).not.toContain('avulsos');
   });
 
   // NAO existe "pedido avulso", nem tela de produto avulso. O que existe e um
@@ -106,32 +122,36 @@ describe('manifesto do modulo mapoteca', () => {
     expect(mapoteca.rotas.some(r => r.path.includes('avulso'))).toBe(false);
   });
 
-  test('Consumo de material mora dentro de Materiais, com catalogo e estoque', () => {
-    const grupo = mapoteca.menu.find(i => i.id === 'materiais-group');
-    expect(grupo.children.map(c => c.id)).toEqual(['materiais', 'estoque', 'consumo']);
+  // O menu e PLANO. O grupo colapsavel "Materiais" saiu porque cobrava um clique
+  // a mais para chegar a uma tela que ja cabia na lista, e o sidebar nem sabe
+  // mais abrir grupo: um `children` esquecido aqui viraria item mudo.
+  test('nenhum item de menu tem children: o menu e plano', () => {
+    expect(mapoteca.menu.find(i => i.id === 'materiais-group')).toBeUndefined();
+    for (const item of mapoteca.menu) {
+      expect(item.children, `item ${item.id} ainda tem children`).toBeUndefined();
+      expect(item.path, `item ${item.id} sem path`).toBeTruthy();
+    }
   });
 
-  // O OPERADOR e quem usa Consumo todo dia, e ele nao tem leitura no modulo.
-  // Dos tres filhos de Materiais so Consumo sobra para ele; o sidebar esconde
-  // grupo sem filho visivel, entao o que precisa valer e: sobra exatamente um, e
-  // e o Consumo. Se alguem der leitura ao operador, ou tirar o operador do
-  // consumo, este teste cai antes de o menu dele ficar vazio.
-  test('para o operador, o grupo Materiais mostra so o Consumo', () => {
-    const grupo = mapoteca.menu.find(i => i.id === 'materiais-group');
+  // O OPERADOR e quem usa Consumo todo dia, e ele nao tem leitura no modulo. Dos
+  // tres itens de material so Consumo sobra para ele, e agora sobra SOLTO na
+  // lista, sem cabecalho para abrir antes. Se alguem der leitura ao operador, ou
+  // tirar o operador do consumo, este teste cai.
+  test('dos tres itens de material, o operador ve so o Consumo', () => {
     const rotaDe = (path) => mapoteca.rotas.find(r => r.path === path);
-    const visiveisParaOperador = grupo.children
-      .filter(c => (rotaDe(c.path).perfis || []).includes('operador'))
-      .map(c => c.id);
+    const visiveisParaOperador = ['materiais', 'estoque', 'consumo']
+      .map(id => mapoteca.menu.find(i => i.id === id))
+      .filter(item => (rotaDe(item.path).perfis || []).includes('operador'))
+      .map(item => item.id);
     expect(visiveisParaOperador).toEqual(['consumo']);
     // O conjunto das rotas de operador é do caso 'as telas de operador sao
-    // exatamente atendimento e consumo': repeti-lo aqui provaria a mesma coisa
-    // pelo mesmo caminho.
+    // exatamente dashboard, atendimento e consumo': repeti-lo aqui provaria a
+    // mesma coisa pelo mesmo caminho.
   });
 
   test('todo item de menu aponta para uma rota registrada', () => {
     const caminhos = new Set(mapoteca.rotas.map(r => r.path));
-    const itens = mapoteca.menu.flatMap(i => (i.children ? i.children : [i]));
-    for (const item of itens) {
+    for (const item of mapoteca.menu) {
       expect(item.icon, `item ${item.id} sem icone`).toBeTruthy();
       expect(caminhos.has(item.path), `menu aponta para ${item.path}, que nao e rota`).toBe(true);
     }

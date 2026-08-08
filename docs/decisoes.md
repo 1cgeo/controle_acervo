@@ -46,9 +46,11 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   que o chefe assina), o cadastro de usuários e o orçamento. Também ficaram de
   fora `POST` e `DELETE /metas/extra/:id/versoes`: elas gravam em `acervo.versao`, e quem manda no
   acervo é o módulo acervo.
-  **A leitura do efetivo se partiu em dois níveis**: operador no cadastro (passagem e impedimento) e
-  GERENTE no mapa anual e no resumo mensal, que agregam a Divisão inteira num quadro só. É a mesma
-  régua da grade do PIT, que também é agregada e também é de gerente.
+  **A leitura do efetivo se partiu em dois níveis**, e essa partição durou dois dias: até 2026-08-08
+  era operador no cadastro e GERENTE no mapa anual e no resumo mensal. A régua dos três níveis a
+  substituiu, e hoje a LEITURA inteira do efetivo é de `consulta` e a ESCRITA do dado alheio é de
+  `gerente`. O que ficou daquela ideia foi o princípio: o quadro que agrega a Divisão não é do mesmo
+  nível que o lançamento de uma linha.
   O código do módulo é fixo nos DOIS lados (`dominio.modulo` e o mapa `MODULO` de
   `verify_perfil.js`), e um teste compara os dois lendo o DDL: um módulo novo só num deles faria toda
   concessão cair em "Módulo desconhecido", ou a consulta procurar um `modulo_id` que a FK recusa.
@@ -72,6 +74,17 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   **O menu acompanha**: a seção Produção era a única coisa desenhada na sidebar de quem não tinha
   perfil, e passou a exigir `temAlgumAcesso()`. Oferecer no menu uma tela que responde 403 é o mesmo
   desencontro que `podeAbrirRota` existe para evitar do lado dos módulos.
+- **A régua dos três perfis é uma FRASE, e ela vale no sistema inteiro:** `consulta` LÊ as telas do
+  módulo, `operador` LANÇA, `gerente` responde pela área e vê tudo dela. Rota nova escolhe o piso por
+  ela, e não por costume, senão cada tela nasceria com a permissão de quem a escreveu naquele dia.
+  **A lista NÃO hierárquica (`perfis: ['consulta','gerente']`) é a primeira exceção, e é
+  deliberada:** ela descreve tela que o OPERADOR não vê embora esteja acima da consulta, e por isso
+  se lê com `ehDeAlgumPerfil`, nunca com `temPerfil`. São dois casos, e cada um tem sua razão
+  escrita ao lado: a mapoteca separa quem ATENDE pedido de quem lê o acervo dela, e
+  `#/aproveitamento` deixa o operador de fora porque ele cuida só do PRÓPRIO aproveitamento, que está
+  em `#/perfil`. **A segunda exceção é `#/acervo/administracao`**, que é do ADMINISTRADOR e é a única
+  tela que o gerente da área não alcança: o chefe separou trabalhar no acervo de administrar o
+  acervo.
 - **`/api/integracao/*` não tem autenticação.** Somente leitura, para o vault da DGEO consumir o SCA
   sem credencial; expõe cobertura, produtos concluídos no mês e o agregado da mapoteca, sem endereço,
   contato nem observação de impressão.
@@ -80,7 +93,10 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **`/logs` não tem autenticação, e o CORS aceita qualquer origem.** O sistema roda em rede interna.
 - **Credencial de banco na URI de camada do QGIS.** O plugin conecta direto no PostgreSQL; é para isso
   que existe o papel somente leitura (`DB_USER_READONLY`).
-- **A grade do PIT usa `verifyGerente`, e `#/rastreabilidade` usa `verifyRastreabilidade`.** Não é
+- **A LEITURA do RPCMTec usa `verifyGerente`, e `#/rastreabilidade` usa `verifyRastreabilidade`.**
+  (O `verifyGerente` era da grade do PIT, que em 2026-08-08 desceu para
+  `verifyPerfil('consulta', 'producao')`, porque tem módulo próprio; ele foi REAPROVEITADO no
+  RPCMTec, e não recriado.) Não é
   `verifyPerfil`, que lê um módulo por vez e estas telas não são de módulo nenhum; nem `verifyLogin`,
   que lê o `administrador` do TOKEN, envelhecido até o `JWT_EXPIRACAO`. O recorte é do SERVIDOR: no
   cliente seria sugestão.
@@ -106,6 +122,9 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   `descricao` por expressão regular erra calado onde há ponto na escala e separador de milhar, e
   quantidade errada vira porcentagem errada no relatório que o chefe assina.
 - **Não existe coluna de "nome da meta":** a linha de cabeçalho (`item` nulo) já é esse nome.
+- **A NUMERAÇÃO da meta não é estável entre anos, e por isso o que se guarda é o `id`.** O PIT é
+  reescrito todo ano e a meta 4 de 2026 não é a meta 4 de 2025; quem apontar para o código teria um
+  vínculo que muda de significado sozinho na virada do ano, sem uma linha de código ter mudado.
 - **Só a meta-FOLHA recebe lançamento.** Lançar no cabeçalho contaria o total duas vezes, e as duas
   contas continuariam "certas" cada uma por si.
 - **`pit.execucao` é lançamento MANUAL para toda meta, e não há coluna de origem**, porque não há o
@@ -183,9 +202,36 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 
 ## RPCMTec e relatórios
 
-- **O RPCMTec é UM gerador só, fora dos três módulos, com guarda `verifyAdmin`.** É o relatório da
+- **O RPCMTec é UM gerador só, fora dos módulos.** É o relatório da
   DIVISÃO e o chefe assina uma edição só; gerado em dois lugares, alguém colava um DOCX no outro todo
   mês. Não é `verifyPerfil` porque ele traz valor de crédito, empenho e liquidação.
+- **A guarda dele tem TRÊS níveis desde 2026-08-08, e não mais um** (chefe): quem é GERENTE de
+  qualquer módulo LÊ o relatório inteiro (`verifyGerente`); ESCREVER uma subseção exige ser gerente
+  DO MÓDULO DELA; e FECHAR, REABRIR, criar, excluir e anexar o assinado continuam de `verifyAdmin`.
+  **Isto reverte o admin-only**, cuja razão escrita era que liberar por perfil de UM módulo entregaria
+  o orçamento a quem só cataloga carta. A razão continua valendo, e é exatamente o que o recorte da
+  escrita guarda: o gerente da mapoteca LÊ a seção 4 e não altera uma linha dela. Fechar ficou de
+  fora do recorte porque a peça é UMA: um gerente de módulo congelaria também as oito seções que não
+  são dele, e o documento é o que o chefe da Divisão assina.
+  **O mapa subseção -> módulo é a chave `modulo` de `rpcmtec_estrutura.js`**, ao lado da origem, da
+  grade e dos cabeçalhos, porque o arquivo já é a definição única de que saem o gerador, a tela, o
+  PDF e o fechamento. O critério é A ORIGEM DO DADO, e não o número da seção: a 2.2, a 2.4 e a 2.7
+  são do ACERVO embora morem na seção do PIT, e a 3.3 é de PRODUÇÃO embora more na da Mapoteca.
+  Recortar por seção entregaria o Extra-PIT a quem atende balcão.
+  **`modulo: null` é "de módulo nenhum", e fica com o administrador**: a finalidade (1.1), o
+  desenvolvimento e a TI (5.1 e 5.2), o equipamento técnico (7.1), a divulgação (8.1 a 8.5) e as
+  lições do chefe (9.1 a 9.3). Nenhuma tem cadastro em módulo algum do SCA, e não existe módulo de TI
+  nem de comunicação social: dar dono a elas por semelhança seria conceder acesso que ninguém
+  decidiu conceder.
+  **São DUAS guardas encadeadas, e não uma**, porque são duas perguntas: `verifyGerente` autentica e
+  pergunta "é gerente de ALGUM módulo?"; `rpcmtec/verify_modulo_subsecao.js` pergunta "é gerente
+  DESTE?". Ela é middleware, e não conferência no controlador, porque o alvo está em
+  `req.params.numero` e autorização mora na camada de rota: no controlador, a mesma conferência
+  apareceria em quatro métodos e a quinta rota de subseção nasceria sem ela. Ela não mora em `login/`
+  porque `login/` não sabe -- e não deve saber -- que "3.3" é uma subseção.
+  **Onde o recorte rende mais é na marca de CONFERÊNCIA**, que vale para as três origens e alcança os
+  34 blocos, e não só os 13 digitados: cada gerente carimba o que é da área dele, e o administrador
+  deixa de ser o único par de olhos antes da assinatura.
 - **A CAPACITAÇÃO virou DUAS rotas, `/capacitacao/ministrada` e `/capacitacao/recebida`** (1.33.0),
   e é a única parte de `/api/rpcmtec` que não é `verifyAdmin`. Ela mora ali por endereço, e não por
   natureza: capacitação é CADASTRO, e não relatório. A ministrada (2.6) é serviço que a Divisão presta
@@ -252,6 +298,18 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **`GET /api/rpcmtec/rtm/ods` e `GET /api/mapoteca/relatorio/impressao_detalhada_ods` chamam o MESMO
   `gerarRtmOds`.** Dois caminhos para o mesmo arquivo com formatos diferentes é a divergência que a
   fusão existiu para acabar.
+
+## Orçamento
+
+- **A NE empenha contra uma NC OBRIGATÓRIA, e herda dela ND, PI e GND.** Empenho sem crédito de
+  origem não existe no processo, e deixar os três campos livres na NE permitiria empenhar numa
+  natureza de despesa que o crédito não tem; a herança é o que faz a soma das NE fechar contra a NC.
+- **A LICITAÇÃO não tem vínculo com DFD.** O DFD é a demanda do ano e a licitação é o certame, e uma
+  licitação atende muitos DFDs, de anos diferentes. A FK sugeriria um para um, e quem a preenchesse
+  escolheria um DFD arbitrário entre os que a licitação atende.
+- **A NC tem o par `(ano, numero, cod_nd)` único por UG emitente, e não o número sozinho.** A mesma
+  UG emite números que se repetem entre anos, e a mesma nota chega quebrada por natureza de despesa.
+  **`valor_recolhido` é informativo**, e não desconta do saldo: o recolhimento é documento à parte.
 
 ## Auditoria e rastreabilidade
 
@@ -349,8 +407,8 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **Data de versão é DIA DE CALENDÁRIO: `Joi.date().iso().raw()`, nunca `Joi.date()`.** Sem o `.raw()`
   a coluna guarda 21:00 do dia anterior em UTC-3, e a carta editada no dia 1º entra no relatório do mês
   anterior, que ninguém confere folha a folha. Sem o `.iso()`, '01/08/2026' vira 8 de JANEIRO.
-- **A LÁPIDE do arquivo excluído mora num módulo só, e o vínculo com o download casa por
-  `uuid_arquivo`, NUNCA por ordem.** Copiado em três lugares, esquecer um não dava erro: a lápide
+- **A LÁPIDE do arquivo excluído mora num módulo só (`arquivo/arquivo_deletado.js`), e o vínculo com
+  o download casa por `uuid_arquivo`, NUNCA por ordem.** Copiado em três lugares, esquecer um não dava erro: a lápide
   nasce com o campo nulo. Por ordem, funcionaria hoje e trocaria os downloads de dois arquivos no dia
   em que o plano mudasse, sem erro nenhum e com as contagens ainda batendo.
 - **Modal empilhado: só o do TOPO responde ao Escape e ao Tab.** Com cada modal ouvindo o `document`,
@@ -384,6 +442,15 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 
 ## Mapoteca e plugin
 
+- **O CONSUMO só sai da Seção** (`tipo_localizacao` code 1), e material que está em outra
+  localização tem de ser TRANSFERIDO para lá antes; o trigger recusa consumo sem saldo. As quatro
+  localizações são etapas da vida do material, e não prateleiras: 1 Seção (onde se usa), 2
+  Almoxarifado, 3 Aquisição realizada e 4 Saldo no empenho (comprado e ainda não entregue). Deixar
+  consumir de qualquer uma faria a Divisão gastar, no papel, resma que ainda está com o fornecedor.
+- **A ESCALA de item de pedido nunca sai NULA, e quem garante isso é UM fragmento de SQL.** O item
+  avulso não tem carta e por isso não tem escala, e a ausência vira `'Sem escala'` no `COALESCE` do
+  `ESCALA_DISPLAY_ITEM`, e não em cada consulta: repetido consulta a consulta, o relatório que
+  esquecesse o `COALESCE` sairia com uma linha em branco no meio de um total.
 - **O plugin é cliente do MÓDULO mapoteca, e nenhuma rota dele é do acervo.** A permissão segue o
   módulo do TRABALHO, e não o do dado: quem imprime pode não ter perfil nenhum no acervo. Por isso a
   confirmação é `POST /api/mapoteca/impressao/confirmar_download`, com **o mesmo
@@ -424,9 +491,10 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   coluna por módulo sugeriria que existe administrador de módulo, que é o que o modelo não tem.
 - **A administração do acervo é UMA tela com abas (`#/acervo/administracao`).** São cadastros que se
   leem juntos, e quatro itens na sidebar dariam quatro telas de uma linha cada; só a aba ativa fica no
-  DOM, senão abrir a tela dispararia as quatro cargas. A rota pede **operador**, porque
-  `GET /volumes/volume_armazenamento` é operador no servidor e com consulta a tela abriria só para
-  mostrar erro; editar é operador e **excluir é gerente**.
+  DOM, senão abrir a tela dispararia as quatro cargas. **A rota é `admin: true` desde 2026-08-08**, e
+  é a única exceção à régua nova de que o gerente vê tudo da área dele: administrar o acervo não é
+  trabalhar no acervo. Dentro dela o servidor continua com a régua de sempre (editar é operador,
+  **excluir é gerente**), porque a tela ser de administrador não afrouxa rota nenhuma.
 - **O grupo "Diagnóstico" é GERENTE, e "Verificar volume" vem primeiro porque é ela que ESCREVE.** Para
   um operador seriam quatro sub-abas que só respondem 403. Sem rodar a verificação, a lista de arquivos
   com problema é a foto da última vez que alguém rodou, e a tela diz isso, porque lista vazia se leria

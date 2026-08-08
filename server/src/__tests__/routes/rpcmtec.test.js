@@ -4,12 +4,16 @@
 //
 // O que este arquivo protege:
 //
-//  1. A GUARDA. O relatório cruza os três módulos e traz valor de crédito, de
-//     empenho e de liquidação. Ele é admin-only, e já houve no repositório o
-//     caso oposto -- uma rota fechada por engano numa classificação automática.
-//     Aqui o risco é o inverso: alguém trocar `verifyAdmin` por um
-//     `verifyPerfil('consulta', 'acervo')` e entregar o orçamento a quem só
-//     cataloga carta.
+//  1. O PISO DA GUARDA. O relatório cruza os cinco módulos e traz valor de
+//     crédito, de empenho e de liquidação. Desde 2026-08-08 ele não é mais
+//     admin-only: qualquer GERENTE lê o relatório inteiro, e a escrita de
+//     subseção é recortada pelo módulo dela. O que este arquivo prova, contra o
+//     banco, é o PISO -- quem tem consulta no acervo e operador na mapoteca não
+//     entra por porta nenhuma --, e o risco que ele guarda é alguém trocar a
+//     guarda por um `verifyPerfil('consulta', 'acervo')` e entregar o orçamento
+//     a quem só cataloga carta. O recorte fino (gerente do módulo X escreve a
+//     subseção de X e não a de Y) é de `routes/rpcmtec_guarda.test.js`, com o
+//     banco dublê: aqui a semente não tem gerente para encenar os cinco casos.
 //
 //  2. A ESTRUTURA. São 34 blocos em nove seções, na numeração do documento da
 //     Divisão. Uma subseção que muda de número, ou some, quebra o documento sem
@@ -27,7 +31,9 @@
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
-const { generateAdminToken, generateUserToken, ADMIN_UUID } = require('../helpers/auth')
+const {
+  generateAdminToken, generateUserToken, ADMIN_UUID, USER_UUID
+} = require('../helpers/auth')
 const estrutura = require('../../rpcmtec/rpcmtec_estrutura')
 
 let app
@@ -835,9 +841,11 @@ describe('RPCMTec 2.4: só entra o que foi entregue', () => {
 })
 
 describe('RPCMTec: a guarda', () => {
-  // O relatório traz valor de crédito, de empenho e de liquidação dos três
-  // módulos. Não existe "perfil de RPCMTec" porque não existe módulo RPCMTec:
-  // ele é rota de PLATAFORMA, como usuários. Quem o gera administra o sistema.
+  // O USUÁRIO DA SEMENTE tem consulta no acervo e operador na mapoteca, e
+  // GERENTE em nenhum. Ele é o piso: não lê o relatório nem altera subseção
+  // alguma. Não existe "perfil de RPCMTec" porque não existe módulo RPCMTec --
+  // ele é rota de PLATAFORMA, como usuários --, e o que abre a leitura desde
+  // 2026-08-08 é ser gerente de QUALQUER módulo, que este usuário não é.
   const rotas = [
     '/api/rpcmtec',
     '/api/rpcmtec/anos',
@@ -849,7 +857,7 @@ describe('RPCMTec: a guarda', () => {
     '/api/rpcmtec/1/anexos'
   ]
 
-  test.each(rotas)('%s recusa quem não é administrador', async (rota) => {
+  test.each(rotas)('%s recusa quem não é gerente em módulo nenhum', async (rota) => {
     const res = await request(app).get(rota).set('Authorization', generateUserToken())
     expect(res.status).toBe(403)
   })
@@ -864,14 +872,86 @@ describe('RPCMTec: a guarda', () => {
     ['post', '/api/rpcmtec/1/reabrir'],
     // A rota de trazer o mês anterior saiu da lista em 2026-08-06, com a
     // própria rota: sem ela, a guarda testaria um 404 e não um 403.
+    //
+    // A 7.1 é de MÓDULO NENHUM (equipamento técnico não tem cadastro em módulo
+    // algum), então ela é o caso duplo: o usuário da semente para já na primeira
+    // guarda, e nem o gerente mais graduado passaria na segunda.
     ['put', '/api/rpcmtec/1/subsecao/7.1'],
-    ['delete', '/api/rpcmtec/1/subsecao/7.1']
+    ['delete', '/api/rpcmtec/1/subsecao/7.1'],
+    // E a 3.1, que TEM módulo (mapoteca): o usuário da semente é OPERADOR na
+    // mapoteca, e operador não é gerente. Sem esta linha, a lista provaria só o
+    // caso em que nem o módulo é consultado.
+    ['put', '/api/rpcmtec/1/subsecao/3.1'],
+    ['delete', '/api/rpcmtec/1/subsecao/3.1']
   ]
 
-  test.each(escritas)('%s %s recusa quem não é administrador', async (metodo, rota) => {
+  test.each(escritas)('%s %s recusa quem não é gerente', async (metodo, rota) => {
     const res = await request(app)[metodo](rota)
       .set('Authorization', generateUserToken()).send({})
     expect(res.status).toBe(403)
+  })
+})
+
+// O RECORTE POR MÓDULO contra o BANCO DE VERDADE.
+//
+// Os cinco casos de cada módulo são de `routes/rpcmtec_guarda.test.js`, com o
+// banco dublê, e não se repetem aqui. O que ESTE bloco prova é o que aquele não
+// pode provar: que o `SELECT EXISTS` de `verify_modulo_subsecao.js` casa com o
+// esquema real -- `dgeo.usuario_perfil`, `modulo_id` e `perfil_id` --, e que uma
+// concessão feita AGORA vale na requisição seguinte, sem esperar o token
+// expirar. Com o dublê, um nome de coluna errado passaria verde.
+describe('RPCMTec: o gerente do módulo escreve a subseção do módulo dele', () => {
+  const MODULO_PRODUCAO = 4
+  const NIVEL_GERENTE = 3
+
+  const daGerenteEmProducao = () => conn.none(
+    `INSERT INTO dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id)
+     SELECT id, $2, $3 FROM dgeo.usuario WHERE uuid = $1
+     ON CONFLICT (usuario_id, modulo_id) DO UPDATE SET perfil_id = EXCLUDED.perfil_id`,
+    [USER_UUID, MODULO_PRODUCAO, NIVEL_GERENTE]
+  )
+
+  // O `cleanTestData` do `afterEach` devolve o usuário ao perfil da semente
+  // (consulta no acervo, operador na mapoteca), então a concessão não vaza.
+
+  test('a 2.3, que é de produção, aceita o gerente de produção', async () => {
+    const id = await criarEdicao()
+    await daGerenteEmProducao()
+
+    const res = await request(app)
+      .put(`/api/rpcmtec/${id}/subsecao/2.3`)
+      .set('Authorization', generateUserToken())
+      .send({ linhas: [['Lote 1', '10', '3', '50%']] })
+
+    expect(res.status).toBe(200)
+  })
+
+  test('a 4.2, que é do orçamento, recusa o mesmo gerente', async () => {
+    const id = await criarEdicao()
+    await daGerenteEmProducao()
+
+    const res = await request(app)
+      .put(`/api/rpcmtec/${id}/subsecao/4.2`)
+      .set('Authorization', generateUserToken())
+      .send({ linhas: [] })
+
+    expect(res.status).toBe(403)
+    expect(res.body.message).toMatch(/módulo orcamento/i)
+  })
+
+  // A LEITURA vem junto: ser gerente de UM módulo abre o relatório INTEIRO,
+  // inclusive a seção do orçamento que ele não pode alterar.
+  test('o gerente de produção lê o documento inteiro', async () => {
+    const id = await criarEdicao()
+    await daGerenteEmProducao()
+
+    const res = await request(app)
+      .get(`/api/rpcmtec/${id}/documento`)
+      .set('Authorization', generateUserToken())
+
+    expect(res.status).toBe(200)
+    const numeros = res.body.dados.secoes.flatMap(s => s.subsecoes).map(b => b.numero)
+    expect(numeros).toContain('4.2')
   })
 })
 

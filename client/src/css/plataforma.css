@@ -189,6 +189,22 @@
   color: var(--text-secondary);
 }
 
+/* A linha que diz PARA QUE SERVE a secao, logo abaixo do titulo. Existe so em
+ * "Meu aproveitamento": as outras tres secoes se explicam pelo titulo, e esta
+ * pede o que o titulo nao diz -- que o numero dela vai para o relatorio da
+ * Divisao, e nao fica na pagina de quem digita. */
+.perfil__secao-ajuda {
+  margin: calc(-1 * var(--space-sm)) 0 var(--space-md);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+/* O erro NO LUGAR da lista, e nao um toast: a secao vazia se leria como "nao
+ * tenho nada cadastrado", que e a afirmacao oposta. */
+.perfil__erro {
+  color: var(--color-error);
+}
+
 /* Meus acessos: um par modulo/perfil por linha. Lista, e nao tabela, porque sao
  * no maximo cinco linhas de dois campos e a moldura de tabela pesaria mais que o
  * conteudo. */
@@ -490,12 +506,43 @@
 }
 
 /* ---------------------------------------------------------------------------
- * Ficha de UM militar, aberta pela linha do mapa do efetivo.
+ * Ficha de UMA pessoa: as passagens dela pela DGEO e os impedimentos.
+ *
+ * DOIS LUGARES A DESENHAM, e por isso o estilo saiu do JS: o modal que a linha
+ * do mapa de #/aproveitamento abre, e a secao "Meu aproveitamento" de #/perfil.
+ * Com o estilo escrito em linha no JS, o segundo lugar herdaria as medidas
+ * pensadas para um modal de 640px sem nada dizendo que herdou.
  *
  * Uma linha por passagem e uma por impedimento. A lista se RECONCILIA por chave
  * a cada gravacao, em vez de ser recriada: e por isso que cada linha precisa de
  * classe, e nao de estilo escrito no JS.
  * ------------------------------------------------------------------------- */
+.ficha-militar__secao {
+  margin-bottom: var(--space-lg);
+}
+
+.ficha-militar__secao:last-child {
+  margin-bottom: 0;
+}
+
+/* O titulo a esquerda e o botao "Nova" a direita, na mesma linha: o botao
+ * pertence a lista que vem embaixo dele, e nao a pagina. */
+.ficha-militar__secao-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-xs);
+}
+
+.ficha-militar__secao-titulo {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.ficha-militar__vazio {
+  color: var(--text-secondary);
+}
+
 .ficha-militar__linha {
   display: flex;
   align-items: center;

@@ -2,13 +2,13 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import { flush } from '@/__tests__/helpers/flush.js';
 import { saveAuth, clearAuth } from '@store/auth-store.js';
 import Router, {
-  acessoLoader, authLoader, adminLoader, perfilLoader, rotaRaiz,
+  acessoLoader, authLoader, adminLoader, gerenteLoader, perfilLoader, rotaRaiz,
 } from './router.js';
 
 const CATALOGO = [
-  { code: 1, nome: 'Controle do Acervo', nome_abrev: 'acervo' },
+  { code: 1, nome: 'Acervo', nome_abrev: 'acervo' },
   { code: 2, nome: 'Mapoteca', nome_abrev: 'mapoteca' },
-  { code: 3, nome: 'Controle Orçamentário', nome_abrev: 'orcamento' },
+  { code: 3, nome: 'Orçamento', nome_abrev: 'orcamento' },
 ];
 
 function logar({ administrador = false, perfis = {} } = {}) {
@@ -81,6 +81,60 @@ describe('router: guardas', () => {
     logar({ perfis: { orcamento: 3 } });
     expect(adminLoader()).toBe('/unauthorized');
   });
+
+  // A REGUA DA INTERFACE, valendo para o sistema todo: consulta LE as telas do
+  // modulo, operador LANCA, e gerente responde pela area inteira e ve tudo dela.
+  // Os testes abaixo provam os tres casos em que ela nao e obvia.
+
+  // ESTE E O CASO QUE MAIS CONFUNDE QUEM LE DEPOIS: a lista de perfis NAO E
+  // HIERARQUICA, e por isso o OPERADOR e recusado onde a consulta passa, mesmo
+  // estando um nivel acima dela. E de proposito, e guarda '#/aproveitamento': o
+  // operador cuida do PROPRIO aproveitamento, em '#/perfil', e nao da tela da
+  // Divisao inteira; quem lanca pelos outros e o gerente, e quem so le e a
+  // consulta. Com um minimo hierarquico ('operador') o operador entraria por ser
+  // um nivel acima de consulta, que e exatamente o contrario da regua.
+  test('lista de perfis nao e hierarquica: consulta e gerente entram, o operador nao', () => {
+    logar({ perfis: { efetivo: 1 } });
+    expect(perfilLoader('efetivo', ['consulta', 'gerente'])()).toBe(true);
+
+    logar({ perfis: { efetivo: 3 } });
+    expect(perfilLoader('efetivo', ['consulta', 'gerente'])()).toBe(true);
+
+    logar({ perfis: { efetivo: 2 } });
+    expect(perfilLoader('efetivo', ['consulta', 'gerente'])()).toBe('/unauthorized');
+  });
+
+  // A consulta em Producao LE a execucao do PIT e a capacitacao ministrada, que
+  // ate a regua nova pediam gerente e operador. Ler a grade nao move nada.
+  test('consulta em Producao abre as telas de leitura do modulo', () => {
+    logar({ perfis: { producao: 1 } });
+    expect(perfilLoader('producao', 'consulta')()).toBe(true);
+  });
+
+  test('consulta em Producao nao vira acesso ao Efetivo', () => {
+    logar({ perfis: { producao: 1 } });
+    expect(perfilLoader('efetivo', 'consulta')()).toBe('/unauthorized');
+  });
+
+  // `gerenteLoader` guarda o que vale para a Divisao inteira, e nao para um
+  // modulo so: a rastreabilidade, e o RPCMTec desde que ele deixou de ser
+  // admin-only. Qualquer modulo serve, porque gerente responde pela area dele e
+  // o relatorio e um so.
+  test('gerenteLoader passa o gerente de QUALQUER modulo', () => {
+    logar({ perfis: { mapoteca: 3 } });
+    expect(gerenteLoader()).toBe(true);
+
+    logar({ perfis: { producao: 3 } });
+    expect(gerenteLoader()).toBe(true);
+  });
+
+  test('gerenteLoader recusa o operador, e passa o administrador global', () => {
+    logar({ perfis: { orcamento: 2, acervo: 2 } });
+    expect(gerenteLoader()).toBe('/unauthorized');
+
+    logar({ administrador: true, perfis: {} });
+    expect(gerenteLoader()).toBe(true);
+  });
 });
 
 describe('router: rota raiz', () => {
@@ -113,17 +167,21 @@ describe('router: rota raiz', () => {
     expect(rotaRaiz()).toBe('/metas');
   });
 
-  test('so com perfil de operador em Efetivo, a raiz abre o aproveitamento', () => {
+  // O OPERADOR NAO ENTRA MAIS PELO APROVEITAMENTO. Aquela tela e a da Divisao
+  // inteira, e passou a pedir consulta OU gerente, numa lista que nao e
+  // hierarquica: mandar o operador para la seria mandar direto ao /unauthorized.
+  // O dashboard cobra so consulta, entao ele serve a todo nivel do Efetivo.
+  test('so com perfil de operador em Efetivo, a raiz abre o dashboard', () => {
     logar({ perfis: { efetivo: 2 } });
-    expect(rotaRaiz()).toBe('/aproveitamento');
+    expect(rotaRaiz()).toBe('/acessos');
   });
 
-  // CONSULTA em Efetivo nao abre tela nenhuma: a mais baixa da seção exige
-  // operador. A pessoa TEM acesso ao sistema (tem perfil), entao ela nao esta no
-  // caso de cima; o que falta e tela, e a raiz cai no proprio perfil.
-  test('consulta em Efetivo continua sem tela propria, e cai no perfil', () => {
+  // CONSULTA em Efetivo GANHOU tela com a regua nova: '#/acessos' desceu de
+  // gerente para consulta, e antes disso essa pessoa caia no proprio perfil por
+  // nao ter nenhuma.
+  test('consulta em Efetivo entra pelo dashboard do efetivo', () => {
     logar({ perfis: { efetivo: 1 } });
-    expect(rotaRaiz()).toBe('/perfil');
+    expect(rotaRaiz()).toBe('/acessos');
   });
 
   // O modulo do registry VENCE: quem tem os dois entra pelo modulo, que e onde

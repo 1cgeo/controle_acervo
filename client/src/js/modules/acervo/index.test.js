@@ -1,13 +1,15 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { saveAuth, clearAuth } from '@store/auth-store.js';
 import { perfilLoader, adminLoader } from '@js/router.js';
-import { getModulo, modulosPortados, modulosAcessiveis, rotaInicial } from '@modules/registry.js';
+import {
+  getModulo, modulosPortados, modulosAcessiveis, rotaInicial, podeAbrirRota,
+} from '@modules/registry.js';
 import acervo from './index.js';
 
 const CATALOGO = [
-  { code: 1, nome: 'Controle do Acervo', nome_abrev: 'acervo' },
+  { code: 1, nome: 'Acervo', nome_abrev: 'acervo' },
   { code: 2, nome: 'Mapoteca', nome_abrev: 'mapoteca' },
-  { code: 3, nome: 'Controle Orçamentário', nome_abrev: 'orcamento' },
+  { code: 3, nome: 'Orçamento', nome_abrev: 'orcamento' },
 ];
 
 function logar({ administrador = false, perfis = {} } = {}) {
@@ -63,12 +65,16 @@ describe('manifesto do modulo acervo', () => {
 });
 
 describe('guardas das rotas do acervo', () => {
-  // Nenhuma rota do acervo e `admin: true`: o modulo se guarda por PERFIL, e a
-  // marca de administrador global fica para rota de plataforma (#/usuarios). Uma
-  // rota de acervo com `admin` seria invisivel ao gerente do modulo, que e
-  // exatamente quem tem de administrar e auditar o acervo.
-  test('toda rota se guarda por perfil no ACERVO, nunca por admin global', () => {
+  // O modulo se guarda por PERFIL, com UMA excecao: a Administracao, que o chefe
+  // passou para o administrador global. Toda rota diz quem entra por um dos dois
+  // campos, e nenhuma fica sem dizer.
+  test('toda rota se guarda por perfil no ACERVO, salvo a Administracao', () => {
     for (const rota of acervo.rotas) {
+      if (rota.path === '/administracao') {
+        expect(rota.admin).toBe(true);
+        expect(rota.perfil).toBeUndefined();
+        continue;
+      }
       expect(rota.admin).toBeUndefined();
       expect(['consulta', 'operador', 'gerente']).toContain(rota.perfil);
     }
@@ -77,14 +83,30 @@ describe('guardas das rotas do acervo', () => {
   // O nivel de cada tela de ESCRITA fica pinado: ele espelha o verifyPerfil da
   // rota correspondente no servidor, e afrouxa-lo aqui abriria uma tela que so
   // sabe mostrar 403. A auditoria e gerente porque GET /api/acervo/auditoria e
-  // gerente; a administracao e operador porque o GET de volume e operador.
+  // gerente.
   test('as telas de escrita pedem o nivel que o servidor cobra', () => {
     const nivel = p => acervo.rotas.find(r => r.path === p).perfil;
-    expect(nivel('/administracao')).toBe('operador');
     expect(nivel('/auditoria')).toBe('gerente');
     expect(nivel('/dashboard')).toBe('consulta');
     expect(nivel('/busca')).toBe('consulta');
     expect(nivel('/ponto_controle')).toBe('consulta');
+  });
+
+  // O chefe separou "trabalhar no acervo" de "administrar o acervo", e a segunda
+  // ficou com a flag global, como '/orcamento/configuracao'. E a UNICA excecao a
+  // regra de que o gerente ve tudo da area dele, entao ela fica escrita aqui: nem
+  // gerente nem operador do acervo enxergam a tela, e o item de menu some junto,
+  // porque o sidebar deriva a visibilidade da rota (podeAbrirRota).
+  test('a Administracao e do administrador global, e some para gerente e operador', () => {
+    logar({ perfis: { acervo: 3 } });
+    expect(podeAbrirRota('acervo', '/administracao')).toBe(false);
+    expect(podeAbrirRota('acervo', '/auditoria')).toBe(true);
+
+    logar({ perfis: { acervo: 2 } });
+    expect(podeAbrirRota('acervo', '/administracao')).toBe(false);
+
+    logar({ administrador: true, perfis: {} });
+    expect(podeAbrirRota('acervo', '/administracao')).toBe(true);
   });
 
   test('quem tem consulta no acervo entra no dashboard', () => {

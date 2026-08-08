@@ -883,6 +883,22 @@ const COBERTAS = new Set([
   'POST /efetivo/impedimentos',
   'PUT /efetivo/impedimentos/:id',
   'DELETE /efetivo/impedimentos/:id',
+  // O PROPRIO aproveitamento, desde 2026-08-08. Mesmas duas tabelas, mesmo
+  // agregado (a PESSOA) e mesmo controlador: o que muda e a guarda
+  // (`verifyAcesso`, e nao gerente no modulo Efetivo) e de onde sai o dono, que
+  // aqui e SEMPRE o token. Elas existem porque a escrita das seis de cima subiu
+  // para o gerente, e sem uma porta do proprio ninguem abaixo dele declararia o
+  // proprio impedimento.
+  //
+  // O RASTRO E O MESMO, e e de proposito: a ficha da pessoa nao distingue "o
+  // gerente lancou por mim" de "eu lancei", e quem lancou esta no
+  // `usuario_uuid` do evento.
+  'POST /efetivo/meu_periodo',
+  'PUT /efetivo/meu_periodo/:id',
+  'DELETE /efetivo/meu_periodo/:id',
+  'POST /efetivo/meu_impedimento',
+  'PUT /efetivo/meu_impedimento/:id',
+  'DELETE /efetivo/meu_impedimento/:id',
 
   // O vinculo Extra-PIT x acervo. As duas gravam em acervo.versao
   // (demanda_extra_id) e registram o evento, cada uma no seu controlador.

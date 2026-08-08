@@ -314,6 +314,18 @@ const paraSaida = b => ({
   secaoTitulo: b.secaoTitulo,
   titulo: b.titulo,
   origem: b.origem,
+  // O MÓDULO DE QUEM EDITA esta subseção, ou `null` para as que são do
+  // administrador. Ele viaja para a TELA desde 2026-08-08, quando o gerente de
+  // qualquer módulo passou a LER o relatório inteiro e a editar só o que é da
+  // área dele: sem este campo, a tela ofereceria o editor de todas as 34 e o
+  // servidor responderia 403 em 33 delas.
+  //
+  // VIAJA, e não se copia: o mapa vive em `rpcmtec_estrutura.js`, que já é a
+  // definição única de que saem o gerador, o PDF, o fechamento e a guarda
+  // `verify_modulo_subsecao.js`. Uma segunda cópia no client divergiria na
+  // primeira subseção que mudasse de dono, e divergiria em SILÊNCIO: a tela
+  // continuaria desenhando o botão certo para o mapa errado.
+  modulo: b.modulo ?? null,
   fonte: b.fonte || null,
   // O QUE A TELA DIZ quando o cálculo roda e não acha nada, na palavra que a
   // Divisão usa ("Nenhuma capacitação ministrada concluída no mês"). Antes a

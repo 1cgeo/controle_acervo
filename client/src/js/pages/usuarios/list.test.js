@@ -34,9 +34,9 @@ import {
 import { showError } from '@utils/toast.js';
 
 const MODULOS = [
-  { code: 1, nome: 'Controle do Acervo', nome_abrev: 'acervo' },
+  { code: 1, nome: 'Acervo', nome_abrev: 'acervo' },
   { code: 2, nome: 'Mapoteca', nome_abrev: 'mapoteca' },
-  { code: 3, nome: 'Controle Orçamentário', nome_abrev: 'orcamento' },
+  { code: 3, nome: 'Orçamento', nome_abrev: 'orcamento' },
 ];
 
 const PERFIS = [
@@ -115,9 +115,9 @@ describe('renderUsuariosList', () => {
 
     expect(getModulos).toHaveBeenCalled();
     const cabecalhos = [...container.querySelectorAll('th')].map(th => th.textContent.trim());
-    expect(cabecalhos).toContain('Controle do Acervo');
+    expect(cabecalhos).toContain('Acervo');
     expect(cabecalhos).toContain('Mapoteca');
-    expect(cabecalhos).toContain('Controle Orçamentário');
+    expect(cabecalhos).toContain('Orçamento');
 
     if (typeof cleanup === 'function') cleanup();
   });

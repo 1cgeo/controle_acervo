@@ -235,65 +235,11 @@
   width: 0;
 }
 
-/* Collapsible group (Materiais) */
-.sidebar__group-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  width: 100%;
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  white-space: nowrap;
-  text-align: left;
-  transition: background var(--transition-fast), color var(--transition-fast);
-  cursor: pointer;
-}
-
-.sidebar__group-header:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.sidebar__group-header--active {
-  color: var(--color-primary);
-}
-
-.sidebar__group-chevron {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  transition: transform var(--transition-fast);
-}
-
-.sidebar__group--open .sidebar__group-chevron {
-  transform: rotate(180deg);
-}
-
-.sidebar__group-items {
-  display: none;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.sidebar__group--open .sidebar__group-items {
-  display: flex;
-}
-
-.sidebar__subitem {
-  padding-left: calc(var(--space-md) + 24px + var(--space-md));
-}
-
-.sidebar--collapsed .sidebar__group-chevron {
-  opacity: 0;
-  width: 0;
-}
-
-.sidebar--collapsed .sidebar__subitem {
-  padding-left: var(--space-md);
-}
+/* NAO EXISTE MAIS GRUPO COLAPSAVEL na sidebar: o menu de cada seção e plano.
+ * As regras de `.sidebar__group*` e `.sidebar__subitem` sairam junto com a
+ * maquina que as produzia (ver buildMenu em sidebar.js). O recuo dos itens
+ * dentro de uma seção e `.sidebar__module-items > .sidebar__item`, la embaixo,
+ * e nao tem nada a ver com o subitem que existia aqui. */
 
 /* Sidebar overlay for mobile */
 .sidebar-overlay {
@@ -448,13 +394,8 @@
 }
 
 /* Dentro de um modulo tudo recua um nivel, para a hierarquia se ler de relance */
-.sidebar__module-items > .sidebar__item,
-.sidebar__module-items > .sidebar__group > .sidebar__group-header {
+.sidebar__module-items > .sidebar__item {
   padding-left: calc(var(--space-md) + var(--space-lg));
-}
-
-.sidebar__module-items .sidebar__subitem {
-  padding-left: calc(var(--space-md) + var(--space-lg) + 24px + var(--space-md));
 }
 
 /* Recolhida, a sidebar mostra SO o icone de cada modulo, mais os de plataforma.

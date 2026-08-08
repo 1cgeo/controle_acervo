@@ -205,11 +205,14 @@ export function rotaRaiz() {
   // '/metas' abre para qualquer pessoa logada, entao qualquer nivel em Producao
   // basta para entrar por ela.
   if (temPerfil('consulta', 'producao')) return '/metas';
-  // Em Efetivo, a MESMA regua da home da secao na sidebar: o gerente entra pelo
-  // dashboard, e o operador pelo aproveitamento, que e a tela dele. Quem so tem
-  // consulta nao tem tela nenhuma, e cai no /unauthorized abaixo.
-  if (temPerfil('gerente', 'efetivo')) return '/acessos';
-  if (temPerfil('operador', 'efetivo')) return '/aproveitamento';
+  // Em Efetivo, QUALQUER NIVEL entra pelo dashboard. Ele e a tela de leitura da
+  // secao, e '#/acessos' cobra so consulta desde que a regua nova valeu.
+  //
+  // O OPERADOR NAO ENTRA MAIS PELO APROVEITAMENTO, e essa e a parte que morde:
+  // a tela da Divisao inteira passou a pedir consulta OU gerente, numa lista que
+  // nao e hierarquica, e mandar o operador para la seria mandar direto ao
+  // /unauthorized. O aproveitamento dele agora e o proprio, em '#/perfil'.
+  if (temPerfil('consulta', 'efetivo')) return '/acessos';
   return '/perfil';
 }
 

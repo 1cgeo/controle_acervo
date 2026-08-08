@@ -47,9 +47,9 @@ const USUARIOS = [
 ]
 
 const MODULOS = [
-  { code: 1, nome: 'Controle do Acervo', nome_abrev: 'acervo' },
+  { code: 1, nome: 'Acervo', nome_abrev: 'acervo' },
   { code: 2, nome: 'Mapoteca', nome_abrev: 'mapoteca' },
-  { code: 3, nome: 'Controle Orçamentário', nome_abrev: 'orcamento' }
+  { code: 3, nome: 'Orçamento', nome_abrev: 'orcamento' }
 ]
 
 const NIVEIS = [

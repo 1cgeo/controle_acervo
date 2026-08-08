@@ -13,9 +13,9 @@ function logar({ administrador = true, perfis = {} } = {}) {
     uuid: 'u',
     perfis,
     modulos: [
-      { code: 1, nome: 'Controle do Acervo', nome_abrev: 'acervo' },
+      { code: 1, nome: 'Acervo', nome_abrev: 'acervo' },
       { code: 2, nome: 'Mapoteca', nome_abrev: 'mapoteca' },
-      { code: 3, nome: 'Controle Orçamentário', nome_abrev: 'orcamento' },
+      { code: 3, nome: 'Orçamento', nome_abrev: 'orcamento' },
     ],
   }, 'diniz');
 }
@@ -64,12 +64,15 @@ describe('createMainLayout', () => {
     // Os três primeiros são MÓDULOS, e o nome de cada um sai de `dominio.modulo`
     // (auth-store.nomeModulo): trocar o nome no banco troca o menu, sem deploy.
     expect(rotulos.slice(0, 3)).toEqual([
-      'Controle do Acervo', 'Mapoteca', 'Controle Orçamentário',
+      'Acervo', 'Mapoteca', 'Orçamento',
     ]);
-    // "Produção" e "Efetivo" são a exceção, e são declarados na tela porque NÃO
-    // são módulos: não estão em `dominio.modulo`, não têm perfil e não entram no
-    // registry.
-    expect(rotulos.slice(3)).toEqual(['Produção', 'Efetivo']);
+    // "PIT" e "Efetivo" são a exceção, e são declarados na tela porque NÃO são
+    // módulos: não estão em `dominio.modulo` e não entram no registry.
+    //
+    // O rótulo "PIT" não é o nome do módulo: o módulo de permissão da seção é
+    // 'producao', `dominio.modulo` code 4, e continua se chamando Produção no
+    // banco. Só o menu fala do conteúdo das telas.
+    expect(rotulos.slice(3)).toEqual(['PIT', 'Efetivo']);
   });
 
   test('mudar o hash sincroniza o modulo aberto e o item ativo', () => {

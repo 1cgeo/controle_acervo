@@ -21,7 +21,15 @@ vi.mock('@services/plataforma-service.js', async () => {
     getMapaEfetivo: vi.fn(() => Promise.resolve({ ano: 2026, semanas: [], anual: [] })),
     getPeriodosEfetivo: vi.fn(() => Promise.resolve([])),
     getImpedimentos: vi.fn(() => Promise.resolve([])),
-    getUsuarios: vi.fn(() => Promise.resolve([])),
+    getMilitaresEfetivo: vi.fn(() => Promise.resolve([])),
+    // `getUsuarios` fica DUBLADO E RECUSANDO, e não removido do mock: é o que a
+    // tela recebia de verdade. `GET /api/usuarios` é `verifyAdmin`, e o gerente
+    // do efetivo tomava este 403 no mesmo `Promise.all` das rotas de `/efetivo`.
+    // Com o dublê resolvendo uma lista vazia, a tela que voltasse a chamá-la
+    // passaria despercebida.
+    getUsuarios: vi.fn(() => Promise.reject(
+      new Error('Usuário necessita ser um administrador')
+    )),
   };
 });
 
@@ -29,6 +37,8 @@ import { renderAproveitamento } from '@pages/aproveitamento/index.js';
 import {
   getMapaEfetivo,
   getImpedimentos,
+  getMilitaresEfetivo,
+  getUsuarios,
 } from '@services/plataforma-service.js';
 import { saveAuth } from '@store/auth-store.js';
 
@@ -143,6 +153,52 @@ describe('renderAproveitamento', () => {
   // 'plural tratado' em conciliacao.test.js, sobre a MESMA fixture anual. Lá as
   // asserções ainda checam os rótulos "ponderad" e "simples", e ficam escopadas
   // ao `.efetivo-resumo` em vez do texto da página inteira.
+
+  // -------------------------------------------------------------------------
+  // A LISTA DE GENTE VEM DO MODULO EFETIVO, e nao do cadastro de plataforma.
+  //
+  // O DEFEITO QUE ISTO FECHA: a tela pedia `GET /api/usuarios` (verifyAdmin) no
+  // MESMO `Promise.all` das tres rotas de `/efetivo`. O gerente do efetivo tomava
+  // 403 so nela, e o `Promise.all` derrubava a tela INTEIRA com "necessita ser um
+  // administrador" -- com as outras tres respondendo 200.
+  // -------------------------------------------------------------------------
+  test('a tela nao pede mais /usuarios, e por isso sobrevive ao 403 dele', async () => {
+    getMapaEfetivo.mockResolvedValueOnce({ ano: 2026, semanas: SEMANAS, anual: ANUAL });
+
+    const { container, cleanup } = await montar();
+
+    // O dublê de `getUsuarios` RECUSA, como o servidor faz com quem não é
+    // administrador. Se a tela ainda o chamasse, o `Promise.all` cairia e não
+    // haveria mapa nenhum aqui.
+    expect(getUsuarios).not.toHaveBeenCalled();
+    expect(getMilitaresEfetivo).toHaveBeenCalled();
+    expect(linhas(container).length).toBe(2);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O SELETOR e o RODAPE eram os dois consumidores do retorno de `getUsuarios`, e
+  // os dois leem `tipo_posto_grad` (o nome que a coluna do cadastro tem) enquanto
+  // o resto da tela usa `posto_abrev`. A rota nova mantem esse nome, e este caso
+  // e o que faz a traducao continuar valendo.
+  test('o rodape de divergencia sai da lista nova, com posto e nome de guerra', async () => {
+    getMapaEfetivo.mockResolvedValueOnce({ ano: 2026, semanas: SEMANAS, anual: ANUAL });
+    getMilitaresEfetivo.mockResolvedValueOnce([
+      // Ativo e sem passagem no ano: é a única divergência que a tela nomeia.
+      {
+        uuid: 'u9', nome: 'Ciclano de Tal', nome_guerra: 'Ciclano',
+        tipo_posto_grad: '1º Ten', tipo_posto_grad_id: 9, ativo: true,
+      },
+    ]);
+
+    const { container, cleanup } = await montar();
+
+    const aviso = container.querySelector('.efetivo-divergencia--ativo-sem-passagem');
+    expect(aviso).not.toBeNull();
+    expect(aviso.textContent).toContain('1º Ten Ciclano');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
 
   test('ano sem ninguem convida ao primeiro cadastro, e nao mostra tabela vazia', async () => {
     const { container, cleanup } = await montar();

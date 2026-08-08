@@ -2,12 +2,44 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { flush } from '@/__tests__/helpers/flush.js';
 
 // Meu perfil (#/perfil): o proprio cadastro e a troca da PROPRIA senha, que so
-// passaram a existir, com a autenticacao vindo para dentro do SCA.
-vi.mock('@services/plataforma-service.js', () => ({
-  getMeuPerfil: vi.fn(() => Promise.resolve({})),
-  atualizarMeuPerfil: vi.fn(() => Promise.resolve(null)),
-  alterarMinhaSenha: vi.fn(() => Promise.resolve(null)),
-  getPostosGrad: vi.fn(() => Promise.resolve([])),
+// passaram a existir, com a autenticacao vindo para dentro do SCA. Desde
+// 2026-08-08 tambem o PROPRIO aproveitamento.
+//
+// AS ROTAS DO GERENTE FICAM DUBLADAS E RECUSANDO. Elas sao `verifyPerfil('gerente',
+// 'efetivo')`, e a secao "Meu aproveitamento" nunca pode alcanca-las: com um duble
+// que resolvesse, a tela que voltasse a chama-las passaria despercebida.
+vi.mock('@services/plataforma-service.js', async () => {
+  const real = await vi.importActual('@services/plataforma-service.js');
+  const doGerente = (nome) => vi.fn(() => Promise.reject(
+    new Error(`Usuário necessita do perfil gerente no módulo efetivo (${nome})`)
+  ));
+  return {
+    ...real,
+    getMeuPerfil: vi.fn(() => Promise.resolve({})),
+    atualizarMeuPerfil: vi.fn(() => Promise.resolve(null)),
+    alterarMinhaSenha: vi.fn(() => Promise.resolve(null)),
+    getPostosGrad: vi.fn(() => Promise.resolve([])),
+
+    getMeuPeriodoEfetivo: vi.fn(() => Promise.resolve([])),
+    getMeuImpedimento: vi.fn(() => Promise.resolve([])),
+    createMeuPeriodoEfetivo: vi.fn(() => Promise.resolve({ id: 1 })),
+    updateMeuPeriodoEfetivo: vi.fn(() => Promise.resolve({ id: 1 })),
+    deleteMeuPeriodoEfetivo: vi.fn(() => Promise.resolve(null)),
+    createMeuImpedimento: vi.fn(() => Promise.resolve({ id: 1 })),
+    updateMeuImpedimento: vi.fn(() => Promise.resolve({ id: 1 })),
+    deleteMeuImpedimento: vi.fn(() => Promise.resolve(null)),
+
+    createPeriodoEfetivo: doGerente('createPeriodoEfetivo'),
+    updatePeriodoEfetivo: doGerente('updatePeriodoEfetivo'),
+    deletePeriodoEfetivo: doGerente('deletePeriodoEfetivo'),
+    createImpedimento: doGerente('createImpedimento'),
+    updateImpedimento: doGerente('updateImpedimento'),
+    deleteImpedimento: doGerente('deleteImpedimento'),
+  };
+});
+
+vi.mock('@components/modal/confirm-dialog.js', () => ({
+  confirmDialog: vi.fn(() => Promise.resolve(true)),
 }));
 
 vi.mock('@utils/toast.js', () => ({
@@ -22,7 +54,11 @@ import { renderPerfil } from '@pages/perfil/index.js';
 import { saveAuth } from '@store/auth-store.js';
 import {
   getMeuPerfil, atualizarMeuPerfil, alterarMinhaSenha, getPostosGrad,
+  getMeuPeriodoEfetivo, getMeuImpedimento,
+  createMeuPeriodoEfetivo, deleteMeuImpedimento,
+  createPeriodoEfetivo, deleteImpedimento,
 } from '@services/plataforma-service.js';
+import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { showError } from '@utils/toast.js';
 
 const POSTOS = [
@@ -42,7 +78,7 @@ const PERFIL = {
 };
 
 const CATALOGO = [
-  { code: 1, nome: 'Controle do Acervo', nome_abrev: 'acervo' },
+  { code: 1, nome: 'Acervo', nome_abrev: 'acervo' },
   { code: 2, nome: 'Mapoteca', nome_abrev: 'mapoteca' },
 ];
 
@@ -58,6 +94,9 @@ beforeEach(() => {
   logar({ perfis: { mapoteca: 2 } });
   getMeuPerfil.mockResolvedValue(PERFIL);
   getPostosGrad.mockResolvedValue(POSTOS);
+  getMeuPeriodoEfetivo.mockResolvedValue([]);
+  getMeuImpedimento.mockResolvedValue([]);
+  confirmDialog.mockResolvedValue(true);
 });
 
 async function montar() {
@@ -208,7 +247,7 @@ describe('perfil: meus acessos', () => {
 
     const linhas = acessos(container);
     expect(linhas).toHaveLength(2);
-    expect(linhas.join(' ')).toContain('Controle do Acervo');
+    expect(linhas.join(' ')).toContain('Acervo');
     expect(linhas.join(' ')).toContain('Gerente');
     expect(linhas.join(' ')).toContain('Mapoteca');
     expect(linhas.join(' ')).toContain('Operador');
@@ -250,6 +289,165 @@ describe('perfil: meus acessos', () => {
 
     expect(acessos(container)).toHaveLength(CATALOGO.length);
     expect(container.querySelector('.perfil__sem-acesso')).toBeNull();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Meu aproveitamento
+//
+// POR QUE ESTA SECAO EXISTE. Em 2026-08-08 a escrita da passagem e do impedimento
+// DOS OUTROS subiu para o gerente do modulo Efetivo, e `#/aproveitamento` deixou
+// de abrir para o operador. Sem esta secao, ninguem abaixo do gerente teria como
+// declarar o PROPRIO impedimento -- e o aproveitamento da 6.1 do RPCMTec depende
+// de cada um declarar o seu.
+//
+// O QUE OS CASOS FIXAM, e que nao se ve olhando a tela:
+//  - a secao grava pelas rotas do PROPRIO (`/efetivo/meu_*`), e NUNCA pelas do
+//    gerente. Os dubles das do gerente RECUSAM, entao a tela que se enganar de
+//    rota falha aqui em vez de falhar no servidor de quem usa;
+//  - `usuario_uuid` NAO viaja no corpo: quem decide o dono e o token;
+//  - quem nao tem perfil em modulo nenhum nao ve a secao, porque a rota e
+//    `verifyAcesso` e responderia 403;
+//  - a falha ao carregar fica DENTRO da secao. Junta-la ao `getMeuPerfil` num
+//    `Promise.all` repetiria o defeito que derrubava `#/aproveitamento` inteira.
+// ---------------------------------------------------------------------------
+describe('perfil: meu aproveitamento', () => {
+  const PASSAGEM = {
+    id: 7, usuario_uuid: 'u-1', data_inicio: '2026-03-01', data_fim: null,
+    observacao: 'Vindo do 5 CGEO',
+  };
+
+  const IMPEDIMENTO = {
+    id: 9, usuario_uuid: 'u-1', descricao: 'Chefe do S5', percentual: 50,
+    data_inicio: '2026-04-01', data_fim: null,
+  };
+
+  const secoes = (container) => [...container.querySelectorAll('.perfil__secao-titulo')]
+    .map(h => h.textContent);
+
+  // Dentro do CONTAINER, e não do documento: a página de perfil é montada num nó
+  // solto, e só os modais vão para o `body`.
+  const linhaDa = (container, texto) =>
+    [...container.querySelectorAll('.ficha-militar__linha')]
+      .find(d => d.textContent.includes(texto));
+
+  const botao = (raiz, titulo) => [...raiz.querySelectorAll('button')]
+    .find(b => b.title === titulo);
+
+  test('a secao fica entre "Meus acessos" e "Meus dados"', async () => {
+    const { container, cleanup } = await montar();
+
+    // A ORDEM E A DECISAO: quem abre esta pagina abre pelo que pode e pelo que
+    // precisa declarar. Corrigir o nome de guerra e ato raro, e vem depois.
+    expect(secoes(container)).toEqual([
+      'Meus acessos', 'Meu aproveitamento', 'Meus dados', 'Trocar senha',
+    ]);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('lista a propria passagem e o proprio impedimento', async () => {
+    getMeuPeriodoEfetivo.mockResolvedValue([PASSAGEM]);
+    getMeuImpedimento.mockResolvedValue([IMPEDIMENTO]);
+
+    const { container, cleanup } = await montar();
+
+    expect(getMeuPeriodoEfetivo).toHaveBeenCalled();
+    expect(getMeuImpedimento).toHaveBeenCalled();
+
+    const ficha = container.querySelector('.ficha-militar');
+    expect(ficha).not.toBeNull();
+    // A passagem em aberto se le como "Atual", e nao como campo em branco.
+    expect(ficha.textContent).toContain('Atual');
+    expect(ficha.textContent).toContain('Chefe do S5 (50%)');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('cadastrar passagem vai pela rota do PROPRIO, sem usuario_uuid no corpo', async () => {
+    const { container, cleanup } = await montar();
+
+    const secaoPassagens = [...container.querySelectorAll('.ficha-militar__secao')]
+      .find(s => s.textContent.includes('Passagens pela DGEO'));
+    [...secaoPassagens.querySelectorAll('button')]
+      .find(b => b.textContent === 'Nova')
+      .click();
+    await flush();
+
+    const modal = document.querySelector('.modal');
+    expect(modal).not.toBeNull();
+    // O SELETOR DE MILITAR NAO EXISTE aqui: a pessoa ja e conhecida, e um
+    // controle com uma opcao so seria a pergunta que a pagina ja respondeu.
+    expect(modal.textContent).not.toContain('Militar');
+
+    modal.querySelector('input[type="date"]').value = '2026-03-01';
+
+    [...document.querySelectorAll('button')]
+      .find(b => b.textContent === 'Salvar')
+      .click();
+    await flush();
+    await flush();
+
+    // O CORPO NAO LEVA O DONO. O servidor o toma de `req.usuarioUuid`, e mandar
+    // o campo aqui seria uma chave desconhecida, descartada com aviso.
+    expect(createMeuPeriodoEfetivo).toHaveBeenCalledWith({
+      data_inicio: '2026-03-01',
+      data_fim: null,
+      observacao: null,
+    });
+    // E a rota do GERENTE nao foi tocada. O duble dela RECUSA: sem esta linha, a
+    // tela que se enganasse de rota so falharia no servidor de quem usa.
+    expect(createPeriodoEfetivo).not.toHaveBeenCalled();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('excluir impedimento vai pela rota do PROPRIO', async () => {
+    getMeuImpedimento.mockResolvedValue([IMPEDIMENTO]);
+
+    const { container, cleanup } = await montar();
+
+    botao(linhaDa(container, 'Chefe do S5'), 'Excluir').click();
+    await flush();
+    await flush();
+
+    expect(deleteMeuImpedimento).toHaveBeenCalledWith(9);
+    expect(deleteImpedimento).not.toHaveBeenCalled();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A rota e `verifyAcesso`: quem nao tem perfil em modulo NENHUM leva 403 dela.
+  // Oferecer o botao seria prometer o que a conta ainda nao pode.
+  test('sem acesso a modulo nenhum, a secao nao aparece e as rotas nao sao chamadas', async () => {
+    logar({ perfis: {} });
+    const { container, cleanup } = await montar();
+
+    expect(secoes(container)).not.toContain('Meu aproveitamento');
+    expect(getMeuPeriodoEfetivo).not.toHaveBeenCalled();
+    expect(getMeuImpedimento).not.toHaveBeenCalled();
+    // E a pagina continua sendo dela: os dois formularios seguem la.
+    expect(container.querySelectorAll('.perfil__form')).toHaveLength(2);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O DEFEITO QUE ISTO FECHA e o mesmo que derrubava `#/aproveitamento`: uma
+  // chamada que pode recusar dentro do `Promise.all` da pagina mata a pagina
+  // inteira. Aqui a falha fica dentro da secao.
+  test('a falha do aproveitamento nao derruba a pagina', async () => {
+    getMeuImpedimento.mockRejectedValueOnce(new Error('Falha de rede'));
+
+    const { container, cleanup } = await montar();
+
+    const erro = container.querySelector('.perfil__erro');
+    expect(erro).not.toBeNull();
+    expect(erro.textContent).toBe('Falha de rede');
+    // Os dois formularios continuam de pe, e o cadastro tambem.
+    expect(container.querySelectorAll('.perfil__form')).toHaveLength(2);
+    expect(campo(container, 'Login').value).toBe('sgt.silva');
 
     if (typeof cleanup === 'function') cleanup();
   });

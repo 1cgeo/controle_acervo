@@ -1,31 +1,46 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import {
-  isAdmin, nomeModulo, ehGerenteDeAlgumModulo, temPerfil, temAlgumAcesso,
+  isAdmin, nomeModulo, ehGerenteDeAlgumModulo, temPerfil, ehDeAlgumPerfil, temAlgumAcesso,
 } from '@store/auth-store.js';
 import { getModulo, modulosAcessiveis, rotaInicial, podeAbrirRota } from '@modules/registry.js';
 
 /**
  * Itens de PLATAFORMA, fora de qualquer modulo: valem nos tres.
  *
- * `admin: true` esconde o item de quem nao e administrador global. As Metas do
- * PIT NAO levam a marca: qualquer pessoa logada le o plano anual da Divisao, e o
- * backend cobra o administrador so na escrita. Dentro de um modulo, elas
- * ficariam invisiveis para quem so tem perfil em outro.
+ * As DUAS sao do administrador global E do gerente de qualquer modulo, e por
+ * isso as duas levam `visivel`: nem `admin: true` nem a ausencia de marca
+ * descrevem "administrador OU gerente", que e o que as rotas cobram
+ * (`gerenteLoader`, em index.js). O piso das telas de plataforma que valem para
+ * qualquer conta com acesso (o PIT do ano e o Extra-PIT) fica na seção PIT, e
+ * nao aqui.
  */
 const MENU_PLATAFORMA = [
-  // SEM "Metas do PIT": ela e a primeira tela da seção Produção, ao lado da
+  // SEM "Metas do PIT": ela e a primeira tela da seção PIT, ao lado da
   // execução mensal e do Extra-PIT.
   //
-  // O RPCMTec LEVA a marca de administrador: ele cruza os tres modulos numa peca
-  // so, com valor de credito e de empenho dentro.
-  { id: 'rpcmtec', label: 'RPCMTec', icon: ICONS.print, path: '/rpcmtec', admin: true },
+  // O RPCMTec PERDEU a marca de administrador, e passou a ser do administrador
+  // global E do gerente de qualquer modulo, como a Rastreabilidade abaixo.
+  //
+  // Isto REVERTE o admin-only, que existia porque o relatorio cruza os tres
+  // modulos numa peca so, com valor de credito, de empenho e de liquidacao
+  // dentro, e liberar por perfil de um modulo entregaria o orcamento a quem so
+  // cataloga carta. O chefe pediu o contrario: gerente responde pela area
+  // inteira, e le o relatorio inteiro. A rota virou `gerenteLoader`, e a ESCRITA
+  // continua recortada no servidor.
+  {
+    id: 'rpcmtec',
+    label: 'RPCMTec',
+    icon: ICONS.print,
+    path: '/rpcmtec',
+    visivel: () => isAdmin() || ehGerenteDeAlgumModulo(),
+  },
   // Rastreabilidade: o que foi alterado nos modulos, quando e por quem. NAO leva
   // `admin: true`, e nao e esquecimento: ela e do administrador global E do
   // gerente de qualquer modulo, que ve o recorte do modulo dele. Quem decide o
   // recorte e o servidor (verifyRastreabilidade), e o `visivel` daqui so evita
   // oferecer a tela a quem levaria 403.
   //
-  // Fora do grupo "Usuarios" de proposito: aquele grupo e sobre PESSOAS, e este
+  // Fora da seção "Efetivo" de proposito: aquela seção e sobre PESSOAS, e este
   // item e sobre o que aconteceu com os DADOS. Ele tambem nao se confunde com
   // #/acervo/auditoria, que mede a coerencia do acervo hoje e nao diz quem
   // produziu a incoerencia.
@@ -62,41 +77,45 @@ const MENU_PLATAFORMA = [
  * item ativo sai do primeiro segmento da rota (`activeIdFromPath`), e o FILHO
  * '/usuarios' precisa dela.
  *
- * A SEÇÃO PERDEU o `admin: true`, e a marca desceu para os itens que continuam
- * sendo do administrador global (Dashboard e Gestão, que são conta de sistema).
- * O aproveitamento e a capacitação recebida passaram a ser do OPERADOR do módulo
- * Efetivo, e com a marca na seção o operador não veria seção nenhuma.
+ * A SEÇÃO PERDEU o `admin: true`, e sobrou UM item com a marca: a Gestão, que é
+ * conta de sistema. As outras três telas são do módulo Efetivo, e cada uma
+ * declara o `visivel` que a rota dela cobra em `index.js` -- inclusive o
+ * Aproveitamento, que é o único a NÃO usar mínimo hierárquico.
  *
- * A HOME É CALCULADA pelo mesmo motivo: o cabeçalho é um link, e mandar o
- * operador para '#/acessos' o jogaria em /unauthorized ao clicar no nome da
- * seção que é dele.
+ * A SEÇÃO DESCEU ATÉ A CONSULTA porque o dashboard virou tela de LEITURA: quem
+ * tem consulta no módulo Efetivo já alcança '#/acessos', e esconder dele a
+ * seção seria esconder a única tela que ele tem.
  */
 const SISTEMA_EFETIVO = {
   id: 'efetivo-area',
   label: 'Efetivo',
   icon: ICONS.people,
-  visivel: () => isAdmin() || temPerfil('operador', 'efetivo'),
-  // A home segue a MESMA régua do item Dashboard abaixo: quem alcança o
-  // dashboard entra por ele, e o operador entra pelo aproveitamento, que é a
-  // tela dele.
-  home: () => (isAdmin() || temPerfil('gerente', 'efetivo') ? '/acessos' : '/aproveitamento'),
+  visivel: () => isAdmin() || temPerfil('consulta', 'efetivo'),
+  // A home é uma STRING de novo, e não a função que desviava o operador para
+  // '#/aproveitamento'. O desvio existia porque o cabeçalho é um LINK e o
+  // dashboard era do gerente: mandar o operador para lá o jogava em
+  // /unauthorized ao clicar no nome da seção que é dele. Com o dashboard aberto
+  // à consulta, TODO MUNDO que enxerga a seção alcança a home dela, e o desvio
+  // deixou de ter para onde desviar.
+  home: '/acessos',
   // Sem prefixo: são rotas de PLATAFORMA, e não '/efetivo-area/...'.
   prefixo: '',
   chavePrefixo: '',
   menu: [
     // O DASHBOARD É DO EFETIVO, e não conta de sistema: ele abre na aba Efetivo,
-    // e tudo o que ela lê sai de `/efetivo/*`, que cobra gerente do módulo. A
-    // aba Acessos, essa sim é do administrador global, e ela mesma se esconde de
-    // quem não é (`pages/acessos/index.js`).
+    // e tudo o que ela lê sai de `/efetivo/*`. A aba Acessos, essa sim é do
+    // administrador global, e ela mesma se esconde de quem não é
+    // (`pages/acessos/index.js`).
     //
-    // `visivel`, e não `admin`: com a marca, quem responde pelo efetivo via a
-    // seção "Efetivo" no menu e não via o dashboard dela.
+    // CONSULTA, e não mais gerente: a rota virou `perfilLoader('efetivo',
+    // 'consulta')`, porque quem tem consulta no módulo LÊ as telas do módulo. O
+    // que baixou foi a porta da tela, e não o que ela mostra.
     {
       id: 'acessos',
       label: 'Dashboard',
       icon: ICONS.dashboard,
       path: '/acessos',
-      visivel: () => isAdmin() || temPerfil('gerente', 'efetivo'),
+      visivel: () => isAdmin() || temPerfil('consulta', 'efetivo'),
     },
     // A GESTÃO É CONTA DE SISTEMA: quem tem acesso a quê. Continua do
     // administrador global, e o servidor cobra o mesmo com verifyAdmin em
@@ -106,52 +125,69 @@ const SISTEMA_EFETIVO = {
     // Fica aqui, e não junto do relatório, porque quem o preenche vem procurar
     // por PESSOA: é a mesma lista de gente da tela ao lado, num mês.
     //
-    // `visivel`, e não `admin`: o servidor cobra
-    // `verifyPerfil('operador', 'efetivo')` desde a 1.33.0, e o menu tem de
-    // dizer a mesma coisa que a rota.
+    // LISTA DE PERFIS, e ela NÃO É HIERÁRQUICA: passam consulta e gerente, e o
+    // OPERADOR fica de fora. Não é engano nem inversão: o operador ficou com o
+    // PRÓPRIO aproveitamento, em '#/perfil', e não com o da Divisão inteira;
+    // quem lança pelos outros é o gerente, e quem só lê é a consulta. Com um
+    // mínimo hierárquico o operador veria esta tela por ser um nível ACIMA de
+    // consulta, que é o contrário do que foi pedido. A rota cobra o MESMO
+    // (`perfilLoader('efetivo', ['consulta', 'gerente'])`), então o menu não
+    // oferece o que o guarda recusaria.
     {
       id: 'aproveitamento',
       label: 'Aproveitamento',
       icon: ICONS.assignment,
       path: '/aproveitamento',
-      visivel: () => temPerfil('operador', 'efetivo'),
+      visivel: () => ehDeAlgumPerfil(['consulta', 'gerente'], 'efetivo'),
     },
     // A capacitação RECEBIDA é gente nossa em curso, então mora aqui. A
-    // MINISTRADA é serviço que a Divisão presta, e mora em Produção. As duas
+    // MINISTRADA é serviço que a Divisão presta, e mora na seção PIT. As duas
     // saem da mesma tabela, e em subseções diferentes do relatório; as rotas,
     // essas, são duas, porque a permissão é por tipo.
+    //
+    // CONSULTA, e não mais operador: abrir a lista é LER. O operador continua
+    // sendo o único que LANÇA, e isso é recorte de botão e de rota de escrita,
+    // não da porta da tela.
     {
       id: 'capacitacao_recebida',
       label: 'Capacitação recebida',
       icon: ICONS.description,
       path: '/capacitacao_recebida',
-      visivel: () => temPerfil('operador', 'efetivo'),
+      visivel: () => temPerfil('consulta', 'efetivo'),
     },
   ],
 };
 
 /**
- * PRODUÇÃO: o plano anual da Divisão e o que acontece com ele.
+ * PIT: o plano anual da Divisão e o que acontece com ele.
  *
  * Reúne metas, execução mensal, Extra-PIT e capacitação, porque as quatro telas
  * se leem JUNTAS: a execução não faz sentido sem a meta, e o Extra-PIT é a
  * exceção a ela.
  *
- * A SEÇÃO NÃO leva `admin: true`, e não é esquecimento. Metas e execução são
- * `acessoLoader`: quem tem acesso ao sistema LÊ o plano anual, sem precisar de
- * perfil no módulo Produção, e o servidor cobra o perfil só na escrita. A
- * capacitação ministrada leva `visivel` no ITEM, porque o servidor a guarda com
- * `verifyPerfil('operador', 'producao')` desde a 1.33.0 -- oferecê-la a quem
- * levaria 403 é o desencontro que `podeAbrirRota` existe para evitar do lado dos
- * módulos.
+ * A SEÇÃO NÃO leva `admin: true`, e não é esquecimento. As METAS e o EXTRA-PIT
+ * são `acessoLoader`: quem tem acesso ao sistema LÊ o plano anual sem ter perfil
+ * no módulo Produção, porque cadastrar NC, item de PDR ou pedido de impressão
+ * obriga a escolher a meta que financia ou cumpre. As outras duas telas levam
+ * `visivel` no ITEM, cada uma repetindo o que a rota cobra em `index.js` --
+ * oferecer tela a quem levaria 403 é o desencontro que `podeAbrirRota` existe
+ * para evitar do lado dos módulos.
  *
  * O `visivel` da SEÇÃO é `temAlgumAcesso`, e é o que tira o menu inteiro de quem
  * ainda não recebeu perfil nenhum: sem ele, a conta recém-criada entrava e via
- * "Produção" como se fosse dela, que é a única coisa que sobrava na tela.
+ * a seção como se fosse dela, que é a única coisa que sobrava na tela.
  */
 const SISTEMA_PRODUCAO = {
   id: 'producao-area',
-  label: 'Produção',
+  // SÓ O RÓTULO é "PIT". O `id`, a home '/metas' e o módulo de permissão
+  // 'producao' NÃO acompanham, e não é descuido: 'producao' é `dominio.modulo`
+  // code 4, continua se chamando Produção no banco, e é o nome que o servidor
+  // cobra em `verifyPerfil(..., 'producao')`. O rótulo fala do CONTEÚDO das
+  // telas, que é o PIT do ano; o módulo fala de QUEM pode escrever nelas.
+  // "Corrigir" a simetria trocando o id quebra a chave do item ativo
+  // (`activeIdFromPath`), trocando a home quebra link guardado, e trocando o
+  // módulo quebra a autorização.
+  label: 'PIT',
   icon: ICONS.layers,
   visivel: () => temAlgumAcesso(),
   home: '/metas',
@@ -168,27 +204,32 @@ const SISTEMA_PRODUCAO = {
     // de execucao e a rastreabilidade apontam, e renomear so por simetria
     // quebraria link guardado sem ganho nenhum.
     { id: 'metas', label: 'PIT do ano', icon: ICONS.category, path: '/metas' },
-    // A execução do PIT é do GERENTE e do administrador, e
-    // não de qualquer pessoa logada como as metas ao lado. Por isso ela leva
-    // `visivel` em vez de `admin: true`: nenhuma das duas marcas descreve
-    // "administrador OU gerente", que é a regra que o servidor cobra.
+    // A execução do PIT é do MÓDULO PRODUÇÃO, e não de qualquer pessoa logada
+    // como as metas ao lado. O recorte deixou de ser "administrador ou gerente
+    // de qualquer módulo" e passou a ser consulta em Produção, que é quem
+    // escreve a grade: a rota virou `perfilLoader('producao', 'consulta')`. Ler
+    // a grade não move nada; escrever continua sendo do administrador, e quem
+    // barra é o servidor.
     {
       id: 'execucao_pit',
       label: 'Execução do PIT',
       icon: ICONS.dataUsage,
       path: '/execucao_pit',
-      visivel: () => isAdmin() || ehGerenteDeAlgumModulo(),
+      visivel: () => temPerfil('consulta', 'producao'),
     },
     { id: 'extra_pit', label: 'Extra-PIT', icon: ICONS.warning, path: '/extra_pit' },
     // A capacitação MINISTRADA é serviço que a Divisão presta, e por isso mora
-    // em Produção. `visivel`, e não `admin: true`: ela virou rota própria
-    // (`/rpcmtec/capacitacao/ministrada`) guardada pelo módulo Produção.
+    // aqui. `visivel`, e não `admin: true`: ela é rota própria, guardada pelo
+    // módulo Produção.
+    //
+    // CONSULTA, e não mais operador, como a recebida do lado do Efetivo: abrir
+    // a lista é LER, e o operador continua sendo o único que LANÇA.
     {
       id: 'capacitacao_ministrada',
       label: 'Capacitação ministrada',
       icon: ICONS.description,
       path: '/capacitacao_ministrada',
-      visivel: () => temPerfil('operador', 'producao'),
+      visivel: () => temPerfil('consulta', 'producao'),
     },
   ],
 };
@@ -230,19 +271,17 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
   // Chave dos itens: `<modulo>:<item>` nos modulos e `<item>` na plataforma.
   // Sem o prefixo, o `dashboard` dos tres modulos colidiria num mapa so.
   const itemElements = {};
-  // Grupos DENTRO de um modulo (ex.: "Materiais" na mapoteca).
-  const groupElements = [];
   // Uma entrada por modulo, para abrir e fechar a seção.
   const moduleSections = [];
 
-  function buildItem(item, prefixo, chavePrefixo, isSubitem = false) {
-    const icon = el('span', { className: 'sidebar__item-icon' }, [svgIcon(item.icon, isSubitem ? 20 : 24)]);
+  function buildItem(item, prefixo, chavePrefixo) {
+    const icon = el('span', { className: 'sidebar__item-icon' }, [svgIcon(item.icon, 24)]);
     const label = el('span', { className: 'sidebar__item-label', textContent: item.label });
 
     const chave = chavePrefixo ? `${chavePrefixo}:${item.id}` : item.id;
 
     const menuItem = el('a', {
-      className: `sidebar__item${isSubitem ? ' sidebar__subitem' : ''}`,
+      className: 'sidebar__item',
       href: `#${prefixo}${item.path}`,
       dataset: { id: chave },
       onClick: () => setMobileOpen(false),
@@ -274,39 +313,19 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
     return podeAbrirRota(moduloId, item.path);
   }
 
+  /**
+   * O MENU E PLANO: item que aparece, item que navega, sem nivel intermediario.
+   *
+   * Os dois unicos grupos colapsaveis que existiram ("Materiais" na mapoteca e
+   * "Execução" no orcamento) foram achatados: dentro de uma seção que ja abre e
+   * fecha, o grupo era um segundo clique para chegar a uma tela, e escondia
+   * telas de quem nao sabia que elas existiam. Nenhum manifesto declara
+   * `children`, e um teste da sidebar faz cumprir.
+   */
   function buildMenu(itens, prefixo, chavePrefixo, destino) {
     for (const item of itens) {
       if (!itemVisivel(item, chavePrefixo)) continue;
-
-      if (item.children) {
-        const filhos = item.children.filter(c => itemVisivel(c, chavePrefixo));
-        if (!filhos.length) continue;
-
-        const childIds = filhos.map(c => (chavePrefixo ? `${chavePrefixo}:${c.id}` : c.id));
-        const itemsContainer = el('div', { className: 'sidebar__group-items' },
-          filhos.map(child => buildItem(child, prefixo, chavePrefixo, true))
-        );
-
-        const header = el('button', {
-          className: 'sidebar__group-header',
-          type: 'button',
-          'aria-expanded': 'false',
-          onClick: () => {
-            const open = group.classList.toggle('sidebar__group--open');
-            header.setAttribute('aria-expanded', String(open));
-          },
-        }, [
-          el('span', { className: 'sidebar__item-icon' }, [svgIcon(item.icon, 24)]),
-          el('span', { className: 'sidebar__item-label', textContent: item.label }),
-          el('span', { className: 'sidebar__group-chevron' }, [svgIcon(ICONS.expandMore, 18)]),
-        ]);
-
-        const group = el('div', { className: 'sidebar__group' }, [header, itemsContainer]);
-        groupElements.push({ group, header, childIds });
-        destino.appendChild(group);
-      } else {
-        destino.appendChild(buildItem(item, prefixo, chavePrefixo));
-      }
+      destino.appendChild(buildItem(item, prefixo, chavePrefixo));
     }
   }
 
@@ -315,28 +334,28 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
    * clicar nele ja entra no sistema; o chevron ao lado abre e fecha a lista sem
    * navegar.
    *
-   * Serve aos tres modulos E a area de Usuarios, que se desenha igual sem ser
-   * modulo (ver SISTEMA_EFETIVO e SISTEMA_PRODUCAO). Por isso ela recebe o rotulo e a home JA
-   * RESOLVIDOS: o modulo os tira do catalogo do servidor (`nomeModulo`) e do
-   * manifesto (`rotaInicial`), e a area de Usuarios os declara, porque nao esta
-   * em `dominio.modulo` nem no registry.
+   * Serve aos tres modulos E as seções PIT e Efetivo, que se desenham igual sem
+   * ser modulo (ver SISTEMA_EFETIVO e SISTEMA_PRODUCAO). Por isso ela recebe o
+   * rotulo e a home JA RESOLVIDOS: o modulo os tira do catalogo do servidor
+   * (`nomeModulo`) e do manifesto (`rotaInicial`), e as duas seções os declaram,
+   * porque nao estao em `dominio.modulo` nem no registry.
    *
-   * A HOME PODE SER FUNÇÃO, e não só string. O cabeçalho é um LINK, e a home de
-   * uma seção nem sempre é da pessoa: em Efetivo o Dashboard é do gerente do
-   * módulo, e mandar o operador para lá o jogaria em /unauthorized ao clicar no
-   * nome da seção que é dele. Os módulos resolvem o mesmo problema em
-   * `registry.rotaInicial`, lendo o manifesto.
+   * A HOME É SEMPRE UMA STRING. Ela ja foi calculavel, porque o cabeçalho e um
+   * LINK e a home do Efetivo era do gerente: mandar o operador para la o jogava
+   * em /unauthorized. Com o dashboard do Efetivo aberto a consulta, quem enxerga
+   * a seção alcança a home dela, nos dois casos. Nos modulos quem resolve isso e
+   * `registry.rotaInicial`, lendo o manifesto, e ele tambem devolve string.
    *
    * @param {Object} sistema
    * @param {string} sistema.id
    * @param {string} sistema.label
-   * @param {string|Function} sistema.home - rota completa, com o '/' inicial
+   * @param {string} sistema.home - rota completa, com o '/' inicial
    * @param {Array} sistema.menu
    * @param {string} sistema.prefixo - '' quando os caminhos ja sao completos
    * @param {string} sistema.chavePrefixo - '' quando a chave nao leva modulo
    */
   function buildSystemSection(sistema) {
-    const home = typeof sistema.home === 'function' ? sistema.home() : sistema.home;
+    const { home } = sistema;
     const itensContainer = el('div', { className: 'sidebar__module-items' });
     buildMenu(sistema.menu || [], sistema.prefixo, sistema.chavePrefixo, itensContainer);
 
@@ -366,8 +385,8 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
 
     // As chaves dos filhos, para o `setActive` saber abrir a seção quando a rota
     // ativa mora dentro dela. Os modulos ja abriam pelo `setModulo`, que le o
-    // modulo da rota; a area de Usuarios nao tem modulo nenhum, e sem isto
-    // ficaria fechada justamente quando a pessoa esta dentro dela.
+    // modulo da rota; as seções PIT e Efetivo nao tem modulo nenhum, e sem isto
+    // ficariam fechadas justamente quando a pessoa esta dentro delas.
     const childIds = (sistema.menu || [])
       .filter(i => i.path)
       .map(i => (sistema.chavePrefixo ? `${sistema.chavePrefixo}:${i.id}` : i.id));
@@ -393,8 +412,8 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
     // Logo DEPOIS dos módulos e ACIMA do separador: é a posição que diz "isto é
     // um sistema", e não um item de configuração no meio das telas soltas.
     //
-    // Produção vem antes de Efetivo porque é a que fala do TRABALHO, e Efetivo é
-    // quem o faz. A ordem também põe as telas mais usadas mais perto dos
+    // PIT vem antes de Efetivo porque é a seção que fala do TRABALHO, e Efetivo
+    // é quem o faz. A ordem também põe as telas mais usadas mais perto dos
     // módulos.
     if (itemVisivel(SISTEMA_PRODUCAO, '')) {
       buildSystemSection(SISTEMA_PRODUCAO);
@@ -435,21 +454,13 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
 
     // Seção de sistema cuja rota ativa mora dentro dela: abre e marca o
     // cabeçalho. Os módulos já faziam isso pelo `setModulo`, que lê o módulo da
-    // rota; a área de Usuários não tem módulo, então `setModulo` recebe null e
-    // ela ficaria fechada justamente quando a pessoa está dentro dela.
+    // rota; as seções PIT e Efetivo não têm módulo, então `setModulo` recebe
+    // null e elas ficariam fechadas justamente quando a pessoa está dentro delas.
     for (const { section, header, chevron, childIds } of moduleSections) {
       if (!childIds || !childIds.includes(activeId)) continue;
       header.classList.add('sidebar__module-header--active');
       section.classList.add('sidebar__module--open');
       chevron.setAttribute('aria-expanded', 'true');
-    }
-    for (const { group, header, childIds } of groupElements) {
-      const hasActiveChild = childIds.includes(activeId);
-      header.classList.toggle('sidebar__group-header--active', hasActiveChild);
-      if (hasActiveChild && !group.classList.contains('sidebar__group--open')) {
-        group.classList.add('sidebar__group--open');
-        header.setAttribute('aria-expanded', 'true');
-      }
     }
   }
 

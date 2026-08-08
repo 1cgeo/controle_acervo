@@ -10,7 +10,15 @@ import {
   atualizarMeuPerfil,
   alterarMinhaSenha,
   getPostosGrad,
+  getMeuPeriodoEfetivo,
+  getMeuImpedimento,
 } from '@services/plataforma-service.js';
+// A MESMA ficha da tela `#/aproveitamento`, com a rota do PRÓPRIO injetada. Ver
+// o bloco "Meu aproveitamento" mais abaixo.
+import {
+  criarFichaEfetivo,
+  API_PROPRIO,
+} from '@pages/aproveitamento/militar-dialog.js';
 
 /**
  * Meu perfil (#/perfil). Tela de PLATAFORMA de qualquer pessoa logada.
@@ -38,6 +46,16 @@ import {
  * `POST /api/login` devolveu, e que o `sincronizarSessao()` reconfere a cada
  * boot. Uma rota só para repetir o que a sessão já sabe seria uma segunda fonte
  * da mesma verdade, e as duas divergiriam no dia da concessão.
+ *
+ * A QUARTA SEÇÃO É "MEU APROVEITAMENTO", e ela nasceu em 2026-08-08 junto com a
+ * régua que tirou a tela `#/aproveitamento` do operador: cada pessoa passou a
+ * cuidar do próprio aproveitamento aqui, e o dado da Divisão inteira ficou com
+ * quem responde por ela. O porquê completo está no bloco da seção, mais abaixo.
+ *
+ * A ORDEM DAS QUATRO tem razão: acessos, aproveitamento, dados, senha. Quem abre
+ * esta página abre por causa das duas primeiras (o que eu posso, e o que eu
+ * preciso declarar); corrigir o nome de guerra e trocar a senha são atos raros, e
+ * ficam depois.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx
@@ -253,17 +271,72 @@ export async function renderPerfil(container, _ctx) {
       // dar faria a pessoa percorrer o caminho errado antes de chegar ao certo.
       el('p', {
         className: 'perfil__sem-acesso-texto',
+        // Os cinco nomes seguem `dominio.modulo.nome`, que é o que a tela de
+        // concessão mostra ao administrador: a pessoa pede pelo nome que ele vê.
+        // Note que o menu chama a seção de Produção de "PIT", e aqui não: o
+        // módulo continua sendo Produção, porque guarda também a capacitação
+        // ministrada.
         textContent: 'Peça ao administrador do sistema o acesso ao módulo de interesse '
-          + '(Controle do Acervo, Mapoteca, Controle Orçamentário, Produção ou Efetivo). '
+          + '(Acervo, Mapoteca, Orçamento, Produção ou Efetivo). '
           + 'Enquanto isso, esta página é sua: você pode corrigir seus dados e trocar sua senha.',
       }),
     ]);
+
+  // ---------------------------------------------------------------------------
+  // Meu aproveitamento
+  //
+  // POR QUE ESTA SEÇÃO EXISTE. Em 2026-08-08 a escrita da passagem e do
+  // impedimento DOS OUTROS subiu para o gerente do módulo Efetivo, e a tela
+  // `#/aproveitamento` -- que mostra a Divisão inteira, nominalmente, com licença
+  // de saúde e função acumulada de cada um -- deixou de abrir para o operador.
+  // Sem esta seção, o efeito colateral seria que ninguém abaixo do gerente teria
+  // como declarar o PRÓPRIO impedimento, e o aproveitamento da subseção 6.1 do
+  // RPCMTec depende de cada um declarar o seu. A régua nova tirou o alheio de
+  // quem não responde por ele e devolveu o próprio a todo mundo; esta seção é a
+  // segunda metade.
+  //
+  // A FICHA É A MESMA de `#/aproveitamento`, com a rota trocada: `criarFichaEfetivo`
+  // desenha as duas listas e abre os mesmos diálogos, e `API_PROPRIO` os faz
+  // gravar em `/efetivo/meu_periodo` e `/efetivo/meu_impedimento`, onde o dono sai
+  // do token. Copiar os formulários daria uma segunda cópia do par campo-data mais
+  // caixa "Sem previsão de saída" e das validações que espelham o banco, e a cópia
+  // menos olhada seria justamente esta.
+  //
+  // CARREGADA À PARTE, e não junto do `getMeuPerfil`. É o defeito que a tela do
+  // aproveitamento tinha: uma chamada que pode recusar dentro do mesmo
+  // `Promise.all` derruba a página inteira. Aqui a falha fica dentro da seção, e
+  // os dois formulários continuam de pé.
+  //
+  // SÓ PARA QUEM TEM ACESSO A ALGUM MÓDULO, porque é isso que as rotas exigem
+  // (`verifyAcesso`). Quem não tem lê acima o pedido de acesso, e oferecer-lhe um
+  // botão que responderia 403 seria prometer o que a conta ainda não pode.
+  const temAcesso = acessos.length > 0;
+
+  const corpoAproveitamento = el('div', {
+    className: 'perfil__carregando',
+    textContent: 'Carregando...',
+  });
+
+  const secaoAproveitamento = el('section', { className: 'perfil__secao' }, [
+    el('h2', {
+      className: 'perfil__secao-titulo',
+      textContent: 'Meu aproveitamento',
+    }),
+    el('p', {
+      className: 'perfil__secao-ajuda',
+      textContent: 'Sua passagem pela DGEO e o que o tira do trabalho da Divisão '
+        + 'sem tirá-lo dela (função acumulada, licença, curso, férias). É daqui '
+        + 'que sai o aproveitamento do efetivo no relatório da Divisão.',
+    }),
+    corpoAproveitamento,
+  ]);
 
   page.appendChild(el('div', { className: 'perfil' }, [
     el('section', { className: 'perfil__secao' }, [
       el('h2', { className: 'perfil__secao-titulo', textContent: 'Meus acessos' }),
       listaAcessos,
     ]),
+    ...(temAcesso ? [secaoAproveitamento] : []),
     el('section', { className: 'perfil__secao' }, [
       el('h2', { className: 'perfil__secao-titulo', textContent: 'Meus dados' }),
       formCadastro,
@@ -273,6 +346,70 @@ export async function renderPerfil(container, _ctx) {
       formSenha,
     ]),
   ]));
+
+  /**
+   * As duas listas do próprio, sempre juntas.
+   *
+   * O AVISO "fora de qualquer passagem" da ficha depende das DUAS: um impedimento
+   * que não cruza passagem nenhuma não desconta nada, e é a lista de passagens que
+   * responde isso. Buscar uma sem a outra faria a ficha afirmar sobre o que não
+   * está na mesa.
+   */
+  async function carregarAproveitamento() {
+    const [periodos, impedimentos] = await Promise.all([
+      getMeuPeriodoEfetivo(),
+      getMeuImpedimento(),
+    ]);
+    return { periodos: periodos || [], impedimentos: impedimentos || [] };
+  }
+
+  async function montarAproveitamento() {
+    let listas;
+    try {
+      listas = await carregarAproveitamento();
+    } catch (err) {
+      if (disposed) return;
+      // O ERRO FICA NO LUGAR DA LISTA, e não num toast que some em seis segundos:
+      // a seção vazia se leria como "não tenho nada cadastrado", que é a
+      // afirmação oposta.
+      corpoAproveitamento.className = 'perfil__erro';
+      corpoAproveitamento.textContent =
+        err.message || 'Erro ao carregar o seu aproveitamento';
+      return;
+    }
+    if (disposed) return;
+
+    const ficha = criarFichaEfetivo({
+      usuarioUuid: perfil.uuid,
+      // SEM `nomeMilitar`: na própria página, "excluir a passagem de Fulano" é o
+      // nome do Fulano escrito à toa para o Fulano.
+      nomeMilitar: null,
+      api: API_PROPRIO,
+      periodos: listas.periodos,
+      impedimentos: listas.impedimentos,
+      // SEM RECORTE DE ANO nas rotas do próprio, e por isso o texto do vazio não
+      // pode dizer "neste ano": a lista traz a vida inteira da pessoa na Divisão.
+      vazios: {
+        periodos: 'Você ainda não tem passagem pela DGEO cadastrada. '
+          + 'Se já está na Divisão, cadastre a sua.',
+        impedimentos: 'Nenhum impedimento cadastrado.',
+      },
+      // Cada gravação relê as duas listas e devolve as novas: é assim que a ficha
+      // se repinta sem a tela inteira ser reconstruída.
+      onSaved: async () => {
+        try {
+          return await carregarAproveitamento();
+        } catch (err) {
+          showError(err.message || 'Erro ao recarregar o seu aproveitamento');
+          return null;
+        }
+      },
+    });
+
+    corpoAproveitamento.replaceWith(ficha.element);
+  }
+
+  if (temAcesso) await montarAproveitamento();
 
   return () => {
     disposed = true;

@@ -329,13 +329,87 @@ controller.divergenciasDoMes = async (ano, mes) => {
   )
 }
 
+/**
+ * O CADASTRO MÍNIMO de militar para a tela do efetivo.
+ *
+ * POR QUE ELA EXISTE. A tela `#/aproveitamento` montava o seletor de militar e a
+ * conta de divergência a partir de `GET /api/usuarios`, que é `verifyAdmin`.
+ * Como as chamadas saem no mesmo `Promise.all` das rotas de `/efetivo`, o
+ * gerente do efetivo recebia 403 numa delas e a tela inteira morria dizendo que
+ * é preciso ser administrador. O dado que faltava era o nome de seis colunas, e
+ * o preço cobrado era a flag global.
+ *
+ * O RECORTE DE CAMPO É O QUE PERMITE BAIXAR A GUARDA, e não o contrário. Daqui
+ * saem `uuid`, `nome`, `nome_guerra`, `tipo_posto_grad_id`, `tipo_posto_grad` e
+ * `ativo`, que é o que a tela desenha. NÃO saem `login`, `administrador`,
+ * `senha_definida` nem os perfis por módulo: esses são cadastro de PLATAFORMA,
+ * dizem quem manda no sistema, e continuam só em `GET /api/usuarios`, sob
+ * `verifyAdmin`. Acrescentar qualquer um deles aqui é reabrir o buraco que esta
+ * rota fecha.
+ *
+ * `ativo` VEM JUNTO porque é flag de LOGIN, e é ela que a tela usa para separar
+ * "conta que pode entrar e não consta na Divisão" (a divergência) de conta
+ * desligada. Sem ela a lista de divergência teria de ser recalculada no cliente.
+ *
+ * A ORDEM é a HIERARQUIA (posto decrescente, depois nome de guerra), a mesma de
+ * `mapaAnual`, `resumoAnual` e `resumoMensal`. Alfabética pelo nome misturaria
+ * coronel e soldado, e o seletor desta tela fica ao lado do mapa: duas ordens
+ * diferentes na mesma tela leem-se como lista errada.
+ */
+controller.listarMilitares = async () => {
+  return db.conn.any(
+    `SELECT u.uuid, u.nome, u.nome_guerra, u.tipo_posto_grad_id,
+            pg.nome_abrev AS tipo_posto_grad, u.ativo
+     FROM dgeo.usuario AS u
+     INNER JOIN dominio.tipo_posto_grad AS pg ON pg.code = u.tipo_posto_grad_id
+     ORDER BY u.tipo_posto_grad_id DESC, u.nome_guerra`
+  )
+}
+
+// --- O DONO do registro ------------------------------------------------------
+
+/**
+ * A linha é da pessoa do TOKEN, ou ela não existe para quem perguntou.
+ *
+ * POR QUE ISTO EXISTE. As rotas de terceiro (`PUT /efetivo/periodos/:id`)
+ * autorizam pelo `:id` sozinho, e podem: quem chega lá já é gerente do Efetivo,
+ * e o trabalho dele é justamente mexer no registro dos outros. As rotas do
+ * PRÓPRIO (`/efetivo/meu_periodo`) passam por `verifyAcesso`, que só pergunta se
+ * a pessoa entrou no sistema: ali o `:id` é a ÚNICA coisa que endereça a linha, e
+ * sem esta conferência qualquer pessoa logada editaria a passagem de qualquer
+ * outra trocando um número na URL.
+ *
+ * 404, E NÃO 403, e a diferença não é cosmética: o 403 confirmaria que a linha
+ * existe. A mensagem é a MESMA de `auditoriaCtrl.lerAntes`, de propósito -- id
+ * inexistente e id alheio têm de se ler iguais do lado de fora, senão a resposta
+ * vira um oráculo de "quantas passagens a Divisão tem".
+ *
+ * `donoUuid` NULO desliga a conferência, e é o caso das rotas de gerente. O
+ * default é o desligado porque quem escreve rota do próprio passa o uuid
+ * explicitamente; esquecê-lo numa rota de terceiro não muda nada, e esquecê-lo
+ * numa rota do próprio é o erro que o teste de guarda cobra.
+ */
+const exigirDono = (linha, donoUuid, nomeAmigavel) => {
+  if (donoUuid && linha.usuario_uuid !== donoUuid) {
+    throw new AppError(`${nomeAmigavel} não encontrado(a)`, httpCode.NotFound)
+  }
+}
+
 // --- Períodos ----------------------------------------------------------------
 
-controller.listarPeriodos = async ano => {
-  const filtro = ano
-    ? `WHERE p.data_inicio <= $<fim>::date
-         AND (p.data_fim IS NULL OR p.data_fim >= $<inicio>::date)`
-    : ''
+// O recorte da listagem, montado a partir das condições que de fato vieram. As
+// duas listas (a da Divisão e a do próprio) leem a MESMA consulta: separá-las em
+// dois SQL faria a ficha de `#/perfil` divergir da tela `#/aproveitamento` na
+// primeira coluna nova.
+const ondeDe = condicoes => (condicoes.length ? `WHERE ${condicoes.join(' AND ')}` : '')
+
+controller.listarPeriodos = async (ano, usuarioUuid = null) => {
+  const condicoes = []
+  if (ano) {
+    condicoes.push(`p.data_inicio <= $<fim>::date
+         AND (p.data_fim IS NULL OR p.data_fim >= $<inicio>::date)`)
+  }
+  if (usuarioUuid) condicoes.push('p.usuario_uuid = $<usuarioUuid>')
 
   return db.conn.any(
     `SELECT p.id, p.usuario_uuid, p.data_inicio::text AS data_inicio,
@@ -347,9 +421,13 @@ controller.listarPeriodos = async ano => {
      FROM dgeo.efetivo_periodo AS p
      INNER JOIN dgeo.usuario AS u ON u.uuid = p.usuario_uuid
      INNER JOIN dominio.tipo_posto_grad AS pg ON pg.code = u.tipo_posto_grad_id
-     ${filtro}
+     ${ondeDe(condicoes)}
      ORDER BY p.data_inicio DESC, u.nome_guerra`,
-    ano ? { inicio: primeiroDia(ano), fim: ultimoDia(ano) } : {}
+    {
+      inicio: ano ? primeiroDia(ano) : null,
+      fim: ano ? ultimoDia(ano) : null,
+      usuarioUuid
+    }
   )
 }
 
@@ -400,12 +478,17 @@ controller.criarPeriodo = async (dados, usuarioUuid, contexto) => {
   }
 }
 
-controller.atualizarPeriodo = async (id, dados, usuarioUuid, contexto) => {
+controller.atualizarPeriodo = async (id, dados, usuarioUuid, contexto, donoUuid = null) => {
   try {
     return await db.conn.tx(async t => {
       const antes = await auditoriaCtrl.lerAntes(
         t, 'dgeo.efetivo_periodo', id, 'Passagem pela DGEO'
       )
+
+      // DENTRO da transação, e sobre a linha que o `lerAntes` já trouxe: uma
+      // segunda ida ao banco só para conferir o dono leria um estado que pode
+      // não ser o que o UPDATE abaixo alcança.
+      exigirDono(antes, donoUuid, 'Passagem pela DGEO')
 
       // O MILITAR não se troca numa passagem existente: seria reescrever de quem
       // é o período, e o caminho certo é excluir e cadastrar de novo.
@@ -443,11 +526,13 @@ controller.atualizarPeriodo = async (id, dados, usuarioUuid, contexto) => {
   }
 }
 
-controller.deletarPeriodo = async (id, usuarioUuid, contexto) => {
+controller.deletarPeriodo = async (id, usuarioUuid, contexto, donoUuid = null) => {
   return db.conn.tx(async t => {
     const antes = await auditoriaCtrl.lerAntes(
       t, 'dgeo.efetivo_periodo', id, 'Passagem pela DGEO'
     )
+
+    exigirDono(antes, donoUuid, 'Passagem pela DGEO')
 
     await t.none('DELETE FROM dgeo.efetivo_periodo WHERE id = $<id>', { id })
 
@@ -464,11 +549,13 @@ controller.deletarPeriodo = async (id, usuarioUuid, contexto) => {
 
 // --- Impedimentos ------------------------------------------------------------
 
-controller.listarImpedimentos = async ano => {
-  const filtro = ano
-    ? `WHERE i.data_inicio <= $<fim>::date
-         AND (i.data_fim IS NULL OR i.data_fim >= $<inicio>::date)`
-    : ''
+controller.listarImpedimentos = async (ano, usuarioUuid = null) => {
+  const condicoes = []
+  if (ano) {
+    condicoes.push(`i.data_inicio <= $<fim>::date
+         AND (i.data_fim IS NULL OR i.data_fim >= $<inicio>::date)`)
+  }
+  if (usuarioUuid) condicoes.push('i.usuario_uuid = $<usuarioUuid>')
 
   return db.conn.any(
     `SELECT i.id, i.usuario_uuid, i.descricao, i.percentual,
@@ -480,9 +567,13 @@ controller.listarImpedimentos = async ano => {
      FROM dgeo.impedimento AS i
      INNER JOIN dgeo.usuario AS u ON u.uuid = i.usuario_uuid
      INNER JOIN dominio.tipo_posto_grad AS pg ON pg.code = u.tipo_posto_grad_id
-     ${filtro}
+     ${ondeDe(condicoes)}
      ORDER BY i.data_inicio DESC, u.nome_guerra`,
-    ano ? { inicio: primeiroDia(ano), fim: ultimoDia(ano) } : {}
+    {
+      inicio: ano ? primeiroDia(ano) : null,
+      fim: ano ? ultimoDia(ano) : null,
+      usuarioUuid
+    }
   )
 }
 
@@ -518,11 +609,13 @@ controller.criarImpedimento = async (dados, usuarioUuid, contexto) => {
   })
 }
 
-controller.atualizarImpedimento = async (id, dados, usuarioUuid, contexto) => {
+controller.atualizarImpedimento = async (id, dados, usuarioUuid, contexto, donoUuid = null) => {
   return db.conn.tx(async t => {
     const antes = await auditoriaCtrl.lerAntes(
       t, 'dgeo.impedimento', id, 'Impedimento'
     )
+
+    exigirDono(antes, donoUuid, 'Impedimento')
 
     const depois = await t.one(
       `UPDATE dgeo.impedimento
@@ -548,11 +641,13 @@ controller.atualizarImpedimento = async (id, dados, usuarioUuid, contexto) => {
   })
 }
 
-controller.deletarImpedimento = async (id, usuarioUuid, contexto) => {
+controller.deletarImpedimento = async (id, usuarioUuid, contexto, donoUuid = null) => {
   return db.conn.tx(async t => {
     const antes = await auditoriaCtrl.lerAntes(
       t, 'dgeo.impedimento', id, 'Impedimento'
     )
+
+    exigirDono(antes, donoUuid, 'Impedimento')
 
     await t.none('DELETE FROM dgeo.impedimento WHERE id = $<id>', { id })
 

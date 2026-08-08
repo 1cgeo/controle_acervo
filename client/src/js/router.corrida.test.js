@@ -21,7 +21,7 @@ import Router from './router.js';
 // nada.
 
 const CATALOGO = [
-  { code: 1, nome: 'Controle do Acervo', nome_abrev: 'acervo' },
+  { code: 1, nome: 'Acervo', nome_abrev: 'acervo' },
 ];
 
 const espera = (ms) => new Promise(resolve => setTimeout(resolve, ms));
