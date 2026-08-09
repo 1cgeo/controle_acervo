@@ -39,6 +39,18 @@ const PERFIL = {
 // criterio: quem controla estacao total e drone nao e quem atende a mapoteca,
 // ainda que os dois plotteres aparecam nos dois lugares por enquanto.
 //
+// PRODUCAO (o code 7) entrou na 3.0.0, quando o core de producao do SAP 2.3.5
+// ganhou rota aqui. O DDL o criou em 2026-08-09 e este mapa o recebeu depois,
+// na ordem que `er/dominio.sql` anuncia: o code nasce primeiro porque a chave
+// estrangeira precisa dele antes da primeira concessao de perfil, e o mapa so o
+// recebe quando ha tela a que dar acesso. Com esta linha, o `SEM_ROTA` de
+// `__tests__/routes/orcamento/verify_perfil.test.js` se esvazia sozinho.
+//
+// NAO CONFUNDIR COM O CODE 4. O 4 se chamou `producao` ate 2026-08-09 e hoje e
+// `pit`: ele cobre o PLANO (execucao de meta, Extra-PIT, campo, capacitacao
+// ministrada). O 7 e a producao CARTOGRAFICA de verdade -- linha de producao,
+// subfase, unidade de trabalho, atividade --, que mora no schema `producao`.
+//
 // O `code` NAO E SERIAL nem opiniao: ele espelha `dominio.modulo.code`, que
 // `dgeo.usuario_perfil.modulo_id` referencia. Os dois lados nascem juntos, no
 // mesmo commit, e divergir aqui derruba a autorizacao sem erro de sintaxe.
@@ -48,7 +60,8 @@ const MODULO = {
   orcamento: 3,
   pit: 4,
   efetivo: 5,
-  equipamento: 6
+  equipamento: 6,
+  producao: 7
 };
 
 // Uso: verifyPerfil('operador') no acervo, verifyPerfil('gerente', 'mapoteca')

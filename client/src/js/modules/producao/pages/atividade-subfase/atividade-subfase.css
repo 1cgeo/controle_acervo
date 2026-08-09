@@ -1,0 +1,104 @@
+/* ---------------------------------------------------------------------------
+ * ATIVIDADE POR SUBFASE (#/producao/atividade_subfase)
+ *
+ * A linha do tempo do ano corrente, um quadro por lote e uma faixa por subfase.
+ *
+ * UMA COR SÓ. A barra marca os dias com atividade aberta; o trilho vazio é a
+ * ausência dela. Ver o cabeçalho de `index.js`.
+ * ------------------------------------------------------------------------- */
+
+.linha-tempo__legenda {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.linha-tempo__amostra {
+  display: inline-block;
+  width: 28px;
+  height: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+}
+
+.linha-tempo__legenda-nota { margin-left: var(--space-md); }
+
+.linha-tempo__vazio {
+  padding: var(--space-lg);
+  color: var(--text-secondary);
+}
+
+.linha-tempo__quadro {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.linha-tempo__lote {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.linha-tempo__eixo,
+.linha-tempo__linha {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.linha-tempo__linha { margin-bottom: 4px; }
+
+/* O RÓTULO TEM LARGURA FIXA nas duas, e é o que alinha o eixo com as faixas:
+ * larguras diferentes fariam a marca de "mar" cair sobre outro dia. */
+.linha-tempo__rotulo {
+  flex: 0 0 200px;
+  width: 200px;
+  font-size: var(--font-size-sm);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+}
+
+.linha-tempo__trilho {
+  position: relative;
+  flex: 1 1 auto;
+  height: 14px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+}
+
+.linha-tempo__trilho--eixo {
+  background: none;
+  height: 18px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.linha-tempo__marca {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.linha-tempo__barra {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 2px;
+  background: var(--color-primary);
+}
+
+@media (max-width: 768px) {
+  .linha-tempo__rotulo { flex-basis: 110px; width: 110px; }
+}

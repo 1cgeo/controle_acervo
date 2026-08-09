@@ -1,6 +1,6 @@
 # orcamento_cli
 
-Interface de linha de comando do **módulo orçamento** do SCA, desenhada para **agentes**.
+Interface de linha de comando do **módulo orçamento** do SAP, desenhada para **agentes**.
 
 Irmão do `acervo_cli` e do `mapoteca_cli`: mesmo servidor, mesmo login, mesma sessão em cache. Muda só o módulo com que cada um fala. O client web serve humanos, o CLI serve agentes: a tela otimiza clique e descoberta visual, o CLI otimiza contexto e encadeamento.
 
@@ -10,7 +10,7 @@ node orcamento_cli/orcamento.js --ajuda
 
 ## O prefixo `/orcamento`
 
-O orçamento é o módulo `orcamento` do SCA, code 3. As rotas do módulo levam o prefixo `/api/orcamento/`; as de plataforma (`/api/login` e `/api/metas`, as metas do PIT) não levam.
+O orçamento é o módulo `orcamento` do SAP, code 3. As rotas do módulo levam o prefixo `/api/orcamento/`; as de plataforma (`/api/login` e `/api/metas`, as metas do PIT) não levam.
 
 O prefixo não é cosmético: `/arquivo` e `/relatorio` existem também no acervo, e uma chamada sem prefixo acerta a rota errada em vez de dar 404. Ele mora em `lib/recursos.js`, e só ali.
 
@@ -54,7 +54,7 @@ orcamento arquivo listar --nota_credito_id 42     # os anexos de uma NC
 orcamento arquivo baixar --id 11 --para nc123.pdf # baixa e imprime o sha256
 
 # sessão
-orcamento status    # o SCA está no ar? há token em cache?
+orcamento status    # o SAP está no ar? há token em cache?
 orcamento login     # autentica uma vez, guarda o token (~1h)
 ```
 
@@ -65,11 +65,11 @@ Nunca ponha senha na linha de comando.
 | Variável | Para quê |
 |---|---|
 | `SCA_URL` | URL do backend, ex.: `http://IP:porta` (`SCA_SERVER` é alias aceito) |
-| `SCA_USER` | login no SCA |
+| `SCA_USER` | login no SAP |
 | `SCA_SENHA` | senha (preferir a variável ao `--senha`) |
 | `SCA_TOKEN` | JWT pronto, dispensa o login |
 
-O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar a instância local com a de produção. O diretório é o do SCA, e não o do módulo, de propósito: o token vale para a API inteira, então o `acervo_cli` e o `mapoteca_cli` reaproveitam a mesma sessão. `--sem-cache` desliga.
+O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar a instância local com a de produção. O diretório é o do SAP, e não o do módulo, de propósito: o token vale para a API inteira, então o `acervo_cli` e o `mapoteca_cli` reaproveitam a mesma sessão. `--sem-cache` desliga.
 
 ## Acesso
 
@@ -83,7 +83,7 @@ O recurso `meta` é a exceção, porque `/api/metas` não é rota do orçamento 
 - **Campo descartado em silêncio**: o schema descarta por `.strip()` o campo que não se aplica àquele caso, como o `pdr_item_id` de uma NC Extra-PDR. Ele existe, é legítimo mandá-lo, e mesmo assim não grava. O CLI avisa. É a diferença entre "gravei" e "achei que gravei".
 - **Exclusão irreversível**: `deletar` exige `--confirmar` com o identificador repetido. O `--dry-run` não escreve e por isso **não** exige `--confirmar`: é ele que mostra o que a confirmação autorizaria.
 - **Falha parcial do `lancar`**: não há transação entre criar o registro e anexar o arquivo. Se o anexo falhar, o CLI diz explicitamente para não repetir o `lancar` (duplicaria) e dá o comando de reenviar só o anexo.
-- **429**: o SCA limita 200 requisições por minuto. O CLI traduz o 429 numa mensagem que manda retomar do ponto de parada, em vez de reenviar o lote.
+- **429**: o SAP limita 200 requisições por minuto. O CLI traduz o 429 numa mensagem que manda retomar do ponto de parada, em vez de reenviar o lote.
 
 ## Testes
 

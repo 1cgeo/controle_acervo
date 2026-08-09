@@ -20,6 +20,29 @@ import { rotaRaiz } from '../router.js';
  * Os dois aparecem AO MESMO TEMPO, sem aba nem clique para revelar. Esconder um
  * atras do outro obriga a pessoa a adivinhar em qual metade ela se encaixa, que
  * e justamente o que se quer evitar.
+ *
+ * ESTA TELA NAO NOMEIA O CENTRO, e a decisao e de 2026-08-09.
+ *
+ * Ela dizia 'Sistema de Apoio à Produção, 1º CGEO' e 'Para quem trabalha no 1º
+ * CGEO', e desde que a instituicao virou dado (`dgeo.instituicao`) esses dois
+ * textos seriam o unico lugar do client em que outro Centro continuaria vendo o
+ * nome do nosso. Havia dois caminhos, e o que NAO se tomou foi abrir uma rota
+ * anonima de instituicao:
+ *
+ *   - `GET /api/instituicao` e `verifyLogin` de proposito, e a razao esta em
+ *     `docs/decisoes.md`. Abri-la publicaria QUAL OM opera esta instalacao para
+ *     qualquer um que alcance a tela de entrada -- e esta tela e alcancavel sem
+ *     conta, porque o caminho do localizador (RN04) e publico. Seria trocar
+ *     superficie exposta por uma linha de subtitulo.
+ *   - A tela nao tem sessao para ler: ela e desenhada ANTES de alguem entrar, e
+ *     o `auth-store` esta vazio aqui. Ler dali resultaria em nome vazio na
+ *     primeira visita e no nome de quem saiu por ultimo na segunda, que e pior
+ *     do que nao mostrar nada.
+ *
+ * Entao o texto ficou VERDADEIRO SEM O NOME: a sigla aberta diz o que o sistema
+ * faz, e 'Para quem trabalha no Centro' separa os dois caminhos tao bem quanto
+ * a versao com o nome, porque quem chega aqui ja sabe em que Centro trabalha. O
+ * nome aparece assim que a pessoa entra, no que ela imprime e no que ela lanca.
  * @param {HTMLElement} container
  */
 export async function renderLogin(container) {
@@ -197,17 +220,21 @@ export async function renderLogin(container) {
 
   const card = el('div', { className: 'login-card login-card--duplo' }, [
     el('header', { className: 'login-card__topo' }, [
-      el('h1', { className: 'login-card__title', textContent: 'SCA' }),
+      el('h1', { className: 'login-card__title', textContent: 'SAP' }),
+      // O SUBTITULO NAO LISTA MODULO, e a razao e que a lista apodrece. Ele dizia
+      // 'Acervo, Mapoteca e Orçamento, 1º CGEO' de quando eram tres, e ja estava
+      // errado com sete. Abrir a sigla diz o que o sistema faz para quem chega, e
+      // continua verdadeiro no dia em que entrar o oitavo modulo.
       el('p', {
         className: 'login-card__subtitle',
-        textContent: 'Acervo, Mapoteca e Orçamento, 1º CGEO',
+        textContent: 'Sistema de Apoio à Produção',
       }),
     ]),
     el('div', { className: 'login-card__caminhos' }, [
       caminho({
         icone: ICONS.lock,
         titulo: 'Entrar no sistema',
-        paraQuem: 'Para quem trabalha no 1º CGEO',
+        paraQuem: 'Para quem trabalha no Centro',
         corpo: form,
       }),
       caminho({

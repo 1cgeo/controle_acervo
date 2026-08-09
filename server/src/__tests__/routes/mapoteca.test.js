@@ -1424,8 +1424,9 @@ describe('Mapoteca Routes', () => {
       const clienteId = await criaCliente({ nome: '3º RCC', tipo_cliente_id: 1 })
       const metaId = await criaMeta('4.1')
       // Sem `omds`: a coluna saiu em 2026-08-08, e a coluna "OMDS" da aba do
-      // RTM passou a ser o literal '1º CGEO' (ver a constante OMDS em
-      // relatorio_ctrl.js). O caso do relatorio abaixo continua exigindo o
+      // RTM passou a sair de fora do pedido (ver o bloco OMDS em
+      // relatorio_ctrl.js; era literal ate 2026-08-09, e hoje e a sigla de
+      // `dgeo.instituicao`). O caso do relatorio abaixo continua exigindo o
       // valor, e e ele que guarda essa troca.
       const pedido = await criaPedido(clienteId, {
         demandante: 'CMS',
@@ -1501,7 +1502,13 @@ describe('Mapoteca Routes', () => {
       expect(res.status).toBe(200)
       expect(res.body.dados).toHaveLength(1)
       const item = res.body.dados[0]
-      expect(item.omds).toBe('1º CGEO')
+      // A SEMENTE, e nao uma constante do codigo. O '1º CGEO' desta instalacao
+      // e o valor semeado por `er/dgeo.sql`, e nao uma verdade universal: outro
+      // Centro instala o SAP e esta coluna sai com a sigla DELE. Ler a semente
+      // aqui e o que faz este caso continuar provando a ligacao em vez de fixar
+      // o nome desta casa.
+      const semente = await conn.one('SELECT sigla FROM dgeo.instituicao WHERE id = 1')
+      expect(item.omds).toBe(semente.sigla)
       expect(item.demandante).toBe('CMS')
       expect(item.om_destino).toBe('3º RCC')
       expect(item.mi).toBe('MI-2965-2')

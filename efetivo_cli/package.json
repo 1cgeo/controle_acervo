@@ -1,7 +1,7 @@
 {
   "name": "efetivo-cli",
   "version": "1.0.0",
-  "description": "Interface de linha de comando de IDENTIDADE e EFETIVO do SCA (usuarios, perfis, senhas, acessos, passagens e impedimentos), desenhada para agentes (agent-first). Irma do acervo_cli, do mapoteca_cli e do orcamento_cli.",
+  "description": "Interface de linha de comando de IDENTIDADE e EFETIVO do SAP (usuarios, perfis, senhas, acessos, passagens e impedimentos), desenhada para agentes (agent-first). Irma do acervo_cli, do mapoteca_cli e do orcamento_cli.",
   "type": "commonjs",
   "main": "efetivo.js",
   "bin": {
@@ -11,7 +11,7 @@
     "test": "node --test \"__tests__/*.test.js\""
   },
   "keywords": [
-    "Controle do Acervo",
+    "SAP",
     "Identidade",
     "Efetivo",
     "CLI",

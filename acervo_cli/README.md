@@ -1,6 +1,6 @@
 # acervo_cli
 
-Interface de linha de comando do SCA, desenhada para **agentes**.
+Interface de linha de comando do SAP, desenhada para **agentes**.
 
 O `acervo_client` serve humanos, o `acervo_cli` serve agentes. São dois clientes da mesma API, com ergonomias diferentes de propósito: a tela otimiza clique e descoberta visual, o CLI otimiza contexto e encadeamento.
 
@@ -10,7 +10,7 @@ node acervo_cli/acervo.js --ajuda
 
 ## Por que existe
 
-Um agente que opera o SCA pela API crua paga quatro impostos: precisa carregar um catálogo de rotas escrito à mão para descobrir os campos de uma operação, recebe JSON aninhado quando queria seis colunas, autentica de novo a cada invocação, e monta um `PUT` de objeto inteiro à mão (arriscando apagar em silêncio o campo que não mandou). O CLI existe para zerar os quatro.
+Um agente que opera o SAP pela API crua paga quatro impostos: precisa carregar um catálogo de rotas escrito à mão para descobrir os campos de uma operação, recebe JSON aninhado quando queria seis colunas, autentica de novo a cada invocação, e monta um `PUT` de objeto inteiro à mão (arriscando apagar em silêncio o campo que não mandou). O CLI existe para zerar os quatro.
 
 ## Os cinco princípios
 
@@ -26,7 +26,7 @@ Um agente que opera o SCA pela API crua paga quatro impostos: precisa carregar u
 
 ## O que o CLI não copia do SCO
 
-O `orcamento_cli` tem um `crud.js` genérico porque o SCO é CRUD uniforme (`/recurso`, `/recurso/:id`). O SCA **não é**: as rotas são operações em lote nomeadas (`PUT /produtos/versao` com o objeto inteiro no corpo, `DELETE /arquivo/arquivo` com a lista de ids no corpo, `POST /produtos/mover-arquivos`). Fingir CRUD produziria um mapa mentiroso, então cada recurso da registry declara suas **operações**, uma por rota real.
+O `orcamento_cli` tem um `crud.js` genérico porque o SCO é CRUD uniforme (`/recurso`, `/recurso/:id`). O SAP **não é**: as rotas são operações em lote nomeadas (`PUT /produtos/versao` com o objeto inteiro no corpo, `DELETE /arquivo/arquivo` com a lista de ids no corpo, `POST /produtos/mover-arquivos`). Fingir CRUD produziria um mapa mentiroso, então cada recurso da registry declara suas **operações**, uma por rota real.
 
 ## Uso
 
@@ -56,7 +56,7 @@ acervo produtos excluir-versao --data '{...}' --dry-run
 acervo arquivo preparar-produto --data-file lote.json --dry-run
 
 # sessão
-acervo status    # o SCA está no ar? há token em cache?
+acervo status    # o SAP está no ar? há token em cache?
 acervo login     # autentica uma vez, guarda o token (~1h)
 ```
 
@@ -76,7 +76,7 @@ Ficaram **fora** de propósito: a carga em si (o `prepare-upload` não transfere
 
 ## O `editar`, e o modo de falha que ele tranca
 
-Todo `PUT` do SCA sobrescreve o **objeto inteiro**: o controller monta um `UPDATE` com a lista fixa de colunas. Quem quer mudar um campo tem que ler o registro, trocar o campo e devolver o registro completo. Fazer isso à mão erra de três jeitos:
+Todo `PUT` do SAP sobrescreve o **objeto inteiro**: o controller monta um `UPDATE` com a lista fixa de colunas. Quem quer mudar um campo tem que ler o registro, trocar o campo e devolver o registro completo. Fazer isso à mão erra de três jeitos:
 
 1. **mandar só o campo que mudou** → 400 nos obrigatórios, ou pior: o servidor grava o **default do schema** nos campos que têm default (`subtipo_produto_id` vira `null`, `palavras_chave` vira `[]`), em silêncio;
 2. **copiar o GET direto para o PUT** → o `GET /acervo/versao/:id` chama o campo de `nome_versao` e o `PUT /produtos/versao` espera `nome`;
@@ -94,7 +94,7 @@ O detector do caso 3 é derivado, não escrito à mão: ele compara as chaves qu
 - **Manutenção sem corpo**: a limpeza de downloads e a de sessões de envio não têm corpo nem `:param`, então não há identificador para o `--confirmar` cobrar. Elas avisam antes de enviar (o aviso sai também no `--dry-run`) e o contrato imprime o que cada uma apaga. A de envio **apaga** a sessão encerrada há mais de 30 dias.
 - **Segredo na saída**: `camadas_produto` devolve credencial de banco e `volumes listar` devolve caminho de rede. Os dois avisam para não gravar a saída em arquivo versionado.
 - **429**: o servidor limita 200 requisições por minuto; o CLI traduz o 429 em "espere a janela virar e retome do ponto de parada", em vez de deixar parecer falha da rota.
-- **Proxy**: o módulo `http` do Node não lê `HTTP_PROXY` do ambiente, e isso aqui é deliberado. O proxy da rede interna devolve 503 para IP interno, e já houve caso de isso ser lido como "o SCA está fora do ar".
+- **Proxy**: o módulo `http` do Node não lê `HTTP_PROXY` do ambiente, e isso aqui é deliberado. O proxy da rede interna devolve 503 para IP interno, e já houve caso de isso ser lido como "o SAP está fora do ar".
 
 ## Ambiente
 
@@ -119,7 +119,7 @@ A exceção é o recurso `rpcmtec`, que é rota de **plataforma** e não do acer
 cd acervo_cli && npm test
 ```
 
-Rodam com o `node:test` embutido, sem instalar nada. Os testes de schema rodam **contra os schemas reais do `server/`**, não contra mocks: o valor do CLI é não ter cópia do contrato, e testar com schema falso testaria justamente a cópia. Em troca, eles quebram quando o contrato do SCA muda, que é exatamente o alarme que se quer ter. Um deles confere que **toda operação da registry aponta uma chave que existe no módulo de schema**: se o `server/` renomear um schema, quebra aqui em vez de quebrar num 500 no meio de uma carga.
+Rodam com o `node:test` embutido, sem instalar nada. Os testes de schema rodam **contra os schemas reais do `server/`**, não contra mocks: o valor do CLI é não ter cópia do contrato, e testar com schema falso testaria justamente a cópia. Em troca, eles quebram quando o contrato do SAP muda, que é exatamente o alarme que se quer ter. Um deles confere que **toda operação da registry aponta uma chave que existe no módulo de schema**: se o `server/` renomear um schema, quebra aqui em vez de quebrar num 500 no meio de uma carga.
 
 ## Dependências
 

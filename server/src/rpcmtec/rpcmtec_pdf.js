@@ -37,8 +37,17 @@
 // estilos itálicos apontam os mesmos arquivos: um .ttf a mais no repositório
 // para um estilo que ninguém usa custa 1,3 MB.
 
+// O NOME DO CENTRO NÃO É MAIS LITERAL, desde 2026-08-09. A capa, a linha do mês,
+// o bloco de assinatura e o cabeçalho de toda página traziam '1º CGEO' e '1º
+// Centro de Geoinformação' escritos aqui, e outro Centro que instalasse o SAP
+// emitiria um relatório com o nome desta casa. Os quatro leem `edicao.instituicao`,
+// que `rpcmtec_edicao_ctrl.montar` põe no objeto -- este arquivo não consulta
+// banco, e continua não consultando.
+
 const path = require('path')
 const PdfPrinter = require('pdfmake')
+
+const { AppError, httpCode } = require('../utils')
 
 const ASSETS = path.join(__dirname, 'assets')
 
@@ -156,12 +165,39 @@ const linhaInstitucional = texto => ({
   alignment: 'center'
 })
 
-const capa = (ano, mes) => [
+// A INSTITUIÇÃO DESTA EDIÇÃO, e ela não tem valor padrão.
+//
+// Chegar aqui sem ela quer dizer que alguém passou a este desenhador um objeto
+// que não veio de `rpcmtec_edicao_ctrl.montar`. Sem esta conferência o PDF sairia
+// com 'undefined - JULHO/2026' na capa e 'RPCMTec undefined Julho/2026' em toda
+// página -- um documento que alguém assina, com a assinatura valendo por um
+// cabeçalho que não diz de quem é. Erro claro é melhor.
+const instituicaoDa = edicao => {
+  const instituicao = edicao && edicao.instituicao
+
+  if (!instituicao || !instituicao.nome || !instituicao.sigla) {
+    throw new AppError(
+      'O PDF do RPCMTec não pode ser desenhado sem a instituição da instalação: o nome e a sigla do Centro entram na capa, no cabeçalho de página e no bloco de assinatura. A edição tem de vir de rpcmtec_edicao_ctrl.montar, que a lê de dgeo.instituicao.',
+      httpCode.InternalError
+    )
+  }
+
+  return instituicao
+}
+
+const capa = (ano, mes, instituicao) => [
   // 51,2 x 53,6 pt, medidos no `wp:extent` do documento.
   { image: BRASAO, width: 51.2, height: 53.6, alignment: 'center' },
   linhaInstitucional('MINISTÉRIO DA DEFESA'),
   linhaInstitucional('EXÉRCITO BRASILEIRO'),
-  linhaInstitucional('1º CENTRO DE GEOINFORMAÇÃO'),
+  // MAIÚSCULA APLICADA AQUI, e não guardada assim: a capa do modelo grita o nome
+  // do Centro, e o bloco de assinatura o escreve normal. Guardar duas grafias em
+  // `dgeo.instituicao` daria duas colunas para divergir.
+  linhaInstitucional(instituicao.nome.toUpperCase()),
+  // As duas linhas abaixo continuam LITERAIS, e a diferença é que elas não são
+  // a instituição: são a Comissão da Carta e o nome próprio da Divisão de
+  // Levantamento, que `dgeo.instituicao` não tem coluna para guardar. Ficam como
+  // PENDÊNCIA declarada, e não como esquecimento.
   linhaInstitucional('(Coms da Carta G do Brasil/1903)'),
   linhaInstitucional('DIVISÃO DE LEVANTAMENTO GENERAL AUGUSTO TASSO FRAGOSO'),
   { text: '', margin: [0, 6, 0, 0] },
@@ -173,7 +209,7 @@ const capa = (ano, mes) => [
   },
   { text: '', margin: [0, 6, 0, 0] },
   {
-    text: `1º CGEO - ${MESES[mes - 1]}/${ano}`,
+    text: `${instituicao.sigla} - ${MESES[mes - 1]}/${ano}`,
     bold: true,
     fontSize: TAMANHO_TITULO,
     alignment: 'center',
@@ -186,7 +222,7 @@ const capa = (ano, mes) => [
 // assinante o bloco não é impresso: uma linha em branco onde vai a assinatura
 // convida alguém a preenchê-la à caneta, e a edição não fecha sem assinante de
 // qualquer forma.
-const assinatura = edicao => {
+const assinatura = (edicao, instituicao) => {
   const bloco = [
     { text: '', margin: [0, 14, 0, 0] },
     {
@@ -213,7 +249,7 @@ const assinatura = edicao => {
       alignment: 'center'
     },
     {
-      text: '1º Centro de Geoinformação',
+      text: instituicao.nome,
       fontSize: TAMANHO_TITULO,
       alignment: 'center'
     }
@@ -227,11 +263,11 @@ const assinatura = edicao => {
 // A MARCA DE RASCUNHO sai em toda página enquanto a edição está aberta, e é
 // barata para o que evita: um PDF de edição aberta pode ser assinado, e aí o
 // documento assinado afirma números que ainda vão mudar.
-const cabecalhoDaPagina = (ano, mes, fechada) => (paginaAtual, total) => {
+const cabecalhoDaPagina = (ano, mes, fechada, sigla) => (paginaAtual, total) => {
   const linha = {
     columns: [
       {
-        text: `RPCMTec 1º CGEO ${mesCapitalizado(mes)}/${ano}`,
+        text: `RPCMTec ${sigla} ${mesCapitalizado(mes)}/${ano}`,
         bold: true,
         fontSize: TAMANHO_CORPO
       },
@@ -264,8 +300,8 @@ const cabecalhoDaPagina = (ano, mes, fechada) => (paginaAtual, total) => {
 // Documento
 // ---------------------------------------------------------------------------
 
-const corpoDoDocumento = edicao => {
-  const conteudo = [...capa(edicao.ano, edicao.mes)]
+const corpoDoDocumento = (edicao, instituicao) => {
+  const conteudo = [...capa(edicao.ano, edicao.mes, instituicao)]
 
   for (const secao of edicao.secoes) {
     conteudo.push({
@@ -311,9 +347,37 @@ const corpoDoDocumento = edicao => {
     }
   }
 
-  conteudo.push(...assinatura(edicao))
+  conteudo.push(...assinatura(edicao, instituicao))
 
   return conteudo
+}
+
+/**
+ * A definição pdfmake do documento, antes de virar bytes.
+ *
+ * SEPARADA DE `montarDocumento` para o TESTE, e a razão é que o PDF pronto não
+ * se lê: o texto sai comprimido, e a suíte só conseguia comparar TAMANHO de
+ * arquivo. Com a definição à parte, o teste do segundo Centro afirma o que
+ * importa -- que a capa, a linha do mês, o cabeçalho de página e o bloco de
+ * assinatura trazem o nome e a sigla de quem `dgeo.instituicao` diz que é.
+ *
+ * @param {Object} edicao - a saída de `rpcmtec_edicao_ctrl.montar`
+ * @returns {Object}
+ */
+const montarDefinicao = edicao => {
+  const instituicao = instituicaoDa(edicao)
+
+  return {
+    pageSize: 'LETTER',
+    // [esquerda, topo, direita, baixo]. O topo abre espaço para o cabeçalho de
+    // página, que é desenhado dentro da margem.
+    pageMargins: [72, 60, 72, 72],
+    header: cabecalhoDaPagina(
+      edicao.ano, edicao.mes, edicao.fechada, instituicao.sigla
+    ),
+    defaultStyle: { font: 'Carlito', fontSize: TAMANHO_TITULO },
+    content: corpoDoDocumento(edicao, instituicao)
+  }
 }
 
 /**
@@ -325,15 +389,7 @@ const corpoDoDocumento = edicao => {
 const montarDocumento = edicao => {
   const printer = new PdfPrinter(FONTES)
 
-  const definicao = {
-    pageSize: 'LETTER',
-    // [esquerda, topo, direita, baixo]. O topo abre espaço para o cabeçalho de
-    // página, que é desenhado dentro da margem.
-    pageMargins: [72, 60, 72, 72],
-    header: cabecalhoDaPagina(edicao.ano, edicao.mes, edicao.fechada),
-    defaultStyle: { font: 'Carlito', fontSize: TAMANHO_TITULO },
-    content: corpoDoDocumento(edicao)
-  }
+  const definicao = montarDefinicao(edicao)
 
   return new Promise((resolve, reject) => {
     const doc = printer.createPdfKitDocument(definicao)
@@ -347,6 +403,7 @@ const montarDocumento = edicao => {
 
 module.exports = {
   montarDocumento,
+  montarDefinicao,
   mesCapitalizado,
   MESES,
   // Exportados para o teste conferir o formato contra o modelo medido, sem

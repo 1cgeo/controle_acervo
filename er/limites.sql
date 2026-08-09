@@ -79,30 +79,72 @@ CREATE INDEX municipio_estado_idx ON limites.municipio (estado_id);
 -- nova nascer com a 2.7 errada, e ninguém perceberia.
 --
 -- Origem: banco `asc_insumos`, tabela `asc1cgeo.area_suprimento`.
--- Só o 1º CGEO é semeado: é a única área que este sistema mede. As outras quatro
--- existem na fonte e entram por carga, se um dia fizerem falta.
+-- Só o 1º CGEO é semeado: é a única área que esta instalação mede hoje. As
+-- outras quatro existem na fonte e entram por carga, se um dia fizerem falta.
+--
+-- QUEM É "A NOSSA ÁREA" É O `cgeo`, comparado com `dgeo.instituicao.nome`.
+--
+-- Havia aqui uma coluna `e_1cgeo BOOLEAN`, e ela saiu em 2026-08-09 por decisão
+-- do chefe: um booleano chamado "é o 1º CGEO" trancava a instalação num Centro,
+-- e nenhum outro conseguiria instalar o SAP sem editar DDL. Quem diz de quem é
+-- esta instalação passou a ser `dgeo.instituicao`, que é configurável por
+-- `PUT /api/instituicao`.
+--
+-- O ALERTA DA COLUNA ANTIGA CONTINUA VÁLIDO, e é por isso que ele está escrito
+-- aqui: o `cgeo` é texto livre da fonte externa `asc_insumos`, e um acento a
+-- menos, um 'º' virando 'o' ou um espaço a mais fazem a comparação devolver
+-- ZERO linhas sem erro nenhum. A saída não foi manter o booleano: foi fazer o
+-- zero DOER. `areaDoCentro`, em `server/src/rpcmtec/rpcmtec_ctrl.js`, FALHA com
+-- mensagem que diz o nome procurado e os `cgeo` que existem, em vez de emitir
+-- uma 2.7 com cobertura zero num relatório que o chefe assina.
+--
+-- A COMPARAÇÃO É EXATA, e não normalizada (sem `unaccent`, sem
+-- `btrim(lower(...))`). São quatro razões, e a terceira é a que decide:
+--
+--   1. Normalizar ANULA o `UNIQUE (cgeo)` abaixo. '1º Centro de Geoinformação'
+--      e '1o Centro de Geoinformacao' são dois valores únicos por texto e UM só
+--      depois de normalizados: as duas linhas entrariam, as duas casariam, e a
+--      2.7 contaria a área duas vezes -- exatamente o dobro silencioso que a
+--      restrição existe para impedir.
+--   2. `unaccent` é EXTENSÃO e não é IMMUTABLE (é o que o comentário de
+--      `municipio.nome_busca` já registra, logo acima): ela teria de entrar no
+--      `er/` e em toda instalação, e a comparação não caberia num índice.
+--   3. O nome configurado é o MESMO que sai no cabeçalho e no rodapé do
+--      relatório. Casar por aproximação faria o documento dizer
+--      '1º Centro de Geoinformação' enquanto mede a área de uma linha chamada
+--      '1o Centro de Geoinformacao': esconderia a divergência em vez de mostrá-la.
+--   4. Tolerância CURA UMA VEZ POR CONSULTA, para sempre. O erro claro cura o
+--      DADO: quem o lê vê os dois textos lado a lado, conserta a configuração
+--      (ou a carga) e nunca mais tropeça.
 CREATE TABLE limites.area_suprimento (
     id SMALLINT NOT NULL PRIMARY KEY,
-    cgeo VARCHAR(255) NOT NULL,
-    -- Verdadeiro só na área DESTE Centro. É por esta coluna que a 2.7 filtra, e
-    -- não pelo nome: o nome é texto livre da fonte, e comparar texto para
-    -- decidir de quem é a área é o tipo de regra que quebra calado.
-    e_1cgeo BOOLEAN NOT NULL DEFAULT FALSE,
+    -- O nome do Centro dono da área, como a fonte externa o escreve. A 2.7 casa
+    -- este texto com `dgeo.instituicao.nome`, e é assim que a instalação sabe
+    -- qual das áreas é a dela.
+    --
+    -- ÚNICO: a 2.7 lê a área sem LIMIT, e duas linhas com o mesmo nome de Centro
+    -- dobrariam a contagem em silêncio. Era o que o índice parcial
+    -- `area_suprimento_1cgeo_idx` garantia enquanto o booleano existiu.
+    cgeo VARCHAR(255) NOT NULL UNIQUE,
     area_km2 DOUBLE PRECISION,
     geom geometry(MULTIPOLYGON, 4674) NOT NULL
 );
 
 CREATE INDEX area_suprimento_geom_idx ON limites.area_suprimento USING gist (geom);
--- Índice parcial e ÚNICO: existe uma só "nossa área", e a 2.7 a lê sem LIMIT.
--- Duas linhas com e_1cgeo verdadeiro dobrariam a contagem em silêncio.
-CREATE UNIQUE INDEX area_suprimento_1cgeo_idx ON limites.area_suprimento (e_1cgeo) WHERE e_1cgeo;
 
 -- O WKT vai quebrado em pedaços de 72 caracteres por POSIÇÃO, e não por palavra:
 -- literais adjacentes separados por quebra de linha o PostgreSQL concatena, mas
 -- quebrar no espaço COMERIA o separador entre duas coordenadas e o polígono
 -- sairia corrompido sem dar erro.
-INSERT INTO limites.area_suprimento (id, cgeo, e_1cgeo, area_km2, geom) VALUES (
-  1, '1º Centro de Geoinformação', TRUE, 694301,
+--
+-- O `cgeo` DESTA LINHA E O `nome` DA SEMENTE DE `dgeo.instituicao` SÃO O MESMO
+-- TEXTO, caractere por caractere, e é essa igualdade que faz a 2.7 achar a área
+-- numa instalação recém-criada. Não há FK que a cobre (`limites` não conhece
+-- `dgeo`, e roda antes dele): quem a cobra é a mensagem de erro da 2.7, e um
+-- `create_config.js` que pergunte outro nome sem carregar a área daquele Centro
+-- cai nela na primeira geração do RPCMTec, em vez de emitir cobertura zero.
+INSERT INTO limites.area_suprimento (id, cgeo, area_km2, geom) VALUES (
+  1, '1º Centro de Geoinformação', 694301,
   ST_GeomFromText(
     'MULTIPOLYGON(((-54.999999820477626 -27.499999859365687,-54.9999998204776'
     '26 -26.999999804532052,-54.49999976564399 -26.999999804532052,-54.000000'

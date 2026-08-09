@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict'
 
-// mapoteca - interface de linha de comando da Mapoteca do SCA, para AGENTES.
+// mapoteca - interface de linha de comando da Mapoteca do SAP, para AGENTES.
 //
 // O mapoteca_client serve humanos; este CLI serve agentes. Sao dois clientes da
 // mesma API, com ergonomias diferentes de proposito: a tela otimiza clique e
@@ -32,7 +32,7 @@ const VERBOS_PEDIDO = new Set([
   'cadastrar', 'itens', 'situacao', 'corrigir', 'anexar', 'anexos', 'anexo'
 ])
 
-const AJUDA = `mapoteca - CLI da Mapoteca do SCA (pedidos de cartas), para agentes
+const AJUDA = `mapoteca - CLI da Mapoteca do SAP (pedidos de cartas), para agentes
 
 CONTRATO (nao gasta rede; leia isto antes de montar um corpo)
   mapoteca schema                 lista os recursos e as regras gerais
@@ -93,7 +93,7 @@ RECURSOS  (${listarChaves().join(', ')})
       o DELETE e sempre em LOTE e e irreversivel
 
 SESSAO
-  mapoteca status                 o SCA esta no ar? ha token em cache?
+  mapoteca status                 o SAP esta no ar? ha token em cache?
   mapoteca login                  autentica uma vez e guarda o token
   mapoteca logout                 descarta o token em cache
 

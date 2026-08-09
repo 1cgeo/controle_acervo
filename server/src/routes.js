@@ -24,6 +24,27 @@ const { efetivoRoute } = require("./efetivo");
 const { auditoriaRoute } = require("./auditoria");
 const { equipamentoRoute } = require("./equipamento");
 const { campoRoute } = require("./campo");
+const { instituicaoRoute } = require("./instituicao");
+
+// O CORE DE PRODUCAO, herdado do SAP 2.3.5. Sete modulos, e os nomes de prefixo
+// nao sao os de la em dois casos, por colisao medida:
+//
+//   `/api/gerencia` do SAP colide com o `/api/gerencia` do ACERVO, que ja
+//   existe com 14 rotas de dominio e manutencao, e por isso o de la entrou como
+//   `/api/gerencia_producao`. Quem chega e quem se acomoda.
+//
+//   `/api/projeto` do SAP reunia 159 rotas, e o nome mentia: 146 delas sao o
+//   CADASTRO da producao (linha, fase, subfase, etapa, bloco, unidade de
+//   trabalho, insumo) e so 13 falavam de projeto, lote e produto. Essas 13 NAO
+//   atravessaram, porque `/api/projetos` e `/api/produtos` daqui ja as
+//   respondem. O que sobrou entrou com o nome do que e: `/api/producao`.
+const { producaoRoute } = require("./producao");
+const { gerenciaProducaoRoute } = require("./gerencia_producao");
+const { distribuicaoRoute } = require("./distribuicao");
+const { acompanhamentoProducaoRoute } = require("./acompanhamento_producao");
+const { metadadoRoute } = require("./metadado");
+const { microcontroleRoute } = require("./microcontrole");
+const { perigoRoute } = require("./perigo");
 
 // Modulo orcamento (antigo SCO). Os nomes colidem com os do acervo (dominio,
 // relatorio, arquivo), entao entram com apelido e so sob /api/orcamento/.
@@ -48,7 +69,7 @@ const router = express.Router();
 router.get("/", (req, res, next) => {
   return res.sendJsonAndLog(
     true,
-    "Sistema de Controle do Acervo operacional",
+    "Sistema de Apoio à Produção (SAP) operacional",
     httpCode.OK,
     {
       database_version: databaseVersion.nome
@@ -57,6 +78,21 @@ router.get("/", (req, res, next) => {
 });
 
 router.use("/login", loginRoute);
+
+// A INSTITUIÇÃO que opera esta instalação (nome, sigla e Unidade Gestora). Rota
+// de PLATAFORMA, sem prefixo de módulo, como /usuarios, /acessos e /auditoria:
+// "de quem é esta instalação" é a mesma pergunta para o acervo, a mapoteca, o
+// orçamento e o RPCMTec, e a resposta é uma só.
+//
+// LOGO DEPOIS DO LOGIN, e a ordem aqui é de leitura e não de casamento: nenhum
+// outro prefixo começa por "instituicao", então nada colide. Ela vem cedo
+// porque é a primeira coisa que o client pede depois de entrar, para escrever o
+// nome do Centro no cabeçalho.
+//
+// A LEITURA É `verifyLogin` e a escrita é `verifyAdmin`. Ver o cabeçalho de
+// `instituicao/instituicao_route.js`: a página de quem ainda não tem perfil em
+// módulo nenhum também mostra de quem é a instalação.
+router.use("/instituicao", instituicaoRoute);
 
 router.use("/acervo", acervoRoute);
 
@@ -138,6 +174,37 @@ router.use("/equipamento", equipamentoRoute);
 // com rota de plataforma. Um módulo novo obrigaria a conceder perfil de novo a
 // quem já responde pela produção, para ver o trabalho que ela promete.
 router.use("/campo", campoRoute);
+
+// --- O core de producao, do SAP 2.3.5 --------------------------------------
+//
+// A ORDEM AQUI E A DE DECLARACAO, e ela importa: `/api/gerencia_producao` tem
+// de vir DEPOIS de `/api/gerencia` do acervo, senao o prefixo mais curto casaria
+// primeiro. Os dois so nao colidem porque os nomes diferem inteiros.
+//
+// TODAS COBRAM O MODULO `producao`, code 7 de `dominio.modulo`, e nenhuma delas
+// aceita o default de `verifyPerfil`: rota que esquece o segundo argumento passa
+// a cobrar perfil no ACERVO, sem erro visivel. A traducao das duas guardas do
+// SAP para as quatro daqui e: `verifyLogin` de la vira operador em `producao`, e
+// `verifyAdmin` de la vira gerente em `producao`, com o administrador global
+// passando por cima como sempre.
+router.use("/producao", producaoRoute);
+
+router.use("/gerencia_producao", gerenciaProducaoRoute);
+
+// A fila do operador: pega a proxima atividade, inicia, finaliza e aponta
+// problema. E a rota que o plugin SAP Operador consome.
+router.use("/distribuicao", distribuicaoRoute);
+
+router.use("/acompanhamento", acompanhamentoProducaoRoute);
+
+router.use("/metadados", metadadoRoute);
+
+router.use("/microcontrole", microcontroleRoute);
+
+// As rotas destrutivas do administrador. Nome herdado do SAP, e ele avisa o que
+// e: soltar atividade de usuario, apagar o log combinado e apagar unidade de
+// trabalho sem atividade, mais o CRUD de propriedades de camada e de insumo.
+router.use("/perigo", perigoRoute);
 
 // Rotas públicas de integração (read-only, sem autenticação) para o vault da DGEO
 router.use("/integracao", integracaoRoute);

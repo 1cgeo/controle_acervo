@@ -1048,6 +1048,11 @@ describe('GET /api/rpcmtec/anuario', () => {
 
     expect(res.status).toBe(200)
     expect(res.headers['content-type']).toContain('opendocument.spreadsheet')
+    // O '1CGEO' aqui é a SEMENTE de `er/dgeo.sql` passada pelo slug, e não uma
+    // constante do código: é a sigla '1º CGEO' sem o espaço e sem o 'º'. Que ele
+    // ACOMPANHA outra instituição é o que o bloco 'o segundo Centro' prova, mais
+    // abaixo; o que este caso guarda é que o nome de hoje NÃO MUDOU -- a DSG já
+    // recebeu meses com este nome.
     expect(res.headers['content-disposition'])
       .toContain('Anuario_Estatistico_1CGEO_07_Julho_2026.ods')
     expect(res.body.subarray(0, 2).toString()).toBe('PK')
@@ -1445,5 +1450,187 @@ describe('RPCMTec: o rastro da edição mensal', () => {
     )
     expect(todos).toHaveLength(1)
     expect(todos[0].entidade_id).toBe(String(id))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// O SEGUNDO CENTRO
+// ---------------------------------------------------------------------------
+//
+// É ESTE BLOCO QUE DIZ SE O TRABALHO DE 2026-08-09 VALEU. O nome do 1º CGEO
+// estava escrito no código em dez lugares -- a capa do PDF, a linha do mês, o
+// bloco de assinatura, o cabeçalho de toda página, o nome do arquivo do Anuário,
+// as duas frases da 1.1 e a coluna OMDS do RTM --, e `dgeo.instituicao` existia
+// sem que quase ninguém a consumisse. Outro CGEO que instalasse o SAP emitiria
+// relatório com "1º CGEO" no cabeçalho e mandaria à DSG uma planilha com a sigla
+// desta casa em todas as linhas.
+//
+// A PROVA É TROCAR A LINHA E CONFERIR O DOCUMENTO, contra o banco e pelas rotas
+// de verdade: o que os outros casos deste arquivo fixam é o nome de HOJE, que é
+// a semente, e nenhum deles reprovaria se o nome voltasse a ser literal.
+//
+// A LINHA NÃO ESTÁ NO `cleanTestData`, e nem deveria: ela é SEMENTE do
+// `er/dgeo.sql`, como `pit.pit`. Por isso o `afterEach` daqui a devolve ao
+// estado da semente com as próprias mãos -- sem isso, este bloco vazaria o
+// segundo Centro para todo teste que rodasse depois neste worker (a coluna OMDS
+// do RTM e a área da 2.7 leem a mesma linha).
+//
+// A 2.7 CONTINUA CASANDO, e é por isso que a `limites.area_suprimento` do
+// segundo Centro entra e sai junto: `areaDoCentro` compara o NOME por texto
+// exato e FALHA quando não acha, de propósito. Sem semear a área do 2º CGEO, o
+// documento inteiro deixaria de montar e este bloco provaria a coisa errada.
+describe('RPCMTec: o segundo Centro', () => {
+  const SEMENTE = {
+    nome: '1º Centro de Geoinformação',
+    sigla: '1º CGEO',
+    ug_code: '160382'
+  }
+  const SEGUNDO = { nome: '2º Centro de Geoinformação', sigla: '2º CGEO' }
+
+  const trocarInstituicao = async ({ nome, sigla }) => {
+    const res = await request(app)
+      .put('/api/instituicao')
+      .set('Authorization', admin())
+      .send({ nome, sigla })
+    expect(res.status).toBe(200)
+  }
+
+  // A ASC do segundo Centro, com a MESMA geometria da do primeiro: o que se
+  // testa aqui é o NOME, e não a cobertura. O `id` vai à mão porque a coluna é
+  // SMALLINT sem sequência: a carga de `limites` numera as áreas.
+  const semearAreaDo = nome =>
+    conn.none(
+      `INSERT INTO limites.area_suprimento (id, cgeo, area_km2, geom)
+       SELECT (SELECT max(id) + 1 FROM limites.area_suprimento),
+              $<nome>, area_km2, geom
+         FROM limites.area_suprimento
+        WHERE cgeo = $<semente>
+       ON CONFLICT (cgeo) DO NOTHING`,
+      { nome, semente: SEMENTE.nome }
+    )
+
+  beforeEach(async () => {
+    await semearAreaDo(SEGUNDO.nome)
+    await trocarInstituicao(SEGUNDO)
+  })
+
+  afterEach(async () => {
+    await conn.none(
+      `UPDATE dgeo.instituicao
+          SET nome = $<nome>, sigla = $<sigla>, ug_code = $<ug_code>,
+              data_modificacao = NULL, usuario_modificacao_uuid = NULL
+        WHERE id = 1`,
+      SEMENTE
+    )
+    await conn.none('DELETE FROM limites.area_suprimento WHERE cgeo = $<nome>', {
+      nome: SEGUNDO.nome
+    })
+  })
+
+  test('o documento montado carrega a instituição, e a 1.1 fala do 2º CGEO', async () => {
+    const id = await criarEdicao()
+    const doc = await documento(id)
+
+    expect(doc.instituicao.nome).toBe(SEGUNDO.nome)
+    expect(doc.instituicao.sigla).toBe(SEGUNDO.sigla)
+
+    const finalidade = blocos(doc).find(b => b.numero === '1.1').texto
+    expect(finalidade).toContain('Chefe do 2º Centro de Geoinformação (2º CGEO)')
+    expect(finalidade).toContain('finalísticas do 2º CGEO.')
+    expect(finalidade).not.toMatch(/1º\s*CGEO/)
+  })
+
+  // O CABEÇALHO E O RODAPÉ, pela definição do desenhador. O PDF pronto não se lê
+  // (o texto sai comprimido), e por isso `rpcmtec_pdf` expõe `montarDefinicao`:
+  // o que interessa aqui é o TEXTO que vai para o papel, e não o tamanho do
+  // arquivo. O caminho é o mesmo do download, e a edição vem da montagem.
+  test('a capa, a linha do mês e o cabeçalho de página acompanham', async () => {
+    const rpcmtecPdf = require('../../rpcmtec/rpcmtec_pdf')
+    const edicaoCtrl = require('../../rpcmtec/rpcmtec_edicao_ctrl')
+
+    const id = await criarEdicao()
+    const definicao = rpcmtecPdf.montarDefinicao(await edicaoCtrl.montar(id))
+
+    const textos = definicao.content
+      .map(no => (no && typeof no.text === 'string' ? no.text : ''))
+    const cabecalho = definicao.header(1, 2)[0].columns
+      .map(c => c.text)
+
+    expect(textos).toContain('2º CENTRO DE GEOINFORMAÇÃO')
+    expect(textos).toContain('2º CGEO - JULHO/2026')
+    expect(cabecalho).toContain('RPCMTec 2º CGEO Julho/2026')
+    // O bloco de assinatura sai no fim do conteúdo, com o nome por extenso.
+    expect(textos).toContain(SEGUNDO.nome)
+  })
+
+  test('o PDF continua saindo, e é um PDF', async () => {
+    const id = await criarEdicao()
+
+    const res = await comoBinario(request(app)
+      .get(`/api/rpcmtec/${id}/pdf`).set('Authorization', admin()))
+
+    expect(res.status).toBe(200)
+    expect(res.body.subarray(0, 4).toString()).toBe('%PDF')
+  })
+
+  // O NOME DO ARQUIVO, que é o ponto que precisou de SLUG: a sigla tem espaço e
+  // 'º', e nome de arquivo não os aceita bem.
+  test('o Anuário sai com a sigla do segundo Centro no nome do arquivo', async () => {
+    const res = await comoBinario(request(app)
+      .get('/api/rpcmtec/anuario/ods?ano=2026&mes=7')
+      .set('Authorization', admin()))
+
+    expect(res.status).toBe(200)
+    expect(res.headers['content-disposition'])
+      .toContain('Anuario_Estatistico_2CGEO_07_Julho_2026.ods')
+    expect(res.headers['content-disposition']).not.toContain('1CGEO')
+  })
+
+  // A COLUNA OMDS DA ABA META4_DETALHADA, que era `const OMDS = "1º CGEO"`.
+  //
+  // O PEDIDO É CRIADO AQUI porque sem linha a coluna não teria onde aparecer, e
+  // um `for` sobre uma lista vazia passa verde sem afirmar nada. É um item
+  // avulso, que é o pedido mais barato que a aba aceita.
+  test('a aba do RTM manda a sigla do segundo Centro para a DSG', async () => {
+    const relatorioCtrl = require('../../mapoteca/relatorio_ctrl')
+
+    const cliente = await request(app)
+      .post('/api/mapoteca/cliente')
+      .set('Authorization', admin())
+      .send({
+        nome: 'OM do segundo Centro',
+        endereco_entrega_principal: 'Rua Teste, 1',
+        tipo_cliente_id: 1
+      })
+    expect(cliente.status).toBe(201)
+    const clienteId = (await conn.one(
+      'SELECT id FROM mapoteca.cliente ORDER BY id DESC LIMIT 1'
+    )).id
+
+    const pedido = await request(app)
+      .post('/api/mapoteca/pedido')
+      .set('Authorization', admin())
+      .send({
+        data_pedido: '2026-07-10T10:00:00Z',
+        cliente_id: clienteId,
+        situacao_pedido_id: 4
+      })
+    expect(pedido.status).toBe(201)
+
+    const item = await request(app)
+      .post('/api/mapoteca/produto_pedido')
+      .set('Authorization', admin())
+      .send({
+        pedido_id: pedido.body.dados.id,
+        nome_avulso: 'Papel quadriculado',
+        quantidade: 1,
+        tipo_midia_id: 1
+      })
+    expect(item.status).toBe(201)
+
+    const linhas = await relatorioCtrl.getRelatorioPedidosDetalhado(2026, 7)
+
+    expect(linhas.length).toBeGreaterThan(0)
+    for (const linha of linhas) expect(linha.omds).toBe(SEGUNDO.sigla)
   })
 })

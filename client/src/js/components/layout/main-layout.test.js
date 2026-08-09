@@ -17,6 +17,8 @@ function logar({ administrador = true, perfis = {} } = {}) {
       { code: 2, nome: 'Mapoteca', nome_abrev: 'mapoteca' },
       { code: 3, nome: 'Orçamento', nome_abrev: 'orcamento' },
       { code: 6, nome: 'Equipamento', nome_abrev: 'equipamento' },
+      // `dominio.modulo` code 7, o core de producao herdado do SAP 2.3.5.
+      { code: 7, nome: 'Produção', nome_abrev: 'producao' },
     ],
   }, 'diniz');
 }
@@ -50,10 +52,11 @@ describe('createMainLayout', () => {
 
     expect(ctrl.layout.querySelector('.navbar__modulo')).toBeNull();
     expect(ctrl.layout.querySelector('.navbar select')).toBeNull();
-    // A troca de modulo mora na sidebar, uma seção por modulo. São SEIS
-    // seções: os quatro módulos, mais PIT e Efetivo, que se desenham como
-    // sistema sem ser módulo (ver sidebar.js).
-    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(6);
+    // A troca de modulo mora na sidebar, uma seção por modulo. São SETE
+    // seções: os CINCO módulos do registry, mais PIT e Efetivo, que se
+    // desenham como sistema sem ser módulo (ver sidebar.js). Eram seis até a
+    // 3.0.0, quando `producao` entrou como quinto módulo.
+    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(7);
   });
 
   test('o nome do modulo vem do catalogo do servidor, nao decorado na tela', () => {
@@ -62,12 +65,15 @@ describe('createMainLayout', () => {
 
     const rotulos = [...ctrl.layout.querySelectorAll('.sidebar__module-header .sidebar__item-label')]
       .map(e => e.textContent);
-    // Os quatro primeiros são MÓDULOS, e o nome de cada um sai de
+    // Os cinco primeiros são MÓDULOS, e o nome de cada um sai de
     // `dominio.modulo` (auth-store.nomeModulo): trocar o nome no banco troca o
-    // menu, sem deploy. O manifesto do equipamento NÃO carrega rótulo nenhum, e
-    // por isso "Equipamento" aqui é o `nome` do catálogo, e não o `id`.
-    expect(rotulos.slice(0, 4)).toEqual([
-      'Acervo', 'Mapoteca', 'Orçamento', 'Equipamento',
+    // menu, sem deploy. Nem o manifesto do equipamento nem o de produção
+    // carregam rótulo, e por isso "Equipamento" e "Produção" aqui são o `nome`
+    // do catálogo, e não o `id`. Se o catálogo não trouxesse o code 7, o rótulo
+    // cairia para 'producao' em minúsculas, que é o `id`: é assim que este caso
+    // pega o dia em que alguém decorar o nome na tela.
+    expect(rotulos.slice(0, 5)).toEqual([
+      'Acervo', 'Mapoteca', 'Orçamento', 'Equipamento', 'Produção',
     ]);
     // "PIT" e "Efetivo" são a exceção, e são declarados na tela porque NÃO são
     // módulos DO REGISTRY: eles existem em `dominio.modulo` (codes 4 e 5) e
@@ -78,7 +84,7 @@ describe('createMainLayout', () => {
     // permissão da seção é 'pit', `dominio.modulo` code 4, que se chamava
     // 'Produção'/'producao' até ali. O rótulo daqui continua sendo declarado na
     // tela, e não lido do catálogo, porque a seção não está no registry.
-    expect(rotulos.slice(4)).toEqual(['PIT', 'Efetivo']);
+    expect(rotulos.slice(5)).toEqual(['PIT', 'Efetivo']);
   });
 
   test('mudar o hash sincroniza o modulo aberto e o item ativo', () => {
@@ -101,7 +107,7 @@ describe('createMainLayout', () => {
     window.dispatchEvent(new Event('hashchange'));
 
     // Rota de plataforma não apaga o menu do módulo: as seis seções ficam.
-    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(6);
+    expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(7);
     expect(ctrl.layout.querySelector('[data-id="acervo:dashboard"]')).not.toBeNull();
     expect(ctrl.layout.querySelector('[data-id="usuarios"]')
       .classList.contains('sidebar__item--active')).toBe(true);

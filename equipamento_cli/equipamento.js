@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict'
 
-// equipamento - CLI do modulo equipamento do SCA, desenhado para AGENTES.
+// equipamento - CLI do modulo equipamento do SAP, desenhado para AGENTES.
 //
 // O client web serve humanos; este CLI serve agentes. Sao dois clientes da mesma
 // API, com ergonomias diferentes de proposito: a tela otimiza clique e
@@ -24,7 +24,7 @@ const argsLib = require('./lib/args')
 const { resolver } = require('./lib/config')
 const { listarChaves, historicos } = require('./lib/recursos')
 
-const AJUDA = `equipamento - CLI do módulo equipamento do SCA, para agentes
+const AJUDA = `equipamento - CLI do módulo equipamento do SAP, para agentes
 
 O parque de material da Divisão: estação total, GNSS, plotter, drone. O que
 temos, em que situação cada bem está HOJE, e o que já aconteceu com ele.
@@ -64,12 +64,12 @@ TIPO DE EQUIPAMENTO  (é cadastro, não domínio)
   equipamento tipo apagar --id 3 --confirmar 3
 
 SESSÃO
-  equipamento status                    o SCA está no ar? há token em cache?
+  equipamento status                    o SAP está no ar? há token em cache?
   equipamento login                     autentica uma vez e guarda o token (~1h)
   equipamento logout                    descarta o token em cache
 
 AMBIENTE  (nunca ponha senha na linha de comando)
-  SCA_URL     URL do backend do SCA
+  SCA_URL     URL do backend do SAP
   SCA_USER    login                     SCA_SENHA   senha
   SCA_TOKEN   JWT pronto (dispensa login)
 

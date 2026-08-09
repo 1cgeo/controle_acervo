@@ -1,6 +1,7 @@
 'use strict'
 
 const jwt = require('jsonwebtoken')
+const semver = require('semver')
 
 const { db } = require('../database')
 
@@ -39,6 +40,113 @@ const signJWT = (data, secret) => {
   })
 }
 
+// ---------------------------------------------------------------------------
+// O GATE DE VERSAO: o cliente atrasado nao entra
+// ---------------------------------------------------------------------------
+//
+// POR QUE ELE EXISTE. O plugin do QGIS ESCREVE no banco de produção pelas rotas
+// de `/api/distribuicao`, e o contrato dessas rotas muda de versão para versão.
+// Um plugin velho grava atividade com contrato velho, e o estrago não aparece no
+// dia: aparece semanas depois, numa contagem de produção que não fecha. Barrar
+// no login é o único ponto em que ainda dá para dizer "atualize" antes de o dado
+// entrar.
+//
+// SÓ VALE PARA 'sap_fp', E ISSO É DELIBERADO -- é o que o SAP 2.3.5 fazia, e a
+// razão é que 'sap_fp' é a PONTA DA PRODUÇÃO: é ele que executa a atividade e
+// grava o dado. O 'sap_fg' (SAP Gerente) publica catálogo do QGIS e distribui
+// trabalho, e travá-lo pela versão do plugin trancaria do lado de fora
+// justamente quem PUBLICA a versão nova. O schema continua exigindo `plugins` e
+// `qgis` dos dois, porque saber o que cada máquina roda é útil de qualquer jeito.
+//
+// AS TABELAS MUDARAM DE SCHEMA na travessia: `dgeo.versao_qgis` e `dgeo.plugin`
+// do SAP são `qgis.versao_qgis` e `qgis.plugin` aqui, porque no SCA `dgeo` é
+// GENTE e configuração de ferramenta não é gente. Ver o cabeçalho de
+// `er/qgis.sql`.
+//
+// TABELA VAZIA NÃO BARRA NINGUÉM, nos dois casos. Instalação nova nasce sem
+// linha em `qgis.plugin`, e recusar todo mundo enquanto o administrador não
+// cadastrar o mínimo trancaria o sistema no primeiro dia. A ausência de exigência
+// é uma resposta legítima: não há mínimo declarado.
+
+/**
+ * Compara duas versões tolerando o que o QGIS reporta ('3.22.2-Białowieża').
+ *
+ * `semver.coerce` DEVOLVE NULL para o que ele não consegue ler, e `semver.gte`
+ * com null LANÇA. O SAP não tratava isso: uma string de versão estranha vinda do
+ * cliente derrubava o login com 500 em vez de recusá-lo com 400. Aqui o
+ * ilegível conta como ATRASADO, que é o lado seguro: quem não sabe dizer a
+ * própria versão não prova estar em dia.
+ */
+const versaoAtende = (informada, minima) => {
+  const atual = semver.coerce(informada)
+  const piso = semver.coerce(minima)
+  // Sem mínimo legível não há o que cobrar. Com mínimo e sem versão legível do
+  // lado do cliente, recusa.
+  if (!piso) return true
+  if (!atual) return false
+  return semver.gte(atual, piso)
+}
+
+/**
+ * A versão mínima do QGIS. UMA linha em `qgis.versao_qgis`, e a chave `code`
+ * existe justamente para não haver duas.
+ */
+const verificaQGIS = async (t, qgis) => {
+  const minimo = await t.oneOrNone(
+    'SELECT versao_minima FROM qgis.versao_qgis LIMIT 1'
+  )
+  if (!minimo || !minimo.versao_minima) return
+
+  if (!versaoAtende(qgis, minimo.versao_minima)) {
+    throw new AppError(
+      `Versão incorreta do QGIS. A seguinte versão é necessária: ${minimo.versao_minima}`,
+      httpCode.BadRequest
+    )
+  }
+}
+
+/**
+ * A versão mínima de CADA plugin exigido.
+ *
+ * TODO PLUGIN DE `qgis.plugin` TEM DE ESTAR NA LISTA que o cliente mandou, e em
+ * versão igual ou maior. Plugin exigido e ausente é recusado do mesmo modo que
+ * plugin desatualizado, porque para o servidor os dois são a mesma coisa: o
+ * cliente não tem o que precisa. E o desabilitado cai aqui também, porque o QGIS
+ * só reporta o que está ligado.
+ *
+ * A MENSAGEM LISTA TODOS OS EXIGIDOS, e não só o que faltou. Quem está com dois
+ * plugins atrasados descobriria um por vez, e cada descoberta custa um ciclo de
+ * atualizar e tentar de novo.
+ */
+const verificaPlugins = async (t, plugins) => {
+  const exigidos = await t.any('SELECT nome, versao_minima FROM qgis.plugin')
+  if (!exigidos || exigidos.length === 0) return
+
+  const informados = new Map(
+    (plugins || []).map(p => [p.nome, p.versao])
+  )
+
+  const emFalta = exigidos.filter(exigido => {
+    // Ausente da lista é ausente da máquina, para efeito de trabalho: pode estar
+    // desinstalado ou apenas desligado, e nos dois casos o cliente não o tem.
+    if (!informados.has(exigido.nome)) return true
+    // Linha sem `versao_minima` exige PRESENÇA e nada mais.
+    if (!exigido.versao_minima) return false
+    return !versaoAtende(informados.get(exigido.nome), exigido.versao_minima)
+  })
+
+  if (emFalta.length > 0) {
+    const lista = exigidos
+      .map(p => `${p.nome} - Versão: ${p.versao_minima}`)
+      .join('\n ')
+
+    throw new AppError(
+      `Plugins desatualizados, não instalados ou desabilitados. Os seguintes plugins são necessários: \n ${lista}`,
+      httpCode.BadRequest
+    )
+  }
+}
+
 /**
  * Perfil por MODULO no formato que o client consome ({ acervo: 1, mapoteca: 2 }).
  *
@@ -72,13 +180,46 @@ const lerModulos = async t =>
   t.any('SELECT code, nome, nome_abrev FROM dominio.modulo ORDER BY code')
 
 /**
+ * A INSTITUICAO que opera esta instalacao, para o client DESENHAR com ela.
+ *
+ * VAI JUNTO DA SESSAO, ao lado de `perfis` e `modulos`, e pelos mesmos dois
+ * motivos: o client precisa dela para montar tela (o remetente da etiqueta de
+ * envio, o orgao produtor que o formulario de versao sugere, o nome de arquivo
+ * do Anuario quando o cabecalho nao vem), e uma chamada extra no boot seria uma
+ * volta a mais para um dado que muda uma vez por instalacao. Ate 2026-08-09 o
+ * "1º CGEO" estava escrito em QUATRO lugares do client, e outro Centro veria o
+ * nosso nome depois de configurar o proprio.
+ *
+ * SO `nome` E `sigla`, e a falta do `ug_code` e deliberada: ele e do modulo
+ * orcamento e nao se desenha com ele. Quem precisa dos tres campos, do `ug_nome`
+ * e do rastro e a TELA de edicao (`#/instituicao`), que continua lendo
+ * `GET /api/instituicao`.
+ *
+ * `oneOrNone`, e nao `one`: a linha e semeada pelo `er/dgeo.sql` e pela
+ * migracao, mas um banco sem ela nao pode impedir alguem de ENTRAR -- a pessoa
+ * ficaria trancada do lado de fora por causa de um rotulo. Quem cobra a
+ * ausencia e o `GET /api/instituicao`, com a mensagem que diz qual migracao
+ * aplicar. Aqui a resposta e `null`, e o client cai no que ele mostra sem nome.
+ *
+ * O `id = 1` nao e numero magico: e o `DEFAULT 1` com `CHECK (id = 1)` do DDL,
+ * que e o que faz a tabela ter uma linha so.
+ */
+const lerInstituicao = async t =>
+  t.oneOrNone('SELECT nome, sigla FROM dgeo.instituicao WHERE id = 1')
+
+/**
  * Autentica contra o próprio banco: o hash bcrypt mora em `dgeo.usuario.senha`.
  *
  * @param {string} login
  * @param {string} senha
- * @param {string} cliente - 'sca_web' ou 'sca_qgis' (o Joi já restringiu)
+ * @param {string} cliente - 'sap_web', 'sap_fp', 'sap_fg', 'sca_web' ou
+ *   'sca_qgis' (o Joi já restringiu; os dois últimos são os nomes que os
+ *   clientes anteriores à renomeação de 2026-08-09 ainda enviam)
+ * @param {Array<{nome: string, versao: string}>} [plugins] - os plugins
+ *   HABILITADOS no QGIS de quem entra. Só os dois clientes de QGIS o mandam.
+ * @param {string} [qgis] - a versão do QGIS de quem entra
  */
-controller.login = async (login, senha, cliente) => {
+controller.login = async (login, senha, cliente, plugins, qgis) => {
   return db.conn.tx(async t => {
     const usuarioDb = await t.oneOrNone(
       `SELECT id, uuid, administrador, senha
@@ -87,7 +228,7 @@ controller.login = async (login, senha, cliente) => {
     )
     if (!usuarioDb) {
       throw new AppError(
-        'Usuário não autorizado para utilizar o Sistema de Controle do Acervo',
+        'Usuário não autorizado para utilizar o Sistema de Apoio à Produção',
         httpCode.BadRequest
       )
     }
@@ -108,6 +249,14 @@ controller.login = async (login, senha, cliente) => {
       throw new AppError('Usuário ou senha inválida', httpCode.BadRequest)
     }
 
+    // O GATE DE VERSÃO VEM DEPOIS DA SENHA, e a ordem é a do SAP. Conferi-lo
+    // antes contaria ao mundo qual é o QGIS mínimo da Divisão e quais plugins
+    // ela exige, sem que ninguém precisasse de conta.
+    if (cliente === 'sap_fp') {
+      await verificaQGIS(t, qgis)
+      await verificaPlugins(t, plugins)
+    }
+
     const { id, uuid, administrador } = usuarioDb
 
     // O token NAO carrega os perfis de proposito: quem decide o que a pessoa
@@ -115,6 +264,7 @@ controller.login = async (login, senha, cliente) => {
     // perfil so valeria quando o token expirasse.
     const perfis = await lerPerfis(t, id)
     const modulos = await lerModulos(t)
+    const instituicao = await lerInstituicao(t)
 
     // O `cliente` alimenta a coluna `origem` da rastreabilidade, que separa a
     // carga em lote do plugin do trabalho feito na tela. Ele pode viajar no
@@ -131,7 +281,7 @@ controller.login = async (login, senha, cliente) => {
       { id, cliente }
     )
 
-    return { token, administrador, uuid, perfis, modulos }
+    return { token, administrador, uuid, perfis, modulos, instituicao }
   })
 }
 
@@ -159,12 +309,14 @@ controller.sessao = async uuid => {
 
     const perfis = await lerPerfis(t, usuarioDb.id)
     const modulos = await lerModulos(t)
+    const instituicao = await lerInstituicao(t)
 
     return {
       administrador: usuarioDb.administrador,
       uuid: usuarioDb.uuid,
       perfis,
-      modulos
+      modulos,
+      instituicao
     }
   })
 }
@@ -204,5 +356,11 @@ controller.conferirSenha = async (uuid, senha, executor) => {
     throw new AppError('Senha atual inválida', httpCode.BadRequest)
   }
 }
+
+// Exposto SÓ para o teste unitário do gate de versão, que precisa exercitar as
+// duas funções com a tabela vazia, com a versão ilegível e com o plugin
+// desabilitado -- casos que o caminho do login inteiro esconderia atrás da
+// senha. Não é ponto de extensão: nada mais no servidor as chama.
+controller._gateDeVersao = { verificaQGIS, verificaPlugins, versaoAtende }
 
 module.exports = controller

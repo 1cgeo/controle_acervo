@@ -121,6 +121,17 @@ const SISTEMA_EFETIVO = {
     // administrador global, e o servidor cobra o mesmo com verifyAdmin em
     // /api/usuarios.
     { id: 'usuarios', label: 'Gestão', icon: ICONS.people, path: '/usuarios', admin: true },
+    // A INSTITUIÇÃO fica ao lado da Gestão, e não numa seção nova: as duas são
+    // do administrador global e as duas respondem "como esta instalação está
+    // montada" -- uma sobre gente, outra sobre a OM. Uma seção própria para um
+    // formulário de três campos cobraria um clique a mais e esconderia a tela de
+    // quem não sabe que ela existe.
+    //
+    // Ela mora na seção EFETIVO por herança de arranjo, e não por pertencer ao
+    // efetivo: aquela seção é onde as telas de PLATAFORMA do administrador já
+    // moram (`#/usuarios` é uma delas). Se um dia houver uma terceira, vale
+    // rever se a seção não deveria se chamar outra coisa.
+    { id: 'instituicao', label: 'Instituição', icon: ICONS.category, path: '/instituicao', admin: true },
     // O retrato mensal do efetivo, que alimenta a subseção 6.1 do RPCMTec.
     // Fica aqui, e não junto do relatório, porque quem o preenche vem procurar
     // por PESSOA: é a mesma lista de gente da tela ao lado, num mês.

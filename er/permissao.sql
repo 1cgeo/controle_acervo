@@ -80,3 +80,54 @@
   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ponto_controle TO $1:name;
   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ponto_controle TO $1:name;
   GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ponto_controle TO $1:name;
+
+  -- `producao` e o core que veio do SAP 2.3.5. CRUD porque tudo nele se cadastra
+  -- pela tela ou pelo plugin, e EXECUTE porque os gatilhos que mantem
+  -- `relacionamento_ut` e `relacionamento_versao` sao funcoes deste schema.
+  GRANT USAGE ON SCHEMA producao TO $1:name;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA producao TO $1:name;
+  GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA producao TO $1:name;
+  GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA producao TO $1:name;
+
+  -- `qgis` guarda a configuracao que o operador recebe no QGIS: estilo, menu,
+  -- modelo, regra, tema, atalho e a versao minima de cada plugin. CRUD porque o
+  -- SAP Gerente a escreve por rota.
+  GRANT USAGE ON SCHEMA qgis TO $1:name;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA qgis TO $1:name;
+  GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA qgis TO $1:name;
+
+  -- `microcontrole` guarda O QUE SE MONITORA (qual subfase de qual lote, e
+  -- como), e nao a telemetria em si: essa vive num BANCO SEPARADO, cujos GRANTs
+  -- estao em `er_microcontrole/permissao.sql` e sao outros. CRUD porque o perfil
+  -- de monitoramento se cadastra, se corrige e se apaga pela tela, como todo o
+  -- resto do perfil de configuracao do lote.
+  --
+  -- SEM EXECUTE: nao ha funcao neste schema. O cruzamento entre o perfil daqui e
+  -- a amostra de la e feito em JavaScript, porque nao existe juncao entre
+  -- bancos.
+  GRANT USAGE ON SCHEMA microcontrole TO $1:name;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA microcontrole TO $1:name;
+  GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA microcontrole TO $1:name;
+
+  -- `metadado` alimenta a ficha ET-PCDG e a geracao do XML.
+  GRANT USAGE ON SCHEMA metadado TO $1:name;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA metadado TO $1:name;
+  GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA metadado TO $1:name;
+
+  -- `acompanhamento` e o unico schema que precisa de CREATE, e nao e descuido:
+  -- as funcoes dele EMITEM DDL em tempo de execucao, criando uma view
+  -- materializada por par (lote do acervo, linha de producao) e outra por
+  -- (lote, subfase). Sem o CREATE, abrir um
+  -- lote falha na hora de gerar a view, e a falha aparece longe de onde nasceu.
+  -- E a mesma excecao que o cabecalho deste arquivo descreve para `acervo`.
+  GRANT USAGE, CREATE ON SCHEMA acompanhamento TO $1:name;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA acompanhamento TO $1:name;
+  GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA acompanhamento TO $1:name;
+  GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA acompanhamento TO $1:name;
+
+  -- As funcoes de `acompanhamento` tambem ESCREVEM em `public.layer_styles`,
+  -- para o QGIS saber pintar cada view que elas geram. O GRANT de `public` no
+  -- topo deste arquivo e so SELECT, entao o INSERT e o DELETE vem aqui,
+  -- nominalmente, em vez de abrir o schema `public` inteiro para escrita.
+  GRANT INSERT, UPDATE, DELETE ON TABLE public.layer_styles TO $1:name;
+  GRANT USAGE, SELECT ON SEQUENCE public.layer_styles_id_seq TO $1:name;

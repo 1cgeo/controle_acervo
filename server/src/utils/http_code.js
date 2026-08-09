@@ -16,6 +16,7 @@
  * @property {number} Conflict - 409
  * @property {number} RangeNotSatisfiable - 416
  * @property {number} InternalError - 500
+ * @property {number} ServiceUnavailable - 503
  */
 const httpCode = {
   OK: 200,
@@ -30,7 +31,15 @@ const httpCode = {
   Conflict: 409,
   // Retomada de download que pede faixa de bytes fora do arquivo.
   RangeNotSatisfiable: 416,
-  InternalError: 500
+  InternalError: 500,
+  // A DEPENDENCIA EXTERNA que faltou, e nao um defeito deste servico. Ele existe
+  // por causa do BANCO DA TELEMETRIA (`/api/microcontrole`), que e o unico
+  // recurso opcional do sistema: sem ele o servico sobe inteiro, e as seis rotas
+  // que o leem dizem "indisponivel" em vez de 500. A distincao importa para quem
+  // recebe: 500 manda abrir chamado contra o SAP, 503 manda olhar o outro
+  // servidor -- ou configurar as chaves MICRO_DB_*, que talvez nunca tenham sido
+  // preenchidas.
+  ServiceUnavailable: 503
 }
 
 module.exports = httpCode

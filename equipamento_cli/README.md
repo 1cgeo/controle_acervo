@@ -1,6 +1,6 @@
 # equipamento_cli
 
-Interface de linha de comando do módulo **Equipamento** do SCA, desenhada para **agentes**.
+Interface de linha de comando do módulo **Equipamento** do SAP, desenhada para **agentes**.
 
 O client web serve humanos, o `equipamento_cli` serve agentes. São dois clientes da mesma API, com ergonomias diferentes de propósito: a tela otimiza clique e descoberta visual, o CLI otimiza contexto e encadeamento.
 
@@ -98,7 +98,7 @@ As flags `--<campo>` **saem do schema**: os nomes aceitos são exatamente as cha
 - **Exclusão irreversível**: `apagar` exige `--confirmar` com o mesmo id, e lembra que bem que saiu da carga se **baixa**, não se apaga.
 - **`baixar` não é download.** Aqui é dar baixa no bem (`ativo = false`). O download do Relatório DMT é `equipamento relatorio dmt`, e o comando recusa `--para` para não deixar a confusão passar.
 - **Transferência não tem `fechar`.** Ela não dura, se resolve: o comando explica isso e manda mudar a situação, em vez de inventar um campo.
-- **Limite de requisições**: o SCA corta em 200 por minuto, e o 429 vem com a instrução de retomar do ponto de parada.
+- **Limite de requisições**: o SAP corta em 200 por minuto, e o 429 vem com a instrução de retomar do ponto de parada.
 
 ### Sobre o `--dry-run`
 
@@ -114,12 +114,12 @@ Nunca ponha senha na linha de comando.
 
 | Variável | Para quê |
 |---|---|
-| `SCA_URL` | URL do backend do SCA (`SCA_SERVER` é aceito como sinônimo) |
-| `SCA_USER` | login no SCA |
+| `SCA_URL` | URL do backend do SAP (`SCA_SERVER` é aceito como sinônimo) |
+| `SCA_USER` | login no SAP |
 | `SCA_SENHA` | senha (preferir a variável ao `--senha`) |
 | `SCA_TOKEN` | JWT pronto, dispensa o login |
 
-O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar instâncias; e no diretório do SCA, não do equipamento, porque o token vale para a API inteira e os CLIs irmãos reaproveitam a mesma sessão. `--sem-cache` desliga.
+O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar instâncias; e no diretório do SAP, não do equipamento, porque o token vale para a API inteira e os CLIs irmãos reaproveitam a mesma sessão. `--sem-cache` desliga.
 
 O acesso é por **perfil** no módulo `equipamento`:
 

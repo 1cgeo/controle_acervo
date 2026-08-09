@@ -23,6 +23,7 @@ import {
 // O PIT e de PLATAFORMA, e nao do modulo acervo: a meta pertence ao plano anual
 // da divisao, e a versao so aponta para ela.
 import { getMetasPit, getExtraPit } from '@services/plataforma-service.js';
+import { siglaInstituicao } from '@store/auth-store.js';
 import { abrirAssistenteUpload } from './upload-wizard.js';
 
 /**
@@ -320,10 +321,18 @@ export async function openVersaoDialog({
       : 'A lista traz os subtipos do tipo deste produto',
   });
 
+  // O ÓRGÃO PRODUTOR SUGERIDO É A SIGLA DESTA INSTALAÇÃO, e não um '1º CGEO'
+  // escrito aqui: desde 2026-08-09 ela é dado (`dgeo.instituicao.sigla`) e chega
+  // na sessão. Continua sendo SUGESTÃO, e o campo é editável, porque versão de
+  // produto recebido vem de outro órgão.
+  //
+  // Sem sigla na sessão o campo nasce VAZIO, e é o certo: ele é obrigatório, e
+  // um vazio cobra que se digite. Preencher com o nome de outro Centro gravaria
+  // no acervo uma procedência falsa, que ninguém revisaria.
   const orgaoField = createTextField({
     label: 'Órgão produtor',
     required: true,
-    value: versao?.orgao_produtor || '1º CGEO',
+    value: versao?.orgao_produtor || siglaInstituicao(),
   });
 
   // Lote com o projeto no rótulo: "Lote 3" sozinho não distingue os lotes de

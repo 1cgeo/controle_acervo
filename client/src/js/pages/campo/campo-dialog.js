@@ -156,13 +156,13 @@ export function openCampoDialog({
     label: 'Militares da Divisão',
     usuarios: paraOSeletor,
     selecionados: jaMarcados,
-    helpText: 'Quem tem conta no SCA. Os demais vão no campo abaixo.',
+    helpText: 'Quem tem conta no SAP. Os demais vão no campo abaixo.',
   });
 
   const externosField = createTextareaField({
     label: 'Outros militares',
     value: campo?.militares_externos ?? '',
-    helpText: 'Quem não tem conta no SCA: outra OM, motorista da guarnição, '
+    helpText: 'Quem não tem conta no SAP: outra OM, motorista da guarnição, '
       + 'quem já saiu. Separe por vírgula.',
   });
 

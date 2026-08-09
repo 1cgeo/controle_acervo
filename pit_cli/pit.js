@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict'
 
-// producao - CLI do PIT e do RPCMTec do SCA, desenhado para AGENTES.
+// producao - CLI do PIT e do RPCMTec do SAP, desenhado para AGENTES.
 //
 // O client web serve humanos; este CLI serve agentes. Sao dois clientes da mesma
 // API, com ergonomias diferentes de proposito: a tela otimiza clique e
@@ -28,7 +28,7 @@ const argsLib = require('./lib/args')
 const { resolver } = require('./lib/config')
 const { RECURSOS, listarChaves } = require('./lib/recursos')
 
-const AJUDA = `producao - CLI do PIT e do RPCMTec do SCA, para agentes
+const AJUDA = `producao - CLI do PIT e do RPCMTec do SAP, para agentes
 
 CONTRATO (não gasta rede, leia isto antes de montar um corpo)
   producao schema                       lista os recursos e suas operações
@@ -68,7 +68,7 @@ RPCMTec  (/api/rpcmtec; a EDIÇÃO exige administrador, a capacitação não)
 RECURSOS  (${listarChaves().join(', ')})
 
 SESSÃO
-  producao status                       o SCA está no ar? há token em cache?
+  producao status                       o SAP está no ar? há token em cache?
   producao login                        autentica uma vez e guarda o token (~1h)
   producao logout                       descarta o token em cache
 

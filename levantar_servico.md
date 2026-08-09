@@ -1,7 +1,8 @@
-# Levantar o Controle do Acervo (SCA)
+# Levantar o SAP
 
-O SCA **não depende de serviço externo para subir**: a autenticação é dele (`dgeo.usuario.senha`,
-hash bcrypt), e o boot é `db -> versão -> startServer` (`main.js`), sem cron. Basta o PostgreSQL.
+O SAP **não depende de serviço externo para subir**: a autenticação é dele
+(`dgeo.usuario.senha`, hash bcrypt), e o boot é `db -> versão -> startServer` (`main.js`), sem cron.
+Basta o PostgreSQL.
 
 Estrutura, rotas, variáveis de ambiente e comandos estão no [`README.md`](README.md). Aqui fica só o
 procedimento de subir.
@@ -10,9 +11,15 @@ procedimento de subir.
 
 | Componente | Porta | Observação |
 |---|---|---|
-| PostgreSQL + PostGIS | veja `DB_PORT` | banco `sca`; única dependência |
-| SCA server | 3015 em dev, `PORT` em produção | API REST mais a interface única em `/` |
+| PostgreSQL + PostGIS | veja `DB_PORT` | banco `sca`; única dependência para subir |
+| PostgreSQL da telemetria | veja `MICRO_DB_PORT` | OPCIONAL, e outro banco. Sem ele o serviço sobe inteiro |
+| SAP server | 3015 em dev, `PORT` em produção | API REST mais a interface única em `/` |
 | Client (dev) | 3003 | Vite, com proxy `/api` para 3015 |
+
+As duas portas de desenvolvimento saem do ambiente (`SCA_CLIENT_PORT` e `SCA_API_PORT`, em
+`client/vite.config.js`), com 3003 e 3015 de padrão. Elas existem para levantar uma SEGUNDA
+instância em paralelo sem editar o arquivo, que é versionado: editado, a troca de porta aparece em
+todo diff e acaba commitada por engano.
 
 Em **produção** o server serve a interface na mesma origem, sem proxy nem porta extra: `npm run build`
 gera `client/` para `server/src/build`, servido em `/`. As chamadas de API são `/api/...` na mesma
@@ -35,13 +42,22 @@ Este repositório é PÚBLICO. Endereço de servidor, porta acoplada a host, pas
 vivem só no `server/config.env`, que é gitignored. Aqui se cita a CHAVE; o catálogo comentado está em
 `.env.example`.
 
-O banco `sca` fica na rede interna: veja `DB_SERVER` e `DB_PORT`. Clientes de login: `sca_web`
-(interface) e `sca_qgis` (plugin), que é o que a coluna `dgeo.login.cliente` guarda. Os arquivos do
-acervo ficam no volume descrito na coluna `acervo.volume_armazenamento.volume`, no próprio banco, que
-é a fonte canônica do caminho.
+O banco `sca` fica na rede interna: veja `DB_SERVER` e `DB_PORT`. O nome do banco, as chaves `SCA_*`
+e o cache de sessão dos CLIs em `~/.sca` NÃO mudaram com a renomeação para SAP: são
+identificadores de ambiente e de disco, e trocá-los obrigaria toda máquina instalada a reconfigurar.
+Clientes de login: `sap_web` (interface), `sap_fp` (plugin SAP Operador) e `sap_fg` (plugin SAP
+Gerente), com `sca_web` e `sca_qgis` ainda aceitos enquanto houver cliente antigo no ar. É o que a
+coluna `dgeo.login.cliente` guarda. Os arquivos do acervo ficam no volume descrito na coluna
+`acervo.volume_armazenamento.volume`, no próprio banco, que é a fonte canônica do caminho.
 
 1. `server/config.env`: `DB_*` do banco de produção, `DB_USER_READONLY` e `DB_PASSWORD_READONLY`. A
    role de leitura precisa existir no banco antes do deploy. Fora do Windows, `VOLUMES_RAIZ`.
+   As `MICRO_DB_*` são o banco da TELEMETRIA do microcontrole, que é **outro banco** e é
+   **opcional**: elas valem todas ou nenhuma (o boot cobra), e vazias são um estado normal -- o
+   serviço sobe inteiro e só as seis rotas de `/api/microcontrole` que leem a telemetria respondem
+   503. A conexão é preguiçosa, então aquele banco fora do ar **não derruba o serviço**. O schema
+   dele se instala por `er_microcontrole/`, e `node create_config.js` o cria quando se responde que
+   sim à pergunta do microcontrole.
 2. Deploy (build da interface mais PM2, idempotente):
    ```bash
    npm run deploy   # = npm run build + pm2 startOrReload ecosystem.config.cjs + pm2 save
@@ -49,10 +65,20 @@ acervo ficam no volume descrito na coluna `acervo.volume_armazenamento.volume`, 
    Sobe um processo PM2, `controle-acervo`, na porta de `PORT`. A interface fica em `/`.
 3. Auto-start no boot: `pm2 startup` (uma vez, como admin) mais `pm2 save`.
 
-O banco precisa estar na versão **1.50.0**, que é o `MIN_DATABASE_VERSION` de `server/src/config.js`.
+O banco precisa estar na versão **3.0.0**, que é o `MIN_DATABASE_VERSION` de `server/src/config.js`.
 Este número ENVELHECE: leia a constante no arquivo antes de confiar nele.
 O server recusa subir com banco abaixo do piso (`semver.lt`), e aceita banco à frente. Migrações em
 `migrations/`, aplicadas na ordem da VERSÃO que cada arquivo carimba (ver o `README.md`).
+
+**As TRÊS migrações de 2026-08-09 são o exemplo vivo disso, e a ordem alfabética delas é a errada.**
+Elas se aplicam nesta ordem: `2026-08-09_o_pit_devolve_o_nome_producao.sql` (carimba 1.50.0),
+`2026-08-09_o_sca_vira_sap_3.sql` (**não carimba nada**: o `UPDATE public.versao` saiu dela, e o que
+sobrou é uma conferência) e `2026-08-09_o_core_de_producao_atravessa.sql` (carimba **3.0.0**, e é
+quem cria os cinco schemas do core). Aplicar por nome de arquivo começaria pelo core, que é o
+último. **Um banco que se diz 3.0.0 e não tem `producao.etapa` é o caso que a migração do core
+existe para consertar**: com `MIN_DATABASE_VERSION` em 3.0.0 o serviço subiria sem reclamar, e a
+falha só apareceria na primeira consulta, como "relation producao.etapa does not exist", longe de
+onde nasceu.
 
 **A versão do banco NÃO diz quais migrações faltam.** Metade delas não mexe no número, e duas do
 mesmo dia não se ordenam pelo nome do arquivo. Antes de atualizar um banco, MEÇA o que já está lá,
@@ -64,7 +90,10 @@ nada, e outras que parecem pendentes já aplicadas e superadas por migrações p
 
 **Depois de todo deploy, rode a fumaça inteira.** Ela exercita a plataforma, o acervo, a mapoteca, o
 orçamento e o RPCMTec de ponta a ponta, só com leitura, e sai com código 1 se algo falhar (serve de
-portão num script de deploy). `equipamento`, `campo` e `efetivo` ainda estão FORA dela:
+portão num script de deploy). `equipamento`, `campo`, `efetivo` e os **sete prefixos do core de
+produção** (`/api/producao`, `/api/gerencia_producao`, `/api/distribuicao`, `/api/acompanhamento`,
+`/api/metadados`, `/api/microcontrole` e `/api/perigo`) ainda estão FORA dela -- são 309 das 750
+rotas do sistema sem fumaça, e depois de um deploy do core vale abrir `#/producao` na interface:
 
 ```bash
 SCA_URL=http://localhost:3015 SCA_USER=<login> SCA_SENHA=<senha> python scripts/fumaca.py
@@ -79,7 +108,7 @@ rode só as checagens de rota.
 
 Conferência rápida, sem credencial:
 ```bash
-curl -s http://localhost:3015/api | grep operacional                            # SCA
+curl -s http://localhost:3015/api | grep operacional                            # SAP
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3015/                 # interface
 ```
 
@@ -97,7 +126,7 @@ caminho de máquina e segredo com valor neste repositório, que é PÚBLICO.
 
 ## Troubleshooting
 
-- **SCA sobe e cai na hora** -> banco fora do ar ou `DB_*` errado.
+- **SAP sobe e cai na hora** -> banco fora do ar ou `DB_*` errado.
 - **Boot recusado por versão** -> banco abaixo do `MIN_DATABASE_VERSION`; falta aplicar migração de
   `migrations/`.
 - **Ninguém consegue entrar, com "Usuário sem senha cadastrada"** -> a migração
@@ -119,9 +148,10 @@ caminho de máquina e segredo com valor neste repositório, que é PÚBLICO.
   corpo do `POST /api/login`, o problema está no banco, não na tela.
 - **Rota do orçamento devolve 403 para quem tem perfil** -> a rota pode ter ficado sem o segundo
   argumento do `verifyPerfil`, e estar cobrando perfil no acervo. O teste
-  `server/src/__tests__/routes/modulo_em_toda_rota.test.js` barra isso. Ele varre quatro pastas de
-  rota (`orcamento`, `mapoteca`, `equipamento` e `campo`, esta cobrando o módulo `pit`), com piso de
-  contagem em cada uma: em `efetivo`, em `pit/` e no acervo, ninguém cobra por você.
+  `server/src/__tests__/routes/modulo_em_toda_rota.test.js` barra isso. Ele varre SEIS pastas de
+  rota, com piso de contagem em cada uma: `orcamento`, `mapoteca`, `equipamento`, `producao`, mais
+  duas em que a PASTA não se chama como o MÓDULO -- `campo`, que cobra `pit`, e `microcontrole`, que
+  cobra `producao`. Em `efetivo`, em `pit/` e no acervo, ninguém cobra por você.
 - **`confirm-upload` responde "Arquivo não encontrado" para todo arquivo, em servidor Linux** -> a
   coluna `acervo.volume_armazenamento.volume` guarda caminho UNC do Windows. Em Linux a contrabarra é
   caractere comum de nome, e o `path.join` junta com barra normal, produzindo caminho relativo

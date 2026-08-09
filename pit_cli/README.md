@@ -1,6 +1,6 @@
 # pit_cli
 
-Interface de linha de comando do **PIT** e do **RPCMTec** do SCA, desenhada para **agentes**.
+Interface de linha de comando do **PIT** e do **RPCMTec** do SAP, desenhada para **agentes**.
 
 Irmão do `acervo_cli`, do `mapoteca_cli`, do `orcamento_cli` e do `efetivo_cli`: mesmo servidor, mesmo login, mesma sessão em cache. Os três primeiros falam com um **módulo**; este fala com a **plataforma**. O plano anual da Divisão e o relatório mensal dela não pertencem a acervo, mapoteca nem orçamento: os três alimentam os dois.
 
@@ -62,7 +62,7 @@ producao edicao fechar --id 7 --confirmar 7
 producao anuario rtm-ods --ano 2026 --mes 7 --saida META4.ods
 
 # sessão
-producao status    # o SCA está no ar? há token em cache?
+producao status    # o SAP está no ar? há token em cache?
 producao login     # autentica uma vez, guarda o token (~1h)
 ```
 
@@ -73,11 +73,11 @@ Nunca ponha senha na linha de comando.
 | Variável | Para quê |
 |---|---|
 | `SCA_URL` | URL do backend, ex.: `http://IP:porta` (`SCA_SERVER` é alias aceito) |
-| `SCA_USER` | login no SCA |
+| `SCA_USER` | login no SAP |
 | `SCA_SENHA` | senha (preferir a variável ao `--senha`) |
 | `SCA_TOKEN` | JWT pronto, dispensa o login |
 
-O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar a instância local com a de produção. O diretório é o do SCA, e não o deste CLI, de propósito: o token vale para a API inteira, então os CLIs irmãos reaproveitam a mesma sessão. `--sem-cache` desliga.
+O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar a instância local com a de produção. O diretório é o do SAP, e não o deste CLI, de propósito: o token vale para a API inteira, então os CLIs irmãos reaproveitam a mesma sessão. `--sem-cache` desliga.
 
 ## Acesso
 
@@ -113,7 +113,7 @@ A linha entre as duas últimas é a decisão que importa: a **meta** é o que a 
 - **Ato irreversível**: `--confirmar` com o identificador repetido em toda exclusão, em `fechar`, em `reabrir` e em `publicar`. Um teste percorre a registry e reprova quem mudar o mundo sem pedir confirmação.
 - **`reabrir` não é o inverso de `fechar`**: ele apaga o congelado das subseções calculadas. A mensagem de confirmação diz isso.
 - **Binário nunca vai para o stdout**: o PDF e as planilhas vão para disco, com o nome que o servidor escolheu no `Content-Disposition`. Despejar megabytes na saída que o agente lê é o jeito mais rápido de queimar a janela.
-- **429**: o SCA limita 200 requisições por minuto. O CLI traduz o 429 numa mensagem que manda retomar do ponto de parada, em vez de reenviar o lote.
+- **429**: o SAP limita 200 requisições por minuto. O CLI traduz o 429 numa mensagem que manda retomar do ponto de parada, em vez de reenviar o lote.
 
 ## Testes
 

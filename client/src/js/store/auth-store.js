@@ -12,6 +12,7 @@ const AUTH_KEYS = {
   AUTHORIZATION: '@sca-User-Authorization',
   PERFIS: '@sca-perfis',
   MODULOS: '@sca-modulos',
+  INSTITUICAO: '@sca-instituicao',
   UUID: '@sca-User-uuid',
   USERNAME: '@sca-User-username',
 };
@@ -90,6 +91,49 @@ export function getCatalogoModulos() {
 export function nomeModulo(modulo) {
   const achado = getCatalogoModulos().find(m => m.nome_abrev === modulo);
   return achado ? achado.nome : modulo;
+}
+
+/**
+ * A INSTITUICAO que opera esta instalacao, como ela veio na sessao:
+ * `{ nome, sigla }`.
+ *
+ * VEM DO LOGIN, e nao de uma chamada propria, como o catalogo de modulos: o
+ * POST /api/login e o GET /api/login/sessao devolvem os dois campos ao lado de
+ * `perfis` e `modulos`. Ate 2026-08-09 o "1º CGEO" estava escrito no codigo do
+ * client, e outro Centro veria o nosso nome depois de configurar o proprio.
+ *
+ * QUEM EDITA A INSTITUICAO NAO LE DAQUI: a tela `#/instituicao` chama
+ * `GET /api/instituicao`, que traz tambem `ug_code`, `ug_nome` e o rastro. Isto
+ * aqui e a foto da sessao, para DESENHAR.
+ *
+ * @returns {{nome:string, sigla:string}}
+ */
+export function instituicaoDaSessao() {
+  const guardada = lerJson(AUTH_KEYS.INSTITUICAO, null);
+  return {
+    nome: guardada && typeof guardada.nome === 'string' ? guardada.nome : '',
+    sigla: guardada && typeof guardada.sigla === 'string' ? guardada.sigla : '',
+  };
+}
+
+/**
+ * O nome por extenso do Centro ('' quando a sessao nao o trouxe).
+ *
+ * A CADEIA VAZIA E RESPOSTA LEGITIMA, e quem chama tem de trata-la: a tela de
+ * login nao tem sessao nenhuma, e um banco sem a linha de `dgeo.instituicao`
+ * responde `null`. Nenhum dos dois pode virar um nome inventado na tela.
+ * @returns {string}
+ */
+export function nomeInstituicao() {
+  return instituicaoDaSessao().nome;
+}
+
+/**
+ * A sigla do Centro ('' quando a sessao nao a trouxe).
+ * @returns {string}
+ */
+export function siglaInstituicao() {
+  return instituicaoDaSessao().sigla;
 }
 
 /**
@@ -268,7 +312,7 @@ function expiracaoDoToken(token) {
 
 /**
  * Guarda a autenticacao depois de um login bem-sucedido.
- * @param {Object} data - { token, administrador, uuid, perfis, modulos }
+ * @param {Object} data - { token, administrador, uuid, perfis, modulos, instituicao }
  * @param {string} username
  */
 export function saveAuth(data, username) {
@@ -279,34 +323,45 @@ export function saveAuth(data, username) {
   localStorage.setItem(AUTH_KEYS.AUTHORIZATION, data.administrador ? 'ADMIN' : 'USER');
   localStorage.setItem(AUTH_KEYS.PERFIS, JSON.stringify(data.perfis || {}));
   localStorage.setItem(AUTH_KEYS.MODULOS, JSON.stringify(data.modulos || []));
+  localStorage.setItem(AUTH_KEYS.INSTITUICAO, JSON.stringify(data.instituicao || null));
   localStorage.setItem(AUTH_KEYS.UUID, data.uuid || '');
   localStorage.setItem(AUTH_KEYS.USERNAME, username);
 }
 
 /**
- * Reescreve SO a autorizacao (administrador, perfis e catalogo de modulos) a
- * partir do GET /api/login/sessao, sem tocar em token, validade nem login.
+ * Reescreve SO o retrato da sessao (administrador, perfis, catalogo de modulos
+ * e instituicao) a partir do GET /api/login/sessao, sem tocar em token,
+ * validade nem login.
  *
  * O login e um retrato: quem foi rebaixado no meio do expediente continuava
  * vendo botao que o servidor ja recusava. Isto atualiza o retrato sem obrigar
  * a pessoa a sair e entrar de novo.
  *
- * @param {Object} data - { administrador, perfis, modulos }
+ * A INSTITUICAO ENTRA NA CONTA DO `mudou`, e nao so na gravacao: o
+ * administrador que corrige a sigla em `#/instituicao` faz o proximo retrato
+ * chegar diferente, e quem escuta o evento (o `index.js`) recarrega a tela para
+ * o remetente da etiqueta e o orgao produtor sugerido acompanharem. Sem isso o
+ * nome novo so apareceria na sessao seguinte.
+ *
+ * @param {Object} data - { administrador, perfis, modulos, instituicao }
  * @returns {boolean} - true quando algo de fato mudou
  */
 export function atualizarSessao(data) {
   const autorizacaoNova = data.administrador ? 'ADMIN' : 'USER';
   const perfisNovos = JSON.stringify(data.perfis || {});
   const modulosNovos = JSON.stringify(data.modulos || []);
+  const instituicaoNova = JSON.stringify(data.instituicao || null);
 
   const mudou =
     localStorage.getItem(AUTH_KEYS.AUTHORIZATION) !== autorizacaoNova ||
     localStorage.getItem(AUTH_KEYS.PERFIS) !== perfisNovos ||
-    localStorage.getItem(AUTH_KEYS.MODULOS) !== modulosNovos;
+    localStorage.getItem(AUTH_KEYS.MODULOS) !== modulosNovos ||
+    localStorage.getItem(AUTH_KEYS.INSTITUICAO) !== instituicaoNova;
 
   localStorage.setItem(AUTH_KEYS.AUTHORIZATION, autorizacaoNova);
   localStorage.setItem(AUTH_KEYS.PERFIS, perfisNovos);
   localStorage.setItem(AUTH_KEYS.MODULOS, modulosNovos);
+  localStorage.setItem(AUTH_KEYS.INSTITUICAO, instituicaoNova);
 
   return mudou;
 }

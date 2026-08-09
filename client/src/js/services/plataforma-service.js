@@ -8,6 +8,25 @@ import { apiGet, apiPost, apiPut, apiDelete, apiUpload, apiDownload } from './ap
  * service do proprio modulo (ex.: modules/orcamento/services/orcamento-service.js).
  */
 
+// ---- Instituicao: de QUEM e esta instalacao ----
+//
+// Nome, sigla e Unidade Gestora do Centro que opera este SAP. Uma linha so em
+// `dgeo.instituicao`, e e dela que saem o cabecalho do RPCMTec, o nome do
+// arquivo do Anuario e o filtro da area de suprimento na subsecao 2.7.
+//
+// A LEITURA E DE QUEM ESTA LOGADO, e nao do administrador: o rodape do relatorio
+// e o titulo precisam do nome, e esconde-lo de quem so consulta faria a tela
+// mostrar o rotulo errado. Quem ESCREVE e o administrador global, e o servidor
+// cobra `verifyAdmin` no PUT.
+export const getInstituicao = () => apiGet('/instituicao');
+export const atualizarInstituicao = (body) => apiPut('/instituicao', body);
+
+// A lista de Unidades Gestoras, para o seletor da tela de instituicao. Ela e do
+// ORCAMENTO (`dominio.ug`), e nao da plataforma, mas quem a consome aqui e a
+// tela de instituicao: repetir a rota no service do orcamento faria a tela de
+// plataforma importar de um modulo.
+export const getUnidadesGestoras = () => apiGet('/orcamento/dominio/ug');
+
 // ---- Usuarios (administrador global) ----
 //
 // O SCA e dono da identidade: `criarUsuario` e `excluirUsuario` cadastram de

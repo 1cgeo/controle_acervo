@@ -45,6 +45,11 @@ import {
 } from '@modules/acervo/pages/produto/versao-dialog.js';
 import * as svc from '@modules/acervo/services/acervo-service.js';
 import * as assistente from '@modules/acervo/pages/produto/upload-wizard.js';
+import { saveAuth, clearAuth } from '@store/auth-store.js';
+
+/** Entra na sessao como o Centro informado, que e de onde sai o orgao sugerido. */
+const entrarComo = (instituicao) =>
+  saveAuth({ token: 'nao-jwt', administrador: false, uuid: 'u-1', instituicao }, 'fulano');
 
 // 24 = Carta Topográfica Militar, o único subtipo com `define_produto` hoje.
 const SUBTIPOS = [
@@ -290,7 +295,70 @@ beforeEach(() => {
 
 afterEach(() => {
   document.body.innerHTML = '';
+  clearAuth();
   vi.clearAllMocks();
+});
+
+// ---------------------------------------------------------------------------
+// O ORGAO PRODUTOR SUGERIDO VEM DA INSTITUICAO DA SESSAO (2026-08-09)
+// ---------------------------------------------------------------------------
+//
+// Ele era '1º CGEO' escrito neste formulario, e outro Centro gravaria no proprio
+// acervo o nome do nosso -- uma procedencia falsa que ninguem revisaria, porque
+// o campo ja vem preenchido. A prova que interessa e com OUTRA sigla: um teste
+// que so confirmasse '1º CGEO' passaria igual com o valor no codigo.
+describe('openVersaoDialog: o orgao produtor sugerido', () => {
+  test('sugere a SIGLA desta instalacao', async () => {
+    entrarComo({ nome: '1º Centro de Geoinformação', sigla: '1º CGEO' });
+
+    await openVersaoDialog({ produto: PRODUTO });
+    await flush();
+
+    expect(inputDe('Órgão produtor').value).toBe('1º CGEO');
+  });
+
+  test('OUTRO Centro na sessao sugere a sigla DELE', async () => {
+    entrarComo({ nome: '4º Centro de Geoinformação', sigla: '4º CGEO' });
+
+    await openVersaoDialog({ produto: PRODUTO });
+    await flush();
+
+    expect(inputDe('Órgão produtor').value).toBe('4º CGEO');
+  });
+
+  // Sem instituicao na sessao o campo nasce VAZIO, e e o certo: ele e
+  // obrigatorio, e o vazio cobra que se digite. Preencher com o nome de outro
+  // Centro gravaria procedencia falsa.
+  test('sem instituicao na sessao o campo nasce vazio, e nao com o nosso nome', async () => {
+    clearAuth();
+
+    await openVersaoDialog({ produto: PRODUTO });
+    await flush();
+
+    expect(inputDe('Órgão produtor').value).toBe('');
+  });
+
+  // O que ESTA GRAVADO manda sobre a sugestao: versao de produto recebido veio
+  // de outro orgao, e reabrir a ficha nao pode reescrever a procedencia dela.
+  test('a versao gravada mantem o orgao dela, e nao o desta instalacao', async () => {
+    entrarComo({ nome: '1º Centro de Geoinformação', sigla: '1º CGEO' });
+
+    await openVersaoDialog({
+      produto: PRODUTO,
+      versao: {
+        versao_id: 91,
+        versao: '1ª Edição',
+        tipo_versao_id: TIPO_VERSAO_HISTORICA,
+        subtipo_produto_id: 2,
+        orgao_produtor: 'DSG',
+        versao_data_criacao: '1975-01-01',
+        versao_data_edicao: '1975-01-01',
+      },
+    });
+    await flush();
+
+    expect(inputDe('Órgão produtor').value).toBe('DSG');
+  });
 });
 
 describe('openVersaoDialog: tipos oferecidos', () => {

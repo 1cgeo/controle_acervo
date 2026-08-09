@@ -1,7 +1,7 @@
 {
   "name": "acervo-cli",
   "version": "1.0.0",
-  "description": "Interface de linha de comando do SCA, desenhada para agentes (agent-first). Irma do acervo_client: o client web serve humanos, o CLI serve agentes.",
+  "description": "Interface de linha de comando do SAP, desenhada para agentes (agent-first). Irma do acervo_client: o client web serve humanos, o CLI serve agentes.",
   "type": "commonjs",
   "main": "acervo.js",
   "bin": {
@@ -11,7 +11,7 @@
     "test": "node --test \"__tests__/*.test.js\""
   },
   "keywords": [
-    "Controle do Acervo",
+    "SAP",
     "CLI",
     "agent-first"
   ],

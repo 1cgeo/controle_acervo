@@ -1,6 +1,6 @@
 # mapoteca_cli
 
-Interface de linha de comando da **Mapoteca** do SCA, desenhada para **agentes**.
+Interface de linha de comando da **Mapoteca** do SAP, desenhada para **agentes**.
 
 O `mapoteca_client` serve humanos, o `mapoteca_cli` serve agentes. São dois clientes da mesma API, com ergonomias diferentes de propósito: a tela otimiza clique e descoberta visual, o CLI otimiza contexto e encadeamento.
 
@@ -10,7 +10,7 @@ node mapoteca_cli/mapoteca.js --ajuda
 
 ## Por que existe
 
-A mapoteca é o módulo de pedidos do SCA: um cliente (OM ou civil) pede cartas e a DGEO atende. Um agente que opera isso pela API crua paga quatro impostos.
+A mapoteca é o módulo de pedidos do SAP: um cliente (OM ou civil) pede cartas e a DGEO atende. Um agente que opera isso pela API crua paga quatro impostos.
 
 1. Precisa carregar um catálogo de rotas escrito à mão para descobrir os campos de um pedido.
 2. Recebe o JSON inteiro de um pedido com quarenta itens quando queria seis colunas.
@@ -71,7 +71,7 @@ mapoteca cliente criar --data '{...}' --dry-run
 mapoteca pedido deletar --ids 116 --confirmar 116
 
 # sessão
-mapoteca status    # o SCA está no ar? há token em cache?
+mapoteca status    # o SAP está no ar? há token em cache?
 mapoteca login     # autentica uma vez e guarda o token
 ```
 
@@ -127,7 +127,7 @@ O comando é **idempotente**: rodá-lo de novo com o mesmo plano completa o que 
 - **Duas linhas com o mesmo MI**: viram **um** item, com a quantidade de uma linha, nunca a soma (a duplicata é erro de cópia do solicitante, e imprimir o dobro é o erro caro). A fusão nunca é silenciosa: sai aviso e o rastro das duas linhas fica na observação do item.
 - **Falha parcial**: não há transação entre criar o pedido, criar os itens e subir o anexo. Quando o anexo falha, o CLI diz explicitamente para não repetir o `cadastrar` e dá o comando de reenviar só o anexo.
 - **Conferência lendo de volta**: as escritas releem o registro depois de gravar. A mensagem de sucesso do servidor não é prova de gravação.
-- **Limite de requisições**: o SCA corta em 200 por minuto. Toda alça que faz várias chamadas em sequência respeita um intervalo entre elas.
+- **Limite de requisições**: o SAP corta em 200 por minuto. Toda alça que faz várias chamadas em sequência respeita um intervalo entre elas.
 
 ### Sobre o `--dry-run`
 
@@ -143,12 +143,12 @@ Nunca ponha senha na linha de comando. Catálogo das chaves no `env-guia.md` do 
 
 | Variável | Para quê |
 |---|---|
-| `SCA_URL` | URL do backend do SCA (`MAPOTECA_SERVER` é aceito como sinônimo) |
-| `SCA_USER` | login de admin no SCA |
+| `SCA_URL` | URL do backend do SAP (`MAPOTECA_SERVER` é aceito como sinônimo) |
+| `SCA_USER` | login de admin no SAP |
 | `SCA_SENHA` | senha (preferir a variável ao `--senha`) |
 | `SCA_TOKEN` | JWT pronto, dispensa o login |
 
-O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar a instância local com a de produção; e no diretório do SCA, não da mapoteca, porque o token vale para a API inteira. `--sem-cache` desliga.
+O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar a instância local com a de produção; e no diretório do SAP, não da mapoteca, porque o token vale para a API inteira. `--sem-cache` desliga.
 
 O acesso é por **perfil** no módulo `mapoteca`: consulta lê (inclusive o livro de material), operador imprime e faz tudo de material (lança movimento no livro e cadastra o insumo), gerente cadastra pedido, cliente, item e anexo. O administrador passa em tudo. Públicos, sem login: `/api` (health), `/api/login` e a consulta por localizador. Os GET de domínio exigem perfil de consulta.
 

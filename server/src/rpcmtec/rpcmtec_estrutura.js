@@ -69,15 +69,56 @@ const ORIGEM = {
 // subseção nova nasceria muda e cairia no administrador por omissão, que é
 // decisão demais para se tomar por descuido.
 
-// O texto da 1.1, idêntico em todas as edições desde fevereiro/2025.
+// O texto da 1.1, idêntico em todas as edições desde fevereiro/2025 -- salvo o
+// nome do Centro, que até 2026-08-09 estava escrito aqui duas vezes.
+//
+// ESTE ARQUIVO É DE DADOS, e é lido na carga do processo: quando ele é avaliado
+// não há requisição, não há conexão com o banco e não há a quem perguntar de
+// quem é a instalação. Uma constante não podia continuar contendo o nome, e uma
+// consulta aqui dentro seria pior ainda -- ela rodaria uma vez, no `require`, e
+// congelaria o nome até alguém reiniciar o serviço.
+//
+// A SAÍDA SÃO DOIS MARCADORES, e o texto continua sendo uma cadeia constante. O
+// nome entra na MONTAGEM da edição (`rpcmtec_edicao_ctrl.montar`), que é onde já
+// existe requisição, banco e instituição lida. Ver `aplicarInstituicao`, logo
+// abaixo, que é o único lugar que os troca.
+//
+// OS DOIS MARCADORES SÃO ESTES, e a lista não é aberta: `{nome}` é o nome por
+// extenso e `{sigla}` é a sigla, os dois de `dgeo.instituicao`. Marcador
+// escrito errado não vira erro, vira chave impressa no documento -- e é por isso
+// que ele mora ao lado do texto que o usa, e não numa convenção espalhada.
 const TEXTO_FINALIDADE =
   'O Relatório de Prestação de Contas Mensal Técnico (RPCMTec) é um ' +
-  'instrumento de avaliação da gestão que permite ao Chefe do 1º Centro de ' +
-  'Geoinformação (1º CGEO) verificar, mensalmente, as ações e ' +
+  'instrumento de avaliação da gestão que permite ao Chefe do {nome} ' +
+  '({sigla}) verificar, mensalmente, as ações e ' +
   'responsabilidades dos integrantes da Divisão de Geoinformação, o ' +
   'cumprimento de normas, planos e diretrizes, visando à efetividade, ' +
   'economicidade, eficiência e eficácia na execução das atividades ' +
-  'finalísticas do 1º CGEO.'
+  'finalísticas do {sigla}.'
+
+/**
+ * Troca os marcadores de um texto FIXO pelo nome e pela sigla da instituição.
+ *
+ * SÓ VALE PARA A ORIGEM FIXA. A digitada é texto de pessoa, e trocar `{nome}` no
+ * que alguém escreveu à mão seria uma substituição que ninguém pediu; a
+ * calculada não tem prosa.
+ *
+ * NA MONTAGEM, E NÃO NO FECHAMENTO -- e o fechamento, mesmo assim, congela o
+ * texto JÁ TROCADO, porque ele grava o que a montagem devolveu. É o desejado: a
+ * edição fechada guarda o nome que o documento afirmava quando foi assinado, e
+ * um Centro que se renomeie depois não reescreve o passado.
+ *
+ * @param {string|null} texto
+ * @param {{nome: string, sigla: string}} instituicao
+ * @returns {string|null}
+ */
+const aplicarInstituicao = (texto, instituicao) => {
+  if (texto == null) return texto
+
+  return String(texto)
+    .replace(/\{nome\}/g, instituicao.nome)
+    .replace(/\{sigla\}/g, instituicao.sigla)
+}
 
 // Cabeçalhos que se repetem entre subseções. Escritos uma vez, porque duas
 // cópias divergem na primeira coluna que for acrescentada a uma só.
@@ -642,5 +683,6 @@ module.exports = {
   BLOCOS,
   NUMEROS_CALCULADOS,
   NUMEROS_DIGITADOS,
-  bloco
+  bloco,
+  aplicarInstituicao
 }

@@ -1,7 +1,7 @@
 {
   "name": "mapoteca-cli",
   "version": "1.0.0",
-  "description": "Interface de linha de comando da Mapoteca do SCA, desenhada para agentes (agent-first). Irma do mapoteca_client: o client web serve humanos, o CLI serve agentes.",
+  "description": "Interface de linha de comando da Mapoteca do SAP, desenhada para agentes (agent-first). Irma do mapoteca_client: o client web serve humanos, o CLI serve agentes.",
   "type": "commonjs",
   "main": "mapoteca.js",
   "bin": {
@@ -11,7 +11,7 @@
     "test": "node --test \"__tests__/*.test.js\""
   },
   "keywords": [
-    "Controle do Acervo",
+    "SAP",
     "Mapoteca",
     "CLI",
     "agent-first"

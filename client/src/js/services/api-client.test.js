@@ -9,7 +9,9 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 //  (d) 403 -> MANTEM a sessao e so lanca a mensagem do servidor;
 //  (e) apiPost -> method POST, Authorization Bearer (quando ha token) e JSON.
 
-import { apiGet, apiGetPaginado, apiPost, apiPostComFalhaParcial } from './api-client.js';
+import {
+  apiGet, apiGetPaginado, apiPost, apiPostComFalhaParcial, apiDownload,
+} from './api-client.js';
 import { saveAuth, getToken, getPerfil } from '@store/auth-store.js';
 
 // Helper: monta uma Response falsa (status + corpo JSON) para o fetch mockado.
@@ -341,5 +343,90 @@ describe('api-client: o prazo da requisicao', () => {
     global.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
     await expect(apiGet('/gerencia/arquivos_deletados')).rejects.toThrow('Failed to fetch');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// apiDownload: QUEM NOMEIA O ARQUIVO E O SERVIDOR
+// ---------------------------------------------------------------------------
+//
+// O nome do Anuario era montado nos DOIS lados -- aqui e no
+// `rpcmtec_route.js` -- e duas montagens do mesmo nome divergem no primeiro dia
+// em que uma delas muda. Foi o que a instituicao como dado provocou: o '1CGEO'
+// do servidor passou a sair da sigla, e o daqui continuaria escrito no codigo.
+//
+// O acordo: o servidor manda o nome pronto no `Content-Disposition`, e o client
+// USA o que veio. O `fallbackFilename` de quem chama so aparece quando o
+// cabecalho nao traz nome nenhum.
+describe('api-client: o nome do arquivo baixado', () => {
+  let baixado;
+
+  /** Resposta de download com o `Content-Disposition` pedido (ou nenhum). */
+  function respostaDeArquivo(disposition) {
+    return {
+      status: 200,
+      ok: true,
+      headers: { get: (nome) => (nome === 'Content-Disposition' ? disposition : null) },
+      blob: async () => new Blob(['conteudo']),
+      json: async () => ({}),
+    };
+  }
+
+  beforeEach(() => {
+    baixado = null;
+    // jsdom nao tem createObjectURL, e o clique num ancora com href tentaria
+    // navegar. Os dois viram duble, e o que se observa e o `download`.
+    global.URL.createObjectURL = vi.fn(() => 'blob:falso');
+    global.URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+      baixado = this.download;
+    });
+  });
+
+  test('o nome do cabecalho GANHA do que quem chamou sugeriu', async () => {
+    global.fetch.mockResolvedValueOnce(
+      respostaDeArquivo('attachment; filename="Anuario_Estatistico_4CGEO_06_Junho_2026.ods"')
+    );
+
+    await apiDownload('/rpcmtec/anuario/ods?ano=2026&mes=6', 'queda.ods');
+
+    expect(baixado).toBe('Anuario_Estatistico_4CGEO_06_Junho_2026.ods');
+  });
+
+  test('sem cabecalho, vale a queda de quem chamou', async () => {
+    global.fetch.mockResolvedValueOnce(respostaDeArquivo(null));
+
+    await apiDownload('/rpcmtec/anuario/ods?ano=2026&mes=6', 'queda.ods');
+
+    expect(baixado).toBe('queda.ods');
+  });
+
+  // O `filename*` (RFC 5987) e o que carrega charset, entao ele ganha do
+  // `filename` ao lado, que existe para cliente antigo e costuma ser a versao
+  // degradada do nome.
+  test('quando os dois vem, o filename* percent-encoded e o que vale', async () => {
+    global.fetch.mockResolvedValueOnce(
+      respostaDeArquivo(
+        'attachment; filename="Anuario_1CGEO.ods"; '
+        + "filename*=UTF-8''Anu%C3%A1rio_1%C2%BA%20CGEO.ods"
+      )
+    );
+
+    await apiDownload('/rpcmtec/anuario/ods?ano=2026&mes=6', 'queda.ods');
+
+    expect(baixado).toBe('Anuário_1º CGEO.ods');
+  });
+
+  // REGRESSAO: o `decodeURIComponent` sobre o `filename` SIMPLES lancava
+  // URIError num nome com `%` solto, e derrubava um download que estava indo
+  // bem. Nome literal nao se decodifica.
+  test('o filename simples e literal, e um % nele nao derruba o download', async () => {
+    global.fetch.mockResolvedValueOnce(
+      respostaDeArquivo('attachment; filename="Cobertura_100%_2026.ods"')
+    );
+
+    await apiDownload('/relatorio/cobertura', 'queda.ods');
+
+    expect(baixado).toBe('Cobertura_100%_2026.ods');
   });
 });

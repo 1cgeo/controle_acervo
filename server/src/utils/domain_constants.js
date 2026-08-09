@@ -53,13 +53,53 @@ const SITUACAO_CARREGAMENTO = {
   CARREGADO_GEDW: 5
 }
 
-// dominio.subtipo_produto (subconjuntos usados em queries)
+// dominio.subtipo_produto: os TRINTA codes, e não mais um subconjunto.
+//
+// Ele nasceu aqui com cinco, que eram os que as consultas do acervo comparavam.
+// Passou a trinta em 2026-08-09, com o core de produção: a escolha do template
+// de XML do metadado despacha por subtipo, e sete dos que ela precisa estavam
+// fora. Meio catálogo é pior que catálogo nenhum, porque quem procura um code e
+// não o encontra conclui que ele não existe e escreve o número solto.
+//
+// O SUBTIPO É A IDENTIDADE DO PRODUTO, e não um refinamento do tipo:
+// `acervo.produto` chaveia por ele, e é por isso que a Carta Topográfica
+// Militar (24) é produto distinto da carta civil no mesmo MI. Ver o
+// `define_produto` de `er/dominio.sql`.
+//
+// Os nomes saem do DDL, code a code. CDGV é 'Conjunto de dados geoespaciais
+// vetoriais', escrito por extenso na tabela; o sufixo é a especificação técnica
+// (ET-EDGV 2.1.3, ET-EDGV 3.0, MGCP, MUVD).
 const SUBTIPO_PRODUTO = {
+  CDGV_ET_EDGV_213: 1,
   CARTA_TOPOGRAFICA_T34_700: 2,
   CARTA_ORTOIMAGEM: 3,
+  ORTOIMAGEM: 4,
+  MODELO_DIGITAL_SUPERFICIE: 5,
+  MODELO_DIGITAL_TERRENO: 6,
+  CDGV_ET_EDGV_30: 7,
+  CDGV_MGCP: 8,
+  FOTOTRIANGULACAO: 9,
+  IMAGEM_AEREA_SATELITE: 10,
+  PONTO_CONTROLE: 11,
   CARTA_TOPOGRAFICA_ET_RDG: 12,
+  CARTA_TEMATICA: 13,
+  MAPA_DE_UNIDADES: 14,
+  CARTA_DE_TRAFEGABILIDADE: 15,
+  REDE_DE_TRANSPORTE: 16,
+  MAPA_DE_GEOGRAFIA_HUMANA: 17,
+  LEVANTAMENTO_TOPOGRAFICO: 18,
   CARTA_ORTOIMAGEM_SARP: 19,
-  CARTA_TOPOGRAFICA_MILITAR: 24
+  CDGV_MUVD: 20,
+  MODELO_DIGITAL_SUPERFICIE_TREX: 21,
+  CDGV_ORTOIMAGEM_ET_EDGV_30: 22,
+  CDGV_TRAFEGABILIDADE: 23,
+  CARTA_TOPOGRAFICA_MILITAR: 24,
+  MODELO_3D_TILES: 25,
+  MODELO_3D: 26,
+  CARTA_ORTOIMAGEM_ESPECIAL: 27,
+  CARTA_TOPOGRAFICA_NAO_SCN: 28,
+  CARTA_AERONAUTICA: 29,
+  CDGV_ESPECIAL: 30
 }
 
 // dominio.tipo_produto (subconjuntos usados em relatórios da mapoteca)
@@ -358,6 +398,158 @@ const CATEGORIA_CAMPO = {
 // `tipo_id` com número literal: quem precisa de um tipo específico o procura
 // pelo nome.
 
+// ---------------------------------------------------------------------------
+// Domínios do módulo PRODUÇÃO (code 7), absorvidos do SAP 2.3.5 em 2026-08-09.
+//
+// OS CÓDIGOS SÃO OS DO SAP, code a code, como já são os de `SITUACAO_CAMPO`: o
+// dump do SAP 2.3.5 é o que vai popular o schema `producao`, e linha migrada
+// não pode precisar de tradução de código.
+//
+// SÓ ESTÃO AQUI OS DOZE QUE O SCHEMA `producao` REFERENCIA por chave
+// estrangeira. Os outros três domínios que atravessaram
+// (`tipo_controle_qualidade`, `tipo_criacao_unidade_trabalho` e
+// `tipo_estrategia_associacao`) NÃO viraram constante, e a ausência é a regra:
+// eles são argumento das rotinas de criação em massa, nenhuma coluna aponta
+// para eles e nenhum SQL compara código com literal. Constante que ninguém lê
+// é catálogo para desatualizar.
+// ---------------------------------------------------------------------------
+
+// dominio.tipo_fase
+const TIPO_FASE = {
+  EXTRACAO: 1,
+  REAMBULACAO: 2,
+  VALIDACAO: 3,
+  EDICAO: 4,
+  DISSEMINACAO: 5,
+  VETORIZACAO: 6,
+  AVALIACAO: 7,
+  GENERALIZACAO: 8,
+  FOTOTRIANGULACAO: 9,
+  RESTITUICAO: 10,
+  PROCESSAMENTO_DIGITAL_IMAGENS: 11,
+  MEDICAO_PONTOS_CONTROLE: 12,
+  GERACAO_ORTOIMAGEM: 13,
+  GERACAO_MDE: 14,
+  LEVANTAMENTO_TOPOGRAFICO: 15,
+  PREPARO: 16
+}
+
+// dominio.tipo_pre_requisito
+const TIPO_PRE_REQUISITO = {
+  REGIAO_CONCLUIDA: 1,
+  REGIAO_NAO_EM_EXECUCAO: 2
+}
+
+// dominio.tipo_etapa: o papel da etapa dentro da subfase. É sobre ele que a
+// restrição de operador é escrita, e é o que distingue quem produz de quem
+// confere.
+const TIPO_ETAPA = {
+  EXECUCAO: 1,
+  REVISAO: 2,
+  CORRECAO: 3,
+  REVISAO_CORRECAO: 4,
+  REVISAO_FINAL: 5
+}
+
+// dominio.tipo_exibicao: quanto da linhagem o operador vê.
+const TIPO_EXIBICAO = {
+  NUNCA_EXIBIR: 1,
+  SOMENTE_REVISORES: 2,
+  SEMPRE_EXIBIR: 3
+}
+
+// dominio.tipo_restricao
+//
+// NÃO EXISTE O CODE 3, nem aqui nem no banco. Ele era 'Operadores no mesmo
+// turno' e dependia de `dominio.tipo_turno`, removida por decisão do chefe em
+// 2026-08-09. Medido no dump de produção do SAP em 2026-08-09:
+// `restricao_etapa` tem 98 linhas, 49 do tipo 1 e 49 do tipo 2, e ZERO do tipo
+// 3. Ressuscitá-lo aqui daria ao Joi um valor que a chave estrangeira recusa, e
+// a recusa chegaria como 500 em vez de 400.
+const TIPO_RESTRICAO = {
+  OPERADORES_DISTINTOS: 1,
+  OPERADORES_IGUAIS: 2
+}
+
+// dominio.tipo_insumo: COMO o insumo chega ao operador, e não o que ele é. Por
+// isso o mesmo arquivo aparece duas vezes, copiado ou aberto pela rede.
+const TIPO_INSUMO = {
+  ARQUIVO_COPIA_VIA_REDE: 1,
+  ARQUIVO_ABERTO_VIA_REDE: 2,
+  BANCO_POSTGIS: 3,
+  INSUMO_FISICO: 4,
+  URL: 5,
+  SERVICO_WMS: 6,
+  SERVICO_WFS: 7,
+  XYZ_TILES: 8,
+  DOWNLOAD_HTTP: 9,
+  ARCGIS_MAPSERVER: 10
+}
+
+// dominio.tipo_dado_producao: quanto o sistema manda no dado da subfase.
+//
+// POSTGIS_COM_PERMISSAO é o único em que o servidor concede e revoga permissão
+// no banco de produção a cada distribuição. Os outros dois são dado que ele
+// apenas aponta.
+const TIPO_DADO_PRODUCAO = {
+  NAO_CONTROLADO: 1,
+  POSTGIS_COM_PERMISSAO: 2,
+  POSTGIS: 3
+}
+
+// dominio.tipo_situacao_atividade (chamava-se `dominio.tipo_situacao` no SAP).
+//
+// NAO_FINALIZADA (5) não é PAUSADA (3), e confundi-las mente na estatística de
+// produção: pausada volta para a mesma mão, e não finalizada foi interrompida
+// por fora e não volta.
+const SITUACAO_ATIVIDADE = {
+  NAO_INICIADA: 1,
+  EM_EXECUCAO: 2,
+  PAUSADA: 3,
+  FINALIZADA: 4,
+  NAO_FINALIZADA: 5
+}
+
+// dominio.tipo_configuracao: ferramenta de aquisição do DSGTools.
+const TIPO_CONFIGURACAO = {
+  DSGTOOLS_CENTROIDE: 1,
+  DSGTOOLS_MAO_LIVRE: 2,
+  DSGTOOLS_SELETOR_GENERICO: 3,
+  DSGTOOLS_ANGULO_RETO: 4
+}
+
+// dominio.tipo_perfil_dificuldade: como a fila escolhe entre as unidades de
+// trabalho disponíveis para um operador.
+const TIPO_PERFIL_DIFICULDADE = {
+  MAIS_FACEIS: 1,
+  MAIS_DIFICEIS: 2,
+  BALANCEADO: 3
+}
+
+// dominio.tipo_problema_atividade (chamava-se `dominio.tipo_problema` no SAP).
+//
+// OUTROS é 99, e não 8: a lacuna deixa o catálogo crescer pelo fim sem que
+// 'Outros' deixe de ser o último da lista.
+const TIPO_PROBLEMA_ATIVIDADE = {
+  INSUMO_INSUFICIENTE: 1,
+  ETAPA_ANTERIOR: 2,
+  ERRO_NA_EXECUCAO: 3,
+  UNIDADE_VIZINHA: 4,
+  UNIDADE_MUITO_GRANDE: 5,
+  PROBLEMA_NAS_ROTINAS: 6,
+  FINALIZACAO_INCORRETA: 7,
+  OUTROS: 99
+}
+
+// dominio.tipo_rotina: para que serve a rotina que o requisito de finalização
+// exige. A diferença entre 1 e 2 é se o operador pode marcar apontamento como
+// falso positivo e finalizar assim mesmo.
+const TIPO_ROTINA = {
+  QUALIDADE_SEM_FALSO_POSITIVO: 1,
+  QUALIDADE_COM_FALSO_POSITIVO: 2,
+  AUXILIAR: 3
+}
+
 module.exports = {
   STATUS_ARQUIVO,
   TIPO_ARQUIVO,
@@ -389,5 +581,17 @@ module.exports = {
   SITUACAO_TRANSFERENCIA,
   TIPO_TRANSFERENCIA,
   SITUACAO_CAMPO,
-  CATEGORIA_CAMPO
+  CATEGORIA_CAMPO,
+  TIPO_FASE,
+  TIPO_PRE_REQUISITO,
+  TIPO_ETAPA,
+  TIPO_EXIBICAO,
+  TIPO_RESTRICAO,
+  TIPO_INSUMO,
+  TIPO_DADO_PRODUCAO,
+  SITUACAO_ATIVIDADE,
+  TIPO_CONFIGURACAO,
+  TIPO_PERFIL_DIFICULDADE,
+  TIPO_PROBLEMA_ATIVIDADE,
+  TIPO_ROTINA
 }

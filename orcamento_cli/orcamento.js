@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict'
 
-// orcamento - CLI do modulo orcamento do SCA, desenhado para AGENTES.
+// orcamento - CLI do modulo orcamento do SAP, desenhado para AGENTES.
 //
 // O client web serve humanos; este CLI serve agentes. Sao dois clientes da
 // mesma API, com ergonomias diferentes de proposito: a tela otimiza clique e
@@ -23,7 +23,7 @@ const argsLib = require('./lib/args')
 const { resolver } = require('./lib/config')
 const { RECURSOS, listarChaves } = require('./lib/recursos')
 
-const AJUDA = `orcamento - CLI do modulo orcamento do SCA, para agentes
+const AJUDA = `orcamento - CLI do modulo orcamento do SAP, para agentes
 
 CONTRATO (nao gasta rede, leia isto antes de montar um corpo)
   orcamento schema                      lista os recursos
@@ -51,7 +51,7 @@ RECURSOS  (${listarChaves().join(', ')})
   orcamento dominio ug criar|atualizar|deletar        (exige administrador)
 
 SESSAO
-  orcamento status                      o SCA esta no ar? ha token em cache?
+  orcamento status                      o SAP esta no ar? ha token em cache?
   orcamento login                       autentica uma vez e guarda o token (~1h)
   orcamento logout                      descarta o token em cache
 

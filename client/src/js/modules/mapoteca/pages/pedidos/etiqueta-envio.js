@@ -3,6 +3,7 @@ import { openModal } from '@components/modal/modal-base.js';
 import { createTextField, createTextareaField } from '@components/form-fields/form-fields.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { getEtiquetaEnvio, salvarEtiquetaEnvio } from '@modules/mapoteca/services/mapoteca-service.js';
+import { nomeInstituicao } from '@store/auth-store.js';
 
 /**
  * Etiqueta de endereço do envio por Correios, salva no pedido.
@@ -25,21 +26,50 @@ import { getEtiquetaEnvio, salvarEtiquetaEnvio } from '@modules/mapoteca/service
  */
 
 /**
- * Remetente fixo: é sempre a mapoteca da DGEO do 1º CGEO.
+ * O ENDEREÇO postal do remetente, que continua fixo no código.
  *
  * Endereço POSTAL público, o mesmo que vai impresso em todo pacote que sai
  * daqui e no folder que acompanha o pedido. Não é informação de conexão (host,
  * IP, pasta de rede) nem segredo, então mora no código e não no `config.env`.
  * Se a OM mudar de endereço, o conserto é aqui, num lugar só.
+ *
+ * O NOME saiu daqui em 2026-08-09 e virou `remetente()`, logo abaixo. O
+ * endereço NÃO o acompanhou, e a diferença é de fonte: `dgeo.instituicao` tem
+ * nome, sigla e Unidade Gestora, e não tem rua, CEP nem telefone. Inventar essas
+ * três colunas para completar a etiqueta é decisão de banco, e ela não é desta
+ * mudança. Fica registrado como o que falta para outro Centro imprimir a
+ * etiqueta sem editar código.
  */
-export const REMETENTE = {
-  nome: '1º Centro de Geoinformação - Mapoteca',
+export const REMETENTE_ENDERECO = {
   linhas: [
     'Rua Cleveland, 250 - Santa Tereza',
     '90850-240 - Porto Alegre - RS',
   ],
   telefone: '(51) 3232-0742',
 };
+
+/**
+ * O remetente da etiqueta: o NOME vem da sessão, o endereço vem daqui.
+ *
+ * É função, e não constante, porque o nome muda: o administrador pode corrigi-lo
+ * em `#/instituicao` no meio do expediente. Uma constante de módulo congelaria o
+ * nome no primeiro `import`, e a etiqueta seguinte sairia com o nome velho.
+ *
+ * SEM O NOME DO CENTRO, a etiqueta sai só como 'Mapoteca'. É a resposta honesta
+ * para a sessão que não trouxe instituição (banco sem a linha): melhor uma
+ * etiqueta incompleta, que se vê na prévia antes de imprimir, do que o nome de
+ * outro Centro colado num pacote.
+ *
+ * @returns {{nome:string, linhas:string[], telefone:string}}
+ */
+export function remetente() {
+  const centro = nomeInstituicao();
+  return {
+    nome: centro ? `${centro} - Mapoteca` : 'Mapoteca',
+    linhas: REMETENTE_ENDERECO.linhas,
+    telefone: REMETENTE_ENDERECO.telefone,
+  };
+}
 
 /** Só os dígitos do primeiro CEP que aparecer no texto ('' quando não houver). */
 export function extrairCep(texto) {
@@ -85,6 +115,10 @@ export function montarEtiquetaHtml({ destinatario, aosCuidados, endereco, cep, r
     .map((linha) => `<div class="bloco__linha">${escapar(linha)}</div>`)
     .join('');
 
+  // Lido no momento da montagem, e não no `import`: a prévia e a impressão
+  // passam por aqui, então trocar o nome do Centro aparece na etiqueta seguinte.
+  const rem = remetente();
+
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -121,9 +155,9 @@ export function montarEtiquetaHtml({ destinatario, aosCuidados, endereco, cep, r
     </div>
     <div class="remetente">
       <div class="rotulo">Remetente</div>
-      <div class="remetente__nome">${escapar(REMETENTE.nome)}</div>
-      ${REMETENTE.linhas.map((l) => `<div class="remetente__linha">${escapar(l)}</div>`).join('')}
-      <div class="remetente__linha">Tel.: ${escapar(REMETENTE.telefone)}</div>
+      <div class="remetente__nome">${escapar(rem.nome)}</div>
+      ${rem.linhas.map((l) => `<div class="remetente__linha">${escapar(l)}</div>`).join('')}
+      <div class="remetente__linha">Tel.: ${escapar(rem.telefone)}</div>
     </div>
     ${referencia ? `<div class="referencia">${escapar(referencia)}</div>` : ''}
   </div>

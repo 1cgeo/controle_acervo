@@ -110,6 +110,31 @@ describe('Auth Routes', () => {
       expect(res.body.dados).not.toHaveProperty('token')
     })
 
+    // A instituicao entrou na foto em 2026-08-09, para o client DESENHAR com o
+    // nome do Centro em vez de o ter escrito no codigo. Vem aqui, e nao numa
+    // chamada propria, pelo mesmo motivo de `modulos`.
+    //
+    // `toHaveProperty`, e nao o valor: o nome depende do que o banco de teste
+    // semeou, e fixar '1º CGEO' aqui recriaria em teste o defeito que a mudanca
+    // conserta. O que se cobra e o CONTRATO -- o campo existe, e traz nome e
+    // sigla quando ha linha.
+    it('leva a instituicao desta instalacao junto da foto', async () => {
+      const res = await request(app)
+        .get('/api/login/sessao')
+        .set('Authorization', generateUserToken())
+
+      expect(res.status).toBe(200)
+      expect(res.body.dados).toHaveProperty('instituicao')
+
+      if (res.body.dados.instituicao) {
+        expect(res.body.dados.instituicao).toHaveProperty('nome')
+        expect(res.body.dados.instituicao).toHaveProperty('sigla')
+        // Nem `ug_code` nem rastro: quem precisa deles e a TELA de edicao, que
+        // le GET /api/instituicao.
+        expect(res.body.dados.instituicao).not.toHaveProperty('ug_code')
+      }
+    })
+
     // O `administrador` do token e do momento do login e envelhece igual ao
     // perfil, entao a resposta sai do BANCO, nunca do proprio token.
     it('should read administrador from the database, not from the token', async () => {

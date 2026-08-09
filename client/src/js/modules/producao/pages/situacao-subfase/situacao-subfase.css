@@ -1,0 +1,124 @@
+/* ---------------------------------------------------------------------------
+ * SITUAÇÃO DA SUBFASE (#/producao/situacao_subfase)
+ *
+ * Um quadro por bloco, uma barra de proporção por subfase.
+ *
+ * DUAS FAIXAS, E NENHUMA COR DE ESTADO: finalizado na cor primária, o resto no
+ * trilho neutro. A paleta de estado da casa (`.grade-pit__celula--*`) compara o
+ * acumulado com o prometido, e aqui não há prometido nenhum. Ver o cabeçalho de
+ * `index.js`.
+ * ------------------------------------------------------------------------- */
+
+.situacao-sub__resumo {
+  margin: 0 0 var(--space-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.situacao-sub__legenda {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.situacao-sub__amostra {
+  display: inline-block;
+  width: 24px;
+  height: 8px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text-secondary) 18%, transparent);
+}
+
+.situacao-sub__amostra--feita { background: var(--color-primary); }
+
+.situacao-sub__legenda-nota { margin-left: var(--space-md); }
+
+.situacao-sub__vazio {
+  padding: var(--space-lg);
+  color: var(--text-secondary);
+}
+
+.situacao-sub__quadro {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.situacao-sub__cabecalho {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-sm);
+}
+
+.situacao-sub__bloco {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+
+.situacao-sub__total {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.situacao-sub__linha {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: 6px;
+}
+
+.situacao-sub__rotulo {
+  flex: 0 0 220px;
+  width: 220px;
+  font-size: var(--font-size-sm);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.situacao-sub__barra {
+  flex: 1 1 auto;
+  height: 14px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text-secondary) 18%, transparent);
+  overflow: hidden;
+}
+
+.situacao-sub__barra-feita {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+}
+
+/* Os números ABSOLUTOS ficam ao lado da proporção de propósito: "90% de 10" e
+ * "90% de 400" pedem decisões diferentes, e a barra sozinha não os separa. */
+.situacao-sub__numeros {
+  flex: 0 0 150px;
+  width: 150px;
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.situacao-sub__pct { font-weight: var(--font-weight-medium); }
+
+.situacao-sub__contagem { color: var(--text-secondary); }
+
+@media (max-width: 768px) {
+  .situacao-sub__rotulo { flex-basis: 120px; width: 120px; }
+  .situacao-sub__numeros { flex-basis: 110px; width: 110px; }
+}

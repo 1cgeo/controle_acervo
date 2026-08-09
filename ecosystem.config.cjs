@@ -1,4 +1,9 @@
-// Deploy de producao do Controle do Acervo (SCA) via PM2.
+// Deploy de producao do SAP (Sistema de Apoio a Producao) via PM2.
+//
+// O NOME DO PROCESSO PM2 CONTINUA `controle-acervo`, e nao acompanhou a
+// renomeacao de 2026-08-09: ele esta gravado no `pm2 save` de quem ja implantou,
+// e troca-lo faria o `startOrReload` subir um SEGUNDO processo ao lado do que ja
+// esta rodando, na mesma porta.
 //
 // Um unico processo: o server, na porta da chave PORT de server/config.env,
 // serve a API REST e a INTERFACE INTEIRA em `/`, a partir de server/src/build

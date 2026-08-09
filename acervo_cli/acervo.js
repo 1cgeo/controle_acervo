@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict'
 
-// acervo - interface de linha de comando do SCA, desenhada para AGENTES.
+// acervo - interface de linha de comando do SAP, desenhada para AGENTES.
 //
 // O acervo_client serve humanos; este CLI serve agentes. Sao dois clientes da
 // mesma API, com ergonomias diferentes de proposito: a tela otimiza clique e
@@ -23,7 +23,7 @@ const argsLib = require('./lib/args')
 const { resolver } = require('./lib/config')
 const { RECURSOS, listarChaves } = require('./lib/recursos')
 
-const AJUDA = `acervo - CLI do Sistema de Controle do Acervo (SCA), para agentes
+const AJUDA = `acervo - CLI do Sistema de Apoio a Producao (SAP), para agentes
 
 CONTRATO (nao gasta rede, leia isto antes de montar um corpo)
   acervo schema                    lista os recursos e suas operacoes
@@ -59,19 +59,19 @@ ESCRITA GUARDADA (acervo de PRODUCAO)
   acervo editar produto --id 4211 --set nome="Serra Azul" --set subtipo_produto_id=24
   acervo editar arquivo --id 9001 --produto 4211 --set tipo_arquivo_id=2
 
-  O PUT do SCA sobrescreve o objeto INTEIRO. O editar le o registro, casa os
+  O PUT do SAP sobrescreve o objeto INTEIRO. O editar le o registro, casa os
   nomes, aplica so o que voce pediu, RECUSA quando a leitura nao traz um campo
   que o PUT gravaria com default (apagando o valor real), mostra o diff e so
   entao grava.
 
-OPERACOES DA API  (uma por rota real; nao ha CRUD generico no SCA)
+OPERACOES DA API  (uma por rota real; nao ha CRUD generico no SAP)
   acervo <recurso>                 lista as operacoes do recurso
   acervo <recurso> <operacao> [--data '{...}' | --data-file corpo.json]
                                    [--dry-run] [--confirmar <ids>]
   recursos: ${listarChaves().join(', ')}
 
 SESSAO
-  acervo status                    o SCA esta no ar? ha token em cache?
+  acervo status                    o SAP esta no ar? ha token em cache?
   acervo login                     autentica uma vez e guarda o token (~1h)
   acervo logout                    descarta o token em cache
 

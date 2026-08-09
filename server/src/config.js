@@ -217,8 +217,49 @@ dotenv.config({
 // move o serviço e não move o banco --, e é por isso que a regra é `>=` e não
 // `===`. Quem a faz cumprir é `__tests__/unit/versao_do_servico.test.js`, e não
 // a boa memória de quem commita.
-const VERSION = '1.50.0'
-const MIN_DATABASE_VERSION = '1.50.0'
+//
+// A 3.0.0 É A RENOMEAÇÃO: o Controle do Acervo passa a se chamar SAP
+// (Sistema de Apoio à Produção), por decisão do chefe em 2026-08-09, e o SAP
+// 2.3.5, que roda em outro repositório, é aposentado. O salto de 1.50.0 para
+// 3.0.0 não é uma série nova inventada: ele continua a numeração do sistema que
+// está sendo aposentado, para que a versão de cá e a de lá se comparem número a
+// número.
+//
+// O NOME É "SAP", E O 3.0 É ESTA CONSTANTE. O chefe decidiu em 2026-08-09 que a
+// versão não entra no rótulo: o menu, o `<title>` e o Swagger dizem "SAP", e
+// quem carrega o 3.0.0 é `VERSION` aqui e `public.versao` no banco.
+//
+// O PISO SOBE JUNTO, e a migração `2026-08-09_o_sca_vira_sap_3.sql` não toca
+// schema nenhum: ela só carimba `public.versao`. Pela regra do parágrafo da
+// 1.26.0 ele poderia ficar em 1.50.0, porque um banco 1.50.0 tem exatamente o
+// schema que este código lê. Ele sobe assim mesmo porque a renumeração precisa
+// atravessar UMA vez em cada instalação: as migrações de schema do core de
+// produção vêm depois desta e carimbam 3.x, e um banco que pulou a renomeação
+// ficaria comparando a série velha com a nova para sempre. O custo de cobrar é
+// aplicar uma migração que roda em milissegundos.
+// A IDENTIDADE DA INSTALAÇÃO NÃO MOVE ESTES DOIS NÚMEROS, e a ausência é
+// deliberada. `dgeo.instituicao` (1.51.0) e a saída do `e_1cgeo` de
+// `limites.area_suprimento` (1.52.0) entraram em 2026-08-09, ANTES da renumeração
+// para a série 3: as duas são degraus da mesma escada que termina em 3.0.0, e é
+// 3.0.0 que `er/versao.sql` carimba na instalação nova. Um banco 3.0.0 já tem a
+// tabela de identidade e já não tem o booleano, então o piso continua certo onde
+// está.
+const VERSION = '3.0.0'
+const MIN_DATABASE_VERSION = '3.0.0'
+
+/**
+ * Tira do objeto as chaves cujo valor e vazio (ausente, '' ou so espaco).
+ *
+ * Existe para as `MICRO_DB_*`: elas valem TODAS ou NENHUMA, e o `config.env`
+ * escrito por `create_config.js` traz as cinco presentes e em branco quando a
+ * telemetria nao foi configurada. Sem esta poda, `MICRO_DB_SERVER=''` contaria
+ * como "presente" para o `Joi.and` e o boot morreria cobrando as outras quatro
+ * de toda instalacao que nao usa telemetria.
+ */
+const vazioEhAusente = obj =>
+  Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined && String(v).trim() !== '')
+  )
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()
@@ -240,6 +281,29 @@ const configSchema = Joi.object().keys({
     .default('8h'),
   DB_USER_READONLY: Joi.string().allow('').default(''),
   DB_PASSWORD_READONLY: Joi.string().allow('').default(''),
+  // --- O banco da TELEMETRIA (microcontrole) ---------------------------------
+  //
+  // AS CINCO SÃO OPCIONAIS, e é isso que faz o serviço subir sem telemetria. Sem
+  // `MICRO_DB_SERVER` a segunda conexão nem é montada (`database/db.js`), as
+  // cinco rotas de `/api/microcontrole` que leem o banco PRINCIPAL continuam
+  // respondendo e as seis que leem a telemetria respondem 503.
+  //
+  // MAS ELAS VALEM JUNTAS OU NENHUMA, e o `Joi.and` abaixo é o que cobra. Meia
+  // configuração (o servidor sem o banco, ou o usuário sem a senha) produziria
+  // um objeto de conexão que só falha na PRIMEIRA requisição do plugin, com um
+  // erro do driver, longe de quem digitou. Aqui ela falha no boot, dizendo qual
+  // chave falta.
+  //
+  // A PORTA É NÚMERO E TEM DE ACEITAR VAZIO: `Joi.number()` recusa a string
+  // vazia, e `config.env` escrito por `create_config.js` traz as cinco chaves
+  // presentes e em branco quando a telemetria não foi configurada. Por isso o
+  // `config` abaixo converte '' para `undefined` antes de validar, em vez de
+  // `Number('')`, que é 0 e passaria como porta válida.
+  MICRO_DB_SERVER: Joi.string(),
+  MICRO_DB_PORT: Joi.number().integer(),
+  MICRO_DB_NAME: Joi.string(),
+  MICRO_DB_USER: Joi.string(),
+  MICRO_DB_PASSWORD: Joi.string(),
   // Onde os shares do acervo estão MONTADOS nesta máquina. Só importa fora do
   // Windows: `acervo.volume_armazenamento.volume` guarda caminho UNC, que no
   // Linux não existe. Com VOLUMES_RAIZ=/mnt, o share "acervo_sca" da UNC é lido
@@ -254,6 +318,16 @@ const configSchema = Joi.object().keys({
   VERSION: Joi.string().required(),
   MIN_DATABASE_VERSION: Joi.string().required()
 })
+  // TODAS OU NENHUMA. `Joi.and` só cobra quando ALGUMA está presente, que é
+  // exatamente o que se quer: nenhuma chave é o estado normal de quem não usa
+  // telemetria, e uma sozinha é erro de digitação que precisa aparecer no boot.
+  .and(
+    'MICRO_DB_SERVER',
+    'MICRO_DB_PORT',
+    'MICRO_DB_NAME',
+    'MICRO_DB_USER',
+    'MICRO_DB_PASSWORD'
+  )
 
 const config = {
   PORT: process.env.PORT,
@@ -272,6 +346,17 @@ const config = {
   UPLOAD_WEB_MAX_GB: process.env.UPLOAD_WEB_MAX_GB
     ? Number(process.env.UPLOAD_WEB_MAX_GB)
     : 2,
+  // Chave VAZIA vira AUSENTE, e não string vazia: `create_config.js` escreve as
+  // cinco em branco quando a telemetria não foi configurada, e uma `''` presente
+  // faria o `Joi.and` cobrar as outras quatro. Ausente é o estado que diz "não
+  // há telemetria nesta instalação".
+  ...vazioEhAusente({
+    MICRO_DB_SERVER: process.env.MICRO_DB_SERVER,
+    MICRO_DB_PORT: process.env.MICRO_DB_PORT,
+    MICRO_DB_NAME: process.env.MICRO_DB_NAME,
+    MICRO_DB_USER: process.env.MICRO_DB_USER,
+    MICRO_DB_PASSWORD: process.env.MICRO_DB_PASSWORD
+  }),
   VERSION,
   MIN_DATABASE_VERSION
 }

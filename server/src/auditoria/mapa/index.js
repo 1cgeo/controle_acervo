@@ -118,13 +118,27 @@ const acervo = require('./acervo')
 const mapoteca = require('./mapoteca')
 const orcamento = require('./orcamento')
 const equipamento = require('./equipamento')
+// PRODUCAO entrou na 3.0.0, com o core que atravessou do `macrocontrole` do SAP
+// 2.3.5. O schema `qgis` entra JUNTO dele, e nao como modulo proprio: quem
+// publica menu, tema e estilo do QGIS e quem responde pela producao, e as rotas
+// dos dois moram em `/api/producao`.
+const producao = require('./producao')
+// METADADO tambem e do modulo `producao`, e tem arquivo proprio: sao 45 tabelas
+// somadas com as do `producao.js`, e o motivo de um arquivo por modulo (dois
+// agentes colidindo na mesma linha) vale igual entre dois schemas do mesmo
+// modulo. Nao ha `dominio.modulo` para metadado, e nem deve haver: quem
+// preenche a ficha ET-PCDG e quem responde pela producao.
+const metadado = require('./metadado')
 const plataforma = require('./plataforma')
 
 const MODULOS_VALIDOS = new Set([
-  'acervo', 'mapoteca', 'orcamento', 'equipamento', 'plataforma'
+  'acervo', 'mapoteca', 'orcamento', 'equipamento', 'producao', 'plataforma'
 ])
 
-const mapa = { ...acervo, ...mapoteca, ...orcamento, ...equipamento, ...plataforma }
+const mapa = {
+  ...acervo, ...mapoteca, ...orcamento, ...equipamento, ...producao, ...metadado,
+  ...plataforma
+}
 
 // Conferencia no CARREGAMENTO do modulo, e nao na primeira escrita: entrada mal
 // formada derruba o boot com a mensagem certa, em vez de derrubar uma transacao

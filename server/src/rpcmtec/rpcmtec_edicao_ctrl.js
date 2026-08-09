@@ -26,6 +26,7 @@ const { db } = require('../database')
 const { AppError, httpCode } = require('../utils')
 const { auditoriaCtrl } = require('../auditoria')
 
+const instituicaoCtrl = require('../instituicao/instituicao_ctrl')
 const rpcmtecCtrl = require('./rpcmtec_ctrl')
 const estrutura = require('./rpcmtec_estrutura')
 
@@ -191,11 +192,29 @@ const foiPreenchida = gravada =>
  * o fixo vem da estrutura. Fechada: TUDO vem de `rpcmtec.subsecao`, e a
  * estrutura só é consultada para a grade de coluna.
  *
+ * A INSTITUIÇÃO VIAJA JUNTO, desde 2026-08-09, e ela é lida AQUI porque aqui é
+ * onde o documento nasce. Quem a consome são o desenhador do PDF (a capa, o
+ * cabeçalho de página, o rodapé e o bloco de assinatura) e a tela, que mostra o
+ * mesmo documento -- e é a mesma razão pela qual a tela e o PDF já saem do mesmo
+ * objeto: lendo de lugares diferentes, os dois divergiriam e quem confere veria
+ * diferença onde não há.
+ *
+ * UMA LEITURA POR MONTAGEM, sem cache: a linha muda por `PUT /api/instituicao`, e
+ * o relatório seguinte tem de sair com o nome novo. Ver o cabeçalho de
+ * `instituicao/instituicao_ctrl.js`.
+ *
+ * ELA É LIDA TAMBÉM NA EDIÇÃO FECHADA, e é deliberado: o texto congelado da 1.1
+ * guarda o nome de quando foi assinado, mas a capa e o rodapé são desenhados
+ * agora. O documento que vale é o ANEXO assinado (`/anexo/:id/download`); o PDF
+ * que o sistema reemite é sempre reemissão, e uma capa com o nome de hoje sobre
+ * um corpo congelado é o que uma reemissão é.
+ *
  * @param {number} id
- * @returns {Promise<Object>} { ...edicao, pendentes, secoes }
+ * @returns {Promise<Object>} { ...edicao, instituicao, pendentes, secoes }
  */
 controller.montar = async id => {
   const edicao = await controller.getPorId(id)
+  const instituicao = await instituicaoCtrl.paraDocumento()
   const gravadas = await lerSubsecoes(db.conn, id)
 
   // Só calcula quando a edição está ABERTA. Numa fechada, recalcular seria
@@ -228,7 +247,15 @@ controller.montar = async id => {
         const gravada = gravadas.get(b.numero)
 
         if (b.origem === estrutura.ORIGEM.FIXA) {
-          return { ...paraSaida(b), texto: b.conteudo, preenchida: true }
+          // O texto fixo é o único que fala em nome do Centro (a 1.1), e ele
+          // guarda MARCADORES em vez do nome. A troca é aqui porque aqui a
+          // instituição já foi lida, e não na estrutura, que é módulo de dados
+          // carregado antes de existir requisição. Ver `aplicarInstituicao`.
+          return {
+            ...paraSaida(b),
+            texto: estrutura.aplicarInstituicao(b.conteudo, instituicao),
+            preenchida: true
+          }
         }
 
         if (b.origem === estrutura.ORIGEM.CALCULADA) {
@@ -299,6 +326,7 @@ controller.montar = async id => {
 
   return {
     ...edicao,
+    instituicao,
     pendentes,
     lacunasCalculadas,
     porRevisar,

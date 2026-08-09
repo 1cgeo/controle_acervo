@@ -2,7 +2,7 @@
   "name": "controle-acervo",
   "version": "1.0.0",
   "type": "module",
-  "description": "Sistema de Controle do Acervo",
+  "description": "SAP - Sistema de Apoio à Produção",
   "repository": {
     "type": "git",
     "url": "git://github.com/1cgeo/controle_acervo"
@@ -22,7 +22,8 @@
     "start-dev": "concurrently \"cd server && npm run dev\""
   },
   "keywords": [
-    "Controle do Acervo",
+    "SAP",
+    "Sistema de Apoio à Produção",
     "Node",
     "Express"
   ],

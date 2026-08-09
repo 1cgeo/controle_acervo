@@ -18,6 +18,39 @@
  */
 
 module.exports = {
+  // --- Agregado: instituicao -------------------------------------------------
+  //
+  // A INSTALACAO INTEIRA NUM AGREGADO DE UMA LINHA SO, e o `entidade_id` e
+  // sempre 1: a tabela e de linha unica pelo CHECK `(id = 1)` do DDL, e nao ha
+  // ficha para escolher. A ficha e a propria instalacao.
+  //
+  // POR QUE ELA E AUDITADA, sendo tres campos. Porque e o campo que muda o que
+  // as OUTRAS leituras significam: o `nome` daqui e comparado com
+  // `limites.area_suprimento.cgeo`, entao troca-lo faz a subsecao 2.7 do RPCMTec
+  // passar a medir outra area, e a `ug_code` diz de quem sao as notas de credito
+  // do orcamento. Sem rastro, um relatorio assinado passaria a falar de outro
+  // Centro sem que ninguem soubesse quando isso comecou.
+  //
+  // SO HA OPERACAO 'U', e a ausencia das outras duas e a regra: a linha nasce
+  // com o banco (semeada por `er/dgeo.sql` ou pela migracao
+  // `2026-08-09_a_instituicao.sql`) e nao tem rota de criacao nem de exclusao.
+  'dgeo.instituicao': {
+    modulo: 'plataforma',
+    entidade: 'instituicao',
+    agregado: (t, linha) => linha.id,
+    resumo: linha => `${linha.sigla} (${linha.nome})`,
+    campos: {
+      nome: { rotulo: 'Nome por extenso' },
+      sigla: { rotulo: 'Sigla' },
+      // O CODIGO CRU, sem `dominio: 'dominio.ug'`, e a escolha e deliberada.
+      // Traduzir pelo catalogo mostraria o nome que a UG tem HOJE ao lado de um
+      // evento de um ano atras, e a UG e cadastro que muda de nome: o rastro
+      // guarda o codigo que foi gravado, que e o que a nota de credito daquela
+      // epoca cita.
+      ug_code: { rotulo: 'Unidade Gestora' }
+    }
+  },
+
   // --- Agregado: usuario -----------------------------------------------------
   // O cadastro e o perfil por modulo se leem JUNTOS: "foi promovido" e "ganhou
   // gerente no acervo" sao a mesma pergunta feita na mesma tela. Separa-los em

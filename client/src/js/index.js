@@ -12,6 +12,7 @@ import { renderUnauthorized } from '@pages/unauthorized.js';
 import { renderNotFound } from '@pages/not-found.js';
 import { renderUsuariosList } from '@pages/usuarios/list.js';
 import { renderAcessos } from '@pages/acessos/index.js';
+import { renderInstituicao } from '@pages/instituicao/index.js';
 import { renderRastreabilidade } from '@pages/rastreabilidade/index.js';
 import { renderPerfil } from '@pages/perfil/index.js';
 import { renderPitAno } from '@pages/metas/index.js';
@@ -77,6 +78,16 @@ router.add('/login', standalone(renderLogin), {
 
 // Tela unica de usuarios: uma coluna por modulo. Administrador global.
 router.add('/usuarios', withLayout(renderUsuariosList), { guard: adminLoader });
+
+// A INSTITUICAO que opera esta instalacao: nome, sigla e Unidade Gestora.
+//
+// ADMINISTRADOR GLOBAL, como a de usuarios, e o servidor cobra `verifyAdmin` no
+// PUT. A LEITURA da rota e de quem esta logado (o rodape do relatorio precisa do
+// nome), mas a TELA e do administrador: quem nao escreve nao tem o que fazer num
+// formulario de tres campos.
+//
+// Ela e o que tirou o "1º CGEO" de dentro do codigo. Ver `docs/decisoes.md`.
+router.add('/instituicao', withLayout(renderInstituicao), { guard: adminLoader });
 
 // Dashboard do efetivo: quem esta na Divisao no mes, quanto rendeu e quanto o
 // impedimento custou, mais o historico de login (`dgeo.login`) numa aba atras.

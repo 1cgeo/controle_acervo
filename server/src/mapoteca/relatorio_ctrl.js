@@ -1,6 +1,9 @@
 "use strict";
 
 const { db } = require("../database");
+// DE QUEM É ESTA INSTALAÇÃO, no ponto único. `instituicao/` é de PLATAFORMA e
+// não conhece a mapoteca, então não há ciclo.
+const instituicaoCtrl = require("../instituicao/instituicao_ctrl");
 const {
   domainConstants: {
     TIPO_PRODUTO,
@@ -51,9 +54,19 @@ const ESCALAS_PADRAO = [
 // pedido, e as 42 vazias eram o que acontece quando se pede isso.
 //
 // Continua SAINDO na planilha, porque a aba do RTM tem quinze colunas fixas e
-// esta é a primeira delas. Vira literal aqui, como o cabeçalho do PDF do RPCMTec
-// já fazia (`rpcmtec_pdf.js`): quem gera o relatório do 1º CGEO é o 1º CGEO.
-const OMDS = "1º CGEO";
+// esta é a primeira delas.
+//
+// DEIXOU DE SER LITERAL EM 2026-08-09. Ela virou `const OMDS = "1º CGEO"` aqui,
+// com a razão escrita de que "quem gera o relatório do 1º CGEO é o 1º CGEO" --
+// e a frase era verdadeira e a conclusão, errada: quem gera o relatório desta
+// instalação é a instituição DELA, que `dgeo.instituicao` diz qual é. Outro
+// Centro que instalasse o SAP mandaria à DSG uma aba com a sigla desta casa em
+// todas as linhas.
+//
+// A SIGLA, e não o nome por extenso: a coluna da aba é estreita e o que a
+// planilha do chefe traz nela é '1º CGEO'. A leitura é de `paraDocumento()`, o
+// ponto único (ver `instituicao/instituicao_ctrl.js`), e acontece UMA vez por
+// relatório gerado -- não por linha, e não em cache.
 
 /**
  * Relatório anual de pedidos militares (reproduz a aba "Mil" da planilha).
@@ -166,10 +179,12 @@ controller.getRelatorioPedidosMil = async (ano) => {
  * @param {number} [mes] - 1 a 12; acumula de janeiro até ele
  */
 controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
+  const instituicao = await instituicaoCtrl.paraDocumento();
+
   return db.conn.any(
     `
     SELECT
-      -- Literal, e não coluna: ver a constante OMDS no topo deste arquivo.
+      -- Parametro, e nao coluna: ver o bloco OMDS no topo deste arquivo.
       $<omds> AS omds,
       p.demandante,
       c.nome AS om_destino,
@@ -240,7 +255,7 @@ controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
     WHERE ${mes ? filtroPeriodoMes("p.data_pedido", { cumulativo: true }) : filtroAno("p.data_pedido")}
     ORDER BY p.data_pedido, p.id, pp.id
     `,
-    { ano, mes, omds: OMDS }
+    { ano, mes, omds: instituicao.sigla }
   );
 };
 

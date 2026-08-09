@@ -11,8 +11,9 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **O SCA é o dono da identidade: guarda o hash bcrypt em `dgeo.usuario.senha` e valida o login
   sozinho.** Não há serviço externo a subir junto, e "trocar a minha senha" é tela que ele pode ter.
 - **`dgeo.login.cliente` é VARCHAR, e não FK; `dgeo.login.usuario_id` é ANULÁVEL.** A lista fechada
-  (`sca_web`, `sca_qgis`) vive no Joi de `login/login_schema.js`, e domínio seria administrar um
-  catálogo de duas linhas. Sem o anulável, a contagem de acessos do mês mudaria ao demitir alguém.
+  (`sap_web`, `sap_fp`, `sap_fg` e, enquanto houver cliente antigo no ar, `sca_web` e `sca_qgis`)
+  vive no Joi de `login/login_schema.js`, e domínio seria administrar um catálogo que cabe numa
+  linha. Sem o anulável, a contagem de acessos do mês mudaria ao demitir alguém.
 - **`dgeo.usuario.senha` é ANULÁVEL nos DOIS caminhos (`er/` e migração), e não há `SET NOT NULL`
   final.** Nulo é "cadastrada e ainda sem senha local", e o login responde isso em vez de "senha
   inválida", porque a causa é administrativa. Travar a coluna só num dos caminhos faria instalação
@@ -29,6 +30,121 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **No `PUT /usuarios/:uuid` os campos de identidade são OPCIONAIS, e omitir vale "não mexe".** Os
   botões de alternar chamam a rota só com `administrador` e `ativo`, e um `.default()` no Joi apagaria
   o nome de quem só foi ativado.
+- **De quem é esta instalação é DADO, e mora em `dgeo.instituicao`** (chefe, 2026-08-09): nome por
+  extenso, sigla e Unidade Gestora, numa LINHA ÚNICA garantida pelo `CHECK (id = 1)`. Antes disso o
+  "1º CGEO" estava em texto de tela, em semente de domínio e numa COLUNA
+  (`limites.area_suprimento.e_1cgeo`), e outro Centro não instalava o sistema sem editar código. Mora
+  em `dgeo` porque ali vive a IDENTIDADE da instalação (quem entra, quem tem perfil, quem acessou), e
+  "de quem é" é a mesma pergunta um degrau acima; não em `dominio`, que é tabela de código, nem em
+  `metadado`, que instala depois e é do core de produção, nem em `public`. **Uma instalação serve UM
+  Centro**, e a segunda linha é recusada pelo banco: com `id` próprio bate no CHECK, sem `id` o
+  default repete o 1 e bate na chave primária. Servir dois Centros não é inserir linha, é decisão de
+  escopo, e ela se registra aqui.
+- **A área da 2.7 casa por TEXTO EXATO, e o zero DÓI** (chefe, 2026-08-09). Com o `e_1cgeo` fora, a
+  subseção 2.7 do RPCMTec acha a Área Sob Coordenação comparando `limites.area_suprimento.cgeo` com
+  `dgeo.instituicao.nome`. O comentário da coluna antiga avisava que comparar texto "quebra calado", e
+  ele estava certo: o `cgeo` vem da fonte externa `asc_insumos`, e um acento, um `º` escrito como `o`
+  ou um espaço a mais devolvem ZERO linhas sem erro nenhum. A saída não foi manter o booleano, foi
+  fazer o zero doer: `areaDoCentro`, de `rpcmtec_ctrl.js`, **falha** dizendo o nome procurado, os
+  `cgeo` que existem e onde configurar, e derruba o relatório inteiro de propósito -- área zero num
+  documento assinado é pior que erro na tela. A migração cobra o mesmo antes de apagar a coluna, e um
+  banco que sairia zerado não migra. **Não se normaliza a comparação** (`unaccent`,
+  `btrim(lower(...))`): normalizar ANULA o `UNIQUE (cgeo)`, porque dois textos distintos viram um só
+  depois de normalizados, os dois casam e a 2.7 conta a área em dobro -- o silêncio que a restrição
+  existe para impedir. Ressuscitar o booleano ou afrouxar a comparação é decisão, e se registra aqui.
+- **A instituição NÃO é chave de `server/config.env`, e a ausência é deliberada.** Ela é dado de
+  banco justamente para ser trocada pela tela (`PUT /api/instituicao`, do administrador, auditado) sem
+  reiniciar o serviço. `.env.example` não ganhou linha nenhuma.
+- **`GET /api/instituicao` é `verifyLogin`, e não `verifyAcesso`.** Desde 2026-08-08 ter conta e ter
+  acesso são dois momentos: quem não tem perfil em módulo nenhum alcança só `#/perfil`, que é onde se
+  lê a quem pedir acesso. Cobrar acesso aqui deixaria sem nome de Centro exatamente essa tela, e o
+  que ela mostra é o nome de uma OM, que está na porta do quartel.
+- **A TELA da instituição não veio junto com a tabela e as rotas, e a dívida está escrita** em
+  `PENDENTE_COM_PLANO`, de `__tests__/unit/entrega_do_rastro.test.js`. Enquanto ela não chega, o
+  evento sai na varredura de rastreabilidade como texto em vez de link: inventar destino para uma rota
+  que não existe seria o defeito do DFD (`orcamento:dfd` apontando `#/orcamento/dfd/:id`), e link que
+  leva a 404 é pior do que texto.
+- **A instituição VIAJA NA SESSÃO, ao lado de `perfis` e `modulos`** (2026-08-09). `POST /api/login` e
+  `GET /api/login/sessao` devolvem `{ nome, sigla }` de `dgeo.instituicao`, e o client os guarda em
+  `@store/auth-store.js`. É o mesmo caminho e o mesmo motivo do catálogo de módulos: o client precisa
+  do nome para DESENHAR (o remetente da etiqueta de envio, o `orgao_produtor` sugerido no cadastro de
+  versão, o nome do arquivo do Anuário quando o cabeçalho não vem), e uma chamada extra no boot seria
+  uma volta a mais para um dado que muda uma vez por instalação. **Só `nome` e `sigla`**: `ug_code` é
+  do orçamento e não se desenha com ele, e quem precisa dos três campos, do `ug_nome` e do rastro é a
+  TELA de edição, que continua lendo `GET /api/instituicao`. Banco sem a linha responde `null` e o
+  login CONTINUA VALENDO: ninguém pode ficar trancado do lado de fora por causa de um rótulo, e quem
+  cobra a ausência é o `GET /api/instituicao`, com a mensagem que diz qual migração aplicar.
+- **A TELA DE LOGIN NÃO NOMEIA O CENTRO, e a rota da instituição continua fechada** (2026-08-09). Ela
+  dizia "Sistema de Apoio à Produção, 1º CGEO" e "Para quem trabalha no 1º CGEO", e é desenhada ANTES
+  de alguém entrar: não há sessão para ler ali. Havia duas saídas, e a que NÃO se tomou foi abrir uma
+  rota anônima de instituição. `GET /api/instituicao` é `verifyLogin` porque quem a lê já passou pelo
+  login; abri-la publicaria QUAL OM opera esta instalação para qualquer um que alcance a porta de
+  entrada, e essa porta é alcançável SEM CONTA por causa do caminho público do localizador (RN04).
+  Seria trocar superfície exposta por uma linha de subtítulo. Ler do `auth-store` também não serve:
+  daria nome vazio na primeira visita e o nome de quem saiu por último na segunda. O texto ficou
+  verdadeiro sem o nome ("Para quem trabalha no Centro"), e o nome aparece assim que a pessoa entra.
+  Abrir a rota é decisão, e se registra aqui.
+- **O NOME DO ARQUIVO QUEM MANDA É O SERVIDOR, pelo `Content-Disposition`** (2026-08-09). O nome do
+  Anuário era montado nas DUAS pontas, com o "1CGEO" escrito no código de cada uma, e duas montagens
+  do mesmo nome divergem no primeiro dia em que uma delas muda -- que foi o dia em que a sigla virou
+  dado. O `apiDownload` do client passou a preferir o `filename*` (RFC 5987) ao `filename` simples, e
+  o `fallbackFilename` de quem chama só vale quando o cabeçalho não traz nome nenhum. A queda do
+  Anuário NÃO tenta reproduzir o nome do servidor (que leva também o mês por extenso): ela só carrega
+  a sigla desta instalação reduzida a `[A-Za-z0-9]`, porque nome de arquivo atravessa anexo de e-mail
+  e pasta compartilhada. **O `filename` simples é literal e não se decodifica**: o
+  `decodeURIComponent` que havia ali lançava `URIError` num nome com `%` e derrubava um download que
+  estava indo bem.
+- **QUEM LÊ `dgeo.instituicao` PARA DOCUMENTO É UM SÓ, e ele mora no módulo DONO da tabela**
+  (2026-08-09). O nome do Centro estava escrito no servidor em dez lugares -- a capa, a linha do mês,
+  o bloco de assinatura e o cabeçalho de toda página do PDF do RPCMTec, o nome do arquivo do Anuário,
+  as duas frases da 1.1 e a coluna OMDS da aba META4_DETALHADA do RTM --, e `rpcmtec_ctrl.areaDoCentro`
+  já tinha aberto um `SELECT nome FROM dgeo.instituicao` próprio. A saída NÃO foi repetir essa
+  consulta nos seis arquivos: é `instituicaoCtrl.paraDocumento()`, em `instituicao/instituicao_ctrl.js`,
+  que devolve a linha inteira mais o slug da sigla. Mora ali, e não em `rpcmtec/` nem em `utils/`,
+  porque quem lê são DOIS módulos (`rpcmtec` e `mapoteca`): pôr o ponto no RPCMTec obrigaria a
+  mapoteca a requerê-lo para saber a sigla da própria casa, e fecharia um ciclo de `require` (o
+  `rpcmtec_route.js` já requer `mapoteca/relatorio_ctrl` e `mapoteca/anuario_ctrl`).
+- **SEM CACHE DE PROCESSO, e a ausência é a decisão** (2026-08-09). A linha muda por
+  `PUT /api/instituicao`, e um cache faria o relatório SEGUINTE ao PUT sair com o nome velho -- sem
+  erro, sem aviso, até alguém reiniciar o serviço por acaso. O que se economizaria é a leitura de UMA
+  linha por chave primária, e ela acontece por GERAÇÃO DE DOCUMENTO (montar a edição, desenhar o PDF,
+  exportar o Anuário ou o RTM), e não por requisição de tela. Pôr cache é decisão, e se registra aqui.
+- **SEM VALOR PADRÃO: instituição ilegível NÃO gera documento** (2026-08-09). A linha sempre existe
+  (semente mais `CHECK (id = 1)`), então falhar quer dizer banco em pé de guerra, linha apagada por
+  `psql` ou migração não aplicada -- e nenhuma dessas tem padrão honesto. Um `|| '1º CGEO'` trancaria
+  de novo a instalação no Centro de quem escreveu o código, e um `?? ''` imprimiria "RPCMTec
+  Julho/2026" num PDF que alguém assina: documento assinado com o nome errado é pior que documento que
+  não saiu, porque o erro alguém conserta e o papel alguém arquiva. `paraDocumento()` também recusa
+  `nome` ou `sigla` em BRANCO, que a coluna NOT NULL aceita, e cobra os dois mesmo de quem só usa o
+  nome (a 2.7): quem pede a instituição para documento monta um documento que leva os dois, e é melhor
+  parar na primeira leitura do que com meia edição calculada. O desenhador do PDF confere de novo, e é
+  a mesma razão da 2.7 que falha em vez de devolver zero.
+- **O SLUG DA SIGLA É EM JS, E SEM SEPARADOR** (2026-08-09). O nome do arquivo do Anuário leva a
+  sigla, e `1º CGEO` tem espaço e `º`. A ideia é a de `acervo.slug_nome()` (`er/acervo.sql`) -- sem
+  acento, só `[A-Z0-9]`, maiúsculo --, com UMA divergência: lá o que sobra entre os pedaços vira `-`,
+  aqui vira nada, porque o nome que a DSG já recebe é `Anuario_Estatistico_1CGEO_06_Junho_2026.ods` e
+  um `1-CGEO` meteria um SEGUNDO separador dentro de um nome separado por `_`. **Não se chama a função
+  do banco**: ela daria a resposta errada pelo separador, mora no schema `acervo` e fala de nome
+  físico de produto, e custaria uma ida ao banco para normalizar um texto que já está na memória de
+  quem acabou de lê-lo. A normalização é **NFD e nunca NFKD**: o que se quer perder é o acento, e em
+  NFKD o `º` viraria a letra `o` (`1º CGEO` sairia `1OCGEO`).
+- **A 1.1 do RPCMTec guarda MARCADORES, e a troca acontece na MONTAGEM** (2026-08-09).
+  `rpcmtec_estrutura.js` é módulo de DADOS, avaliado na carga do processo: quando ele roda não há
+  requisição, não há banco e não há a quem perguntar de quem é a instalação -- e uma consulta ali
+  dentro rodaria UMA vez, no `require`, congelando o nome até alguém reiniciar. O texto continua sendo
+  cadeia constante, com `{nome}` e `{sigla}`, e quem os troca é `aplicarInstituicao`, chamada por
+  `rpcmtec_edicao_ctrl.montar`. Vale **só para a origem FIXA**: a digitada é texto de pessoa, e trocar
+  marcador no que alguém escreveu à mão seria substituição que ninguém pediu. O FECHAMENTO congela o
+  texto já trocado, e é o desejado -- a edição fechada guarda o nome que o documento afirmava quando
+  foi assinado, e um Centro que se renomeie depois não reescreve o passado. A capa e o rodapé, esses,
+  são desenhados na hora mesmo em edição fechada: o documento que vale é o ANEXO assinado, e o PDF que
+  o sistema reemite é reemissão.
+- **O ENDEREÇO POSTAL do remetente da etiqueta CONTINUA no código, e a pendência está escrita**
+  (2026-08-09). O NOME do remetente passou a sair de `dgeo.instituicao.nome`, mas a rua, o CEP e o
+  telefone não o acompanharam, e a diferença é de fonte: a tabela tem nome, sigla e Unidade Gestora, e
+  não tem endereço. Inventar três colunas para completar a etiqueta é decisão de banco, e ela não é
+  desta mudança. Fica registrado como o que ainda falta para outro Centro imprimir etiqueta sem editar
+  código, em `REMETENTE_ENDERECO` de `client/src/js/modules/mapoteca/pages/pedidos/etiqueta-envio.js`.
 
 ## Autorização e superfície pública
 
@@ -103,6 +219,57 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **O rate limit é dimensionado para CLIENTE DE LOTE, não para navegador.** Um teto de tela partiria
   ao meio uma carga do `acervo_cli` com 429, deixando parte das versões migradas e parte não.
 
+## O nome do sistema
+
+- **O Controle do Acervo (SCA) passou a se chamar SAP 3.0, Sistema de Apoio à Produção, em
+  2026-08-09** (chefe). O SAP 2.3.5, que roda em outro repositório, será aposentado, e todo o
+  conteúdo dele entra aqui. **A versão do serviço é 3.0.0 e CONTINUA a numeração do sistema
+  aposentado**: manter a série 1.x faria "SAP 3.0" no menu conviver com `1.51.0` na resposta da API
+  e em `public.versao`, que é o descompasso que `versao_do_servico.test.js` existe para pegar.
+  A migração `2026-08-09_o_sca_vira_sap_3.sql` **não toca schema nenhum**: ela só carimba a versão,
+  e as migrações de schema do core de produção vêm depois dela.
+- **O acervo é uma PARTE do SAP 3.0, e não o todo, e por isso NADA do acervo foi renomeado.** O
+  schema `acervo`, o módulo `acervo` de `dominio.modulo` (code 1, `nome_abrev` = `acervo`), o
+  `acervo_cli` e as rotas `/api/acervo/*` continuam com o nome de sempre. Renomear o schema custaria
+  toda FK, todo SQL e todo CLI para não dizer nada de novo; renomear o `nome_abrev` derrubaria a
+  autorização sem erro de sintaxe, que é a armadilha registrada no `CLAUDE.md`.
+- **A renomeação é de RÓTULO, e não alcança identificador.** Não mudaram: o nome do banco, as chaves
+  `SCA_*` do ambiente, o cache de sessão dos CLIs em `~/.sca`, o processo PM2 `controle-acervo`, o
+  `name` dos `package.json`, o diretório do repositório e os remotes de git. Cada um deles obrigaria
+  toda máquina instalada a reconfigurar, e nenhuma pessoa os lê.
+- **`sca_web` e `sca_qgis` continuam aceitos pelo Joi do login**, ao lado de `sap_web`, `sap_fp`
+  (plugin SAP Operador) e `sap_fg` (plugin SAP Gerente). O bundle em cache no navegador e o plugin
+  QGIS instalado em cada máquina seguem mandando o nome velho: apagá-los faria todo cliente que já
+  está no ar tomar 400 no segundo do deploy. Eles só saem quando `dgeo.login.cliente` mostrar que
+  ninguém mais os envia, e reescrever a coluna seria apagar o próprio histórico de acesso.
+- **Comentário de código e migração antiga que dizem "SCA" NÃO se reescrevem.** Migração é registro
+  histórico do que foi decidido naquele dia, pela mesma razão que a trilha de `auditoria.evento` é
+  append-only: reescrevê-la seria a aplicação corrigindo a própria prova. Há uma segunda razão, e
+  ela é de leitura: em quase toda a prosa deste repositório "SAP" quer dizer o SAP **2.3.5**, então
+  uma troca cega de "SCA" por "SAP" transformaria frases corretas em frases ambíguas. Ao escrever,
+  diga "SAP 3.0" ou "SAP 2.3.5", nunca "SAP" sozinho.
+- **O produto se chama "SAP", e o "3.0" é a VERSÃO, não parte do nome** (chefe, 2026-08-09, no mesmo
+  dia e depois das linhas acima, que ficam como registro do que se decidiu primeiro). Por extenso,
+  **Sistema de Apoio à Produção**. O rótulo perde o número em toda parte que uma pessoa lê: o
+  `<title>`, o cabeçalho do client, a tela de login, o Swagger, a mensagem de `GET /api`, o
+  `description` dos `package.json`, os READMEs dos sete CLIs e a ajuda deles. O número continua onde
+  sempre esteve, e só ali: `VERSION` em `server/src/config.js` e `public.versao`. Um nome com versão
+  colada envelhece sozinho, e obrigaria a reescrever a interface inteira na 3.1.
+- **A REGRA DE DESAMBIGUAÇÃO MUDOU JUNTO, porque "SAP" deixou de estar livre.** Ela era "nunca 'SAP'
+  sozinho"; com o nome novo isso é impossível de cumprir, já que o sistema se chama exatamente
+  assim. A regra passa a ser o NÚMERO DE VERSÃO: **"SAP" sozinho quer dizer ESTE sistema**, e quem
+  fala do aposentado escreve **"SAP 2.3.5"**, com a versão, toda vez; onde os dois dividem o
+  parágrafo, o desempate é numerar os dois lados (**3.0.0** aqui, **2.3.5** lá). A prosa da
+  travessia que já existe (`er/producao.sql`, `er/metadado.sql`, `er/qgis.sql`,
+  `er/acompanhamento_producao.sql`, os testes de `__tests__/routes/producao/`) diz "SAP" sozinho
+  querendo dizer o 2.3.5, e **não se reescreve**: é grande, é histórica e o contexto dela é
+  inequívoco. Quem LÊ precisa saber disso, e é por isso que está escrito aqui e no `CLAUDE.md`.
+- **O subtítulo da tela de login deixou de listar módulo** em 2026-08-09. Ele dizia "Acervo,
+  Mapoteca e Orçamento, 1º CGEO", de quando eram três, e já estava errado com sete: uma lista de
+  módulos apodrece a cada módulo novo, e ninguém se lembra de ir lá. Ficou **"Sistema de Apoio à
+  Produção, 1º CGEO"**, que abre a sigla do `h1` para quem chega, diz de quem é o sistema e continua
+  verdadeiro no dia em que entrar o oitavo módulo.
+
 ## O SCA absorve o não-produção do SAP
 
 - **A fusão é por ADIÇÃO aqui, e não por remoção lá** (chefe). Na transição há duas cópias vivas de
@@ -155,6 +322,483 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   'Levantamento topográfico' aqui e 'Carta Temática' lá. Quem juntar por código reclassifica o
   acervo inteiro sem erro nenhum. **O chefe decidiu em 2026-08-09 que o SAP é que se adapta ao SCA**,
   e não o contrário: tipo de produto, produto e usuário mudam lá.
+
+## O core de produção, na 3.0.0
+
+Os schemas entraram; o servidor e a tela vêm depois. Nada foi migrado: eles nascem vazios, de
+propósito, para a carga poder ser ensaiada antes de acontecer.
+
+- **O perfil deste módulo INVERTE a régua de 2026-08-08, e o módulo inteiro é NÃO hierárquico**
+  (chefe, 2026-08-09). `consulta` VÊ TUDO e não modifica nada; `operador` vê DUAS telas (o Dashboard
+  e a própria atividade); `gerente` vê tudo e mexe em tudo. **O visualizador não é um operador
+  rebaixado**: ele é quem acompanha a produção de cima (chefia, seção, quem responde por prazo), e o
+  operador é quem executa. Encher a barra lateral de quem está no meio de uma carta com nove telas de
+  acompanhamento é ruído, e esconder o quadro de quem responde por prazo é pior.
+  **As onze rotas do manifesto declaram `perfis` (LISTA), e nenhuma declara `perfil` (mínimo)**: o
+  mínimo é hierárquico, e com ele o operador veria tudo o que a consulta vê, por ser um nível acima.
+  É o mesmo arranjo do Aproveitamento do efetivo, e é lido por `ehDeAlgumPerfil`, nunca por
+  `temPerfil`. **O servidor não cobra esse recorte**, e não é esquecimento: `verifyPerfil(minimo,
+  modulo)` só sabe comparar nível, então a rota de leitura fica em `consulta` e o operador também
+  passa por ela. O recorte de LEITURA é do client, e não há o que proteger: são as mesmas telas que o
+  visualizador já abre. O que o servidor barra é a ESCRITA. Quem faz cumprir a assimetria é
+  `client/src/js/modules/producao/index.test.js`, que reprova se alguma rota voltar a declarar
+  `perfil`.
+- **As seis rotas de LEITURA do microcontrole baixaram de `gerente` para `consulta`** no mesmo dia,
+  para a regra acima não abrir exceção. **O que isso alarga, e fica dito:** a telemetria mede
+  rendimento de pessoa COM NOME (feições por hora, cobertura de tela), e quem tem consulta em
+  `producao` passa a ver isso da Divisão inteira. Se a intenção for o visualizador ver o TRABALHO e
+  não as PESSOAS, esta é a linha a reverter, e reverter é trocar `consulta` por `gerente` nas seis
+  guardas do router e na rota do manifesto. As três de escrita do perfil de monitoramento continuam
+  em `gerente`, e as duas de gravação de telemetria continuam em `operador`.
+
+- **O que NÃO atravessou, porque já existe aqui** (chefe, 2026-08-09): `macrocontrole.projeto`,
+  `lote`, `produto` e `pit`. O produto do SAP é a **versão Planejada** do acervo, e o vínculo com o
+  PIT vem junto dela, por `acervo.versao.meta_pit_id`. As 13 rotas do `/api/projeto` do SAP que
+  falavam dessas quatro tabelas não atravessam: `/api/projetos/projeto`, `/api/projetos/lote`,
+  `/api/produtos/produto`, `/versao` e `/versao_planejada` já as respondem, e
+  `POST /api/produtos/produto_versao_planejada` já cria a folha e a promessa num ato só.
+- **A produção liga DIRETO em `acervo.lote`, e `producao.lote_linha` foi REMOVIDA** (chefe,
+  2026-08-09). A tabela existiu no desenho da 3.0.0 por algumas horas, no mesmo dia, e nunca chegou a
+  banco nenhum: ela casava o lote do acervo com UMA linha de produção, e todo `lote_id` do
+  `macrocontrole` a apontava sob o nome `lote_linha_id`. Hoje toda coluna dessas é
+  `lote_id BIGINT REFERENCES acervo.lote (id)`, em `producao`, em `metadado` e nas funções de
+  `acompanhamento`. **Ninguém deve propor a tabela de novo.** Com ela saíram `denominador_escala`
+  (a escala é da FOLHA, e mora em `acervo.produto.tipo_escala_id`), `nome_abrev` (o nome do lote é
+  `acervo.lote.nome`) e o gatilho `chk_subfase_lote_linha`, que cobrava que a subfase e o lote
+  fossem da mesma linha: sem linha no lote, não há o que cobrar.
+- **O AVISO que a tabela deixou, e a medição continua verdadeira: 61 dos 102 lotes do acervo com
+  versão carregam mais de um subtipo de produto** (o `2026_1a` tem a carta e o CDGV, que são duas
+  linhas de produção). Um lote, portanto, ATRAVESSA linhas de produção, e dentro dele a unidade de
+  trabalho da carta e a versão de CDGV ocupam o MESMO polígono. Quem cruzar produção com acervo por
+  lote sem filtrar o subtipo faz a UT da carta reivindicar a versão do CDGV, e a contagem de
+  produção mente sem levantar erro.
+- **A saída escolhida é corrigir o DADO, e não modelar em volta dele** (chefe, 2026-08-09): **os
+  lotes do acervo serão separados por tipo de produto**, e o alvo é um lote, uma linha de produção.
+  **PENDÊNCIA: essa separação ainda NÃO foi feita**, e os 61 lotes continuam misturados hoje.
+  Enquanto ela não acontece, quem segura a coerência é o **filtro de subtipo do gatilho de
+  `producao.relacionamento_versao`**, tirado do caminho
+  `unidade_trabalho -> subfase -> fase -> linha_producao.subtipo_produto_id` e comparado com
+  `acervo.versao.subtipo_produto_id`.
+- **O filtro de subtipo NÃO DEVE SER REMOVIDO quando os lotes forem separados.** Ali ele deixa de ser
+  necessário e passa a ser guarda barata contra o lote que voltar a misturar subtipos. Está escrito
+  com essas letras de propósito: sem isso, alguém o apaga por "não ser mais necessário".
+- **Os `perfil_producao*` do SAP viraram `habilitacao*`.** Aqui perfil é AUTORIZAÇÃO
+  (`dominio.tipo_perfil`: consulta, operador, gerente); lá `perfil_producao` é quem pode executar tal
+  etapa de tal subfase. Duas ideias com uma palavra no mesmo banco, e quem lesse
+  `perfil_producao_operador` acharia que aquilo concede acesso.
+- **`relacionamento_produto` virou `relacionamento_versao`, e a coluna `p_id` virou `versao_id`.** O
+  nome antigo era do tempo em que ela apontava `macrocontrole.produto`. O gatilho que a mantém
+  **filtra pelo subtipo da linha de produção**, e o item acima diz por que ele é obrigatório e por
+  que não sai quando os lotes forem separados.
+- **Três conversões valem para todo o core, e as três foram medidas antes.** SRID **4674** e não o
+  4326 do SAP, como já se fez em `campo`. Toda coluna de pessoa é `usuario_uuid` apontando
+  `dgeo.usuario (uuid)`: os 30 usuários do SAP existem aqui e batem por login **e por uuid**, os 30.
+  E todo `tipo_produto_id` do SAP virou `subtipo_produto_id`: os códigos 1 a 23 são o mesmo conjunto,
+  **22 dos 23 idênticos até no nome**, e só o 19 difere de rótulo.
+- **`dominio.tipo_turno` não atravessou** (chefe, 2026-08-09), **e o código 3 de `tipo_restricao` saiu
+  junto**. Ele era "Operadores no mesmo turno", o único consumidor do turno além de `dgeo.usuario`.
+  Medido no dump de produção: `restricao_etapa` tem 98 linhas, 49 do tipo 1 e 49 do tipo 2, e **zero
+  do tipo 3**. Ressuscitar o turno é decisão, e decisão se registra aqui.
+- **`dominio.status` do SAP não atravessou:** `tipo_status_execucao` já responde o mesmo e
+  `acervo.lote` já o usa. Manter os dois faria o mesmo lote ter duas situações. Nos gatilhos,
+  "encerrado" é `IN (3, 4)` e pausado NÃO é encerrado.
+- **`chk_scale` não atravessou, e a ausência é a regra.** Lá ela impedia duas cópias da escala
+  (produto e lote) de divergirem; aqui não há duas: `acervo.produto` guarda a escala por domínio e
+  `acervo.versao` não guarda nenhuma. **Nada sobrou dela, nem o CHECK**: o
+  `denominador_escala > 0` vivia na `lote_linha`, e saiu com ela em 2026-08-09.
+- **CINCO gatilhos do core moram sobre tabelas do `acervo`**, e nenhum é criado por `er/acervo.sql`,
+  que continua instalando sozinho. Três vêm de `er/producao.sql`: `a_relacionamento_versao` em
+  `acervo.versao` (mantém o cache espacial), `chk_projeto_status_consistency` em `acervo.projeto` e
+  `chk_lote_status_consistency` em `acervo.lote`. Dois vêm de `er/acompanhamento_producao.sql`:
+  `refresh_view_acompanhamento_produto` em `acervo.versao` e `refresh_bloco_lote` em `acervo.lote`.
+  **São cinco, e não três**: eram três até 2026-08-09, e os dois de `acervo.lote` nasceram da
+  remoção da `lote_linha`, que levava consigo o status do lote de produção e o nome que a view de
+  bloco publicava. Contar menos é o engano fácil, porque nem todos moram no arquivo cujo nome diz
+  "producao". Quem discordar de a produção impor regra ao acervo apaga DOIS gatilhos, o
+  `chk_projeto_status_consistency` e o `chk_lote_status_consistency`, e o schema não se mexe; os
+  outros três mantêm dado derivado e apagá-los deixa view e cache mentindo em silêncio.
+- **O gatilho de projeto olha a TRANSIÇÃO, e nunca o estado, e isso não é preciosismo.** Cobrar de
+  `NEW` sozinho CONGELA a linha que já nasceu fora da regra. Medido no dump de 2026-08-08: o projeto
+  12, "Mapeamento de Interesse da Força 2026", **está Concluído com cinco lotes Não iniciados**. Sem
+  a guarda, um `UPDATE` que só mexesse no nome dele releria o status encerrado, acharia lote aberto e
+  recusaria para sempre. A existência daquela linha também é a prova de que a regra do SAP nunca foi
+  a do acervo.
+- **`chk_lote` e `chk_lote_ut` do SAP viraram uma função só e depois SUMIRAM.** Os corpos eram
+  idênticos letra por letra lá, e viraram `chk_subfase_lote_linha`; com a remoção da `lote_linha`,
+  em 2026-08-09, não sobrou o que cobrar. A checagem lia a linha de produção DO LOTE, e o lote do
+  acervo não tem nenhuma, de propósito. Quem garante que a etapa e a unidade de trabalho de uma
+  atividade concordam em subfase e em lote continua sendo `producao.atividade_verifica_subfase`.
+- **A view de lote passou a se chamar `acompanhamento.lote_<L>_linha_<P>`**, com L o `acervo.lote.id`
+  e P o `producao.linha_producao.id`. O nome do SAP (`lote_<N>`) não sobreviveu, e não é estética:
+  a view é a MATRIZ DE FASES, as fases são da linha de produção, e um lote que atravessa linhas
+  geraria duas vezes o mesmo nome -- o segundo `CREATE MATERIALIZED VIEW` morreria com "already
+  exists". Não há projeto QGIS a quebrar: a 3.0.0 nunca foi aplicada, e o N do SAP era um
+  `macrocontrole.lote.id`, que não existe neste banco. A view por subfase manteve a forma
+  (`lote_<L>_subfase_<S>`), porque a subfase já determina a linha.
+- **O par (lote, linha de produção) é DERIVADO da etapa, e não cadastrado.** Um lote executa uma
+  linha quando tem etapa numa subfase dela, e é isso que
+  `acompanhamento.linhas_producao_do_lote` e `acompanhamento.lotes_da_linha_producao` leem. É a
+  etapa, e não a unidade de trabalho, porque a etapa é a configuração e existe antes de haver
+  geometria: é quando a view precisa nascer vazia.
+- **`acompanhamento` é o único schema que a aplicação recebe com `CREATE`**, e não é descuido: as
+  funções dele EMITEM DDL em tempo de execução, uma view materializada por par (lote, linha de
+  produção) e outra por (lote, subfase). Sem o
+  `CREATE`, abrir um lote falha longe de onde o erro nasce. Elas também escrevem em
+  `public.layer_styles`, e por isso o `INSERT`/`UPDATE`/`DELETE` daquela tabela é concedido
+  NOMINALMENTE, em vez de abrir o schema `public` inteiro para escrita.
+- **`public.layer_styles` não muda de nome nem de schema.** O QGIS a lê DIRETO do banco, sem passar
+  por rota nenhuma: uma arrumação de schema que a movesse quebraria o QGIS sem aparecer em teste de
+  API. Ela já existia em `er/versao.sql`, e continua lá.
+- **O arquivo se chama `er/acompanhamento_producao.sql` porque `er/acompanhamento.sql` já existia** e,
+  apesar do nome, cria as views materializadas do ACERVO. Juntar os dois é o erro que o sufixo evita.
+- **Em `metadado`, os nomes de tabela ficaram os do SAP** (`palavra_chave_produto`,
+  `responsavel_fase_produto`, `informacoes_produto`), embora a coluna aponte `acervo.versao`.
+  "Produto" ali é rótulo histórico, e está dito em comentário em cada uma.
+  `responsavel_fase_produto.usuario_id` continua INTEGER: ele aponta `metadado.usuario`, que é a
+  identidade PUBLICADA no XML, e não a conta de sistema.
+- **O módulo 7 nasce sem rota, e o teste que espelha `dominio.modulo` deixou de ser igualdade.** Mapa
+  sem DDL continua proibido, porque é a direção que grava um `modulo_id` que a FK recusa; DDL sem
+  mapa é o estado normal de módulo que ainda não tem tela, e a folga é uma lista explícita
+  (`SEM_ROTA`) que se esvazia sozinha quando `producao` ganhar rota.
+
+### Dois prefixos de rota não são os do SAP 2.3.5
+
+- **`/api/gerencia` é do ACERVO, e o da produção é `/api/gerencia_producao`** (chefe, 2026-08-09).
+  Os dois nomes colidiam: aqui `/api/gerencia` já existia com 14 rotas de domínio e manutenção do
+  acervo. Quem chega é quem se acomoda, e o critério é assimétrico de propósito: quem consome as
+  rotas do acervo é NOSSO (o client e o `acervo_cli`), então move-se o que se controla.
+- **`/api/projeto` do SAP virou `/api/producao`, e o nome de lá MENTIA.** Ele reunia 159 rotas, das
+  quais 146 são o CADASTRO da produção (linha, fase, subfase, etapa, bloco, unidade de trabalho,
+  insumo) e só 13 falavam de projeto, lote e produto. Essas 13 NÃO atravessaram, porque
+  `/api/projetos` e `/api/produtos` daqui já as respondem, e o que sobrou entrou com o nome do que é.
+
+### As onze telas da produção, uma por tela do SAP 2.3.5
+
+- **A proposta de fundir as dez de acompanhamento em seis foi RECUSADA** (chefe, 2026-08-09). Quem
+  trabalha no SAP procura pelo nome que conhece, e fundir telas obriga a reaprender onde cada
+  resposta mora. **As outras sete telas do SAP não viraram tela nova porque já existem aqui**, e não
+  se duplicam: Campos e Gerência de Campos são as duas abas de `#/campo`; Capacitações são
+  `#/capacitacao_ministrada` e `#/capacitacao_recebida`; Extra-PIT é `#/extra_pit`; Efetivo é
+  `#/aproveitamento`; PIT não-produção é `#/metas` mais `#/execucao_pit`; e RPCMTec é `#/rpcmtec`.
+
+### A ordem de aplicar migração é a da VERSÃO, e não a do nome
+
+- **Migração se aplica na ordem da versão que ela CARIMBA, nunca em ordem alfabética de arquivo.**
+  O nome traz a data, e duas do mesmo dia não se ordenam por ele. O caso concreto de 2026-08-09 são
+  três: `o_pit_devolve_o_nome_producao` (carimba 1.50.0), `o_sca_vira_sap_3` (não carimba nada) e
+  `o_core_de_producao_atravessa` (carimba 3.0.0 e cria os cinco schemas). Alfabética poria
+  `o_core...` primeiro, e ele exige o schema que a primeira renomeia. O sintoma de errar a ordem é
+  um banco que se diz 3.0.0 sem `producao.etapa`.
+
+### O que a 3.0.0 deixou de fora, de propósito e por escrito
+
+Uma auditoria adversarial comparou os arquivos novos com a origem do SAP 2.3.5, objeto a objeto, e
+não achou coluna, restrição, índice, função nem semente perdida sem explicação. Achou TRÊS
+ausências, e elas ficam registradas aqui em vez de descobertas por alguém daqui a um ano. **Uma
+delas já não é ausência:** o microcontrole atravessou em 2026-08-09, e a decisão que o deixara de
+fora está REVOGADA -- o registro dela está logo abaixo, e não foi apagado, porque uma decisão
+revogada explica o código de quem for ler a versão anterior.
+
+- **Os dois estilos QML de `public.layer_styles` NÃO foram semeados.** O SAP semeia, em
+  `er/versao.sql`, um QML de cerca de 34 KB para `alteracao_fluxo` e outro de 35 KB para
+  `problema_atividade`, com `useasdefault`. Aqui a tabela nasce vazia. **A cópia literal não
+  serviria**, e é por isso que a ausência é escolha e não descuido: o `f_table_schema` teria de virar
+  `producao`, o campo `tipo_problema_id` virou `tipo_problema_atividade_id`, e a QML de lá ainda
+  lista `unidade_trabalho_id`, coluna que o **próprio SAP 2.3.5 já não tem**. O estilo de lá está
+  defasado em relação ao schema de lá. Os dois se refazem no QGIS quando as telas de produção
+  entrarem, e quem os refizer parte do schema novo, não de um QML que já mentia.
+- ~~**O schema `microcontrole` não atravessou nesta onda.**~~ **REVOGADA em 2026-08-09, por decisão
+  do chefe: o microcontrole atravessou.** O que a decisão anterior dizia, e por quê: são duas
+  tabelas no banco principal (`tipo_monitoramento` e `perfil_monitoramento`, que diz qual subfase de
+  qual lote é monitorada e como), mais três num banco SEPARADO, que guarda a telemetria de feição e
+  de tela capturada pelo plugin; o banco separado obrigaria o serviço a ter uma SEGUNDA conexão, que
+  não existia, e meia travessia deixaria o perfil apontando para uma telemetria sem destino. **O que
+  mudou é que a segunda conexão passou a existir**, e o que ela custou está na seção "O
+  microcontrole, na 3.0.0", logo abaixo. O registro fica aqui riscado, e não apagado: quem for ler o
+  código anterior encontra o roteador vazio, a tela que dizia "ainda não" e o `copiar_monitoramento`
+  que não copiava, e precisa saber que aquilo foi escolha, e não descuido.
+- **O papel somente-leitura ganhou `acompanhamento` e `producao`, e a falta era funcional.** As views
+  de acompanhamento nascem com `GRANT SELECT ... TO PUBLIC` dentro da própria função que as cria,
+  mas sem `USAGE` no schema esse grant é inerte: o Postgres cobra os dois. O gerente abriria a
+  camada no QGIS e levaria erro de permissão sem que nada no `er/` parecesse errado. Corrigido em
+  `er/permissao_readonly.sql`, que também explica por que `qgis` e `metadado` ficam de fora.
+- **`GET /projeto_qgis` não atravessou, e o que falta não é a rota.** No SAP 2.3.5 ela lê
+  `templates/sap_config_template.qgs` e interpola o endereço e a senha do banco dentro do `.qgs`. O
+  template não existe neste repositório, e trazê-lo é decisão à parte: ele é um projeto do QGIS
+  inteiro, com as camadas da produção, e o que ele desenha depende das telas que ainda vão entrar.
+
+### O microcontrole, na 3.0.0
+
+Decisão do chefe em 2026-08-09: **o microcontrole atravessa.** São 11 rotas em `/api/microcontrole`,
+o schema `microcontrole` no banco principal e um **banco SEPARADO** para a telemetria. A ausência
+registrada acima está revogada.
+
+- **O recorte é 5 e 6, e ele decide tudo o mais.** CINCO rotas leem o banco PRINCIPAL
+  (`GET /tipo_monitoramento` e as quatro de `/configuracao/perfil_monitoramento`): elas dizem O QUE
+  monitorar, e **respondem sempre**. SEIS leem a TELEMETRIA (`GET /tipo_operacao`, `POST /feicao`,
+  `POST /tela`, `GET /feicao/resumo`, `GET /tela/cobertura`, `GET /tela/aproveitamento`). Três das
+  seis juntam dado dos DOIS bancos, **em JavaScript**: resolvem os `atividade_id` de um lote e os
+  nomes dos operadores no principal e levam os identificadores prontos para a consulta do outro.
+  **Não existe junção entre bancos**, e nenhum `dblink` foi aberto para fingir que existe -- esse
+  acoplamento é justamente o que a separação existe para não ter.
+- **A SEGUNDA CONEXÃO É PREGUIÇOSA, e é essa a decisão que importa.** `db.conn` é criada com um
+  `connect()` de verdade no boot, e a falha dela é crítica: sem o banco principal não há sistema.
+  `db.microConn` é montada **sem tocar a rede** (o pg-promise só disca no primeiro `query`). Cobrá-la
+  no boot faria três tabelas de MEDIÇÃO derrubarem acervo, mapoteca, orçamento e produção; cobrá-la
+  na montagem do roteador derrubaria junto as cinco rotas do banco principal, que não a tocam. A
+  alternativa descartada era reconectar sob demanda, criando o objeto a cada requisição: custa um
+  pool novo por rajada do plugin e não compra nada, porque o pool do pg-promise já reabre sozinho
+  quando o banco volta.
+- **Sem telemetria são 503, e nunca 500, e são DOIS 503 com frases diferentes.** Sem as chaves
+  `MICRO_DB_*` a resposta manda configurar; com as chaves e o servidor mudo, ela manda olhar o
+  servidor. 500 diria "este serviço quebrou" e mandaria abrir chamado contra o SAP 3.0, que é o
+  lugar errado. As cinco chaves valem **todas ou nenhuma** (`Joi.and` em `server/src/config.js`):
+  meia configuração só falharia na primeira requisição do plugin, longe de quem digitou.
+- **`lote_id` aponta `acervo.lote`, e a coluna é BIGINT.** No SAP era `macrocontrole.lote (id)`,
+  INTEGER. `producao.lote` não existe neste banco: a `producao.lote_linha` foi removida em
+  2026-08-09, antes de a migração chegar a banco nenhum.
+- **`usuario_uuid`, e não `usuario_id`.** A telemetria guarda o UUID de `dgeo.usuario`, que é o que
+  atravessa as rotas. Como não há chave estrangeira entre bancos, **o tipo é a única coisa que
+  impede gravar o identificador errado**: um INTEGER aceitaria em silêncio o id de qualquer outra
+  coisa.
+- **`atividade_id` e `usuario_uuid` NÃO TÊM chave estrangeira, e parece defeito.** O que eles
+  apontam mora no outro banco, e o PostgreSQL não tem FK entre bancos. O preço é medido: uma amostra
+  pode citar atividade apagada ou conta que já não existe, e o leitor mostra "Operador não
+  identificado" em vez de sumir com a linha -- esconder faria o total da tela não bater com o do
+  banco, sem dizer por quê.
+- **A TELEMETRIA NÃO AUDITA e o CADASTRO AUDITA.** `perfil_monitoramento` passa por `db.conn.tx()`
+  com `auditoriaCtrl.registrar` na mesma transação, e entra no mapa de auditoria como o décimo
+  segundo perfil do agregado LOTE: alguém decidiu monitorar, num dia, e responde por isso. A medição
+  não: são milhares de linhas por turno e por pessoa, cada uma já com quem, quando e o quê, e uma
+  linha de trilha por amostra faria a auditoria crescer **mais rápido que o dado que ela descreve**.
+  O GRANT do banco separado é SELECT e INSERT, sem UPDATE nem DELETE, pela mesma razão que
+  `auditoria` não os tem no banco principal.
+- **A tradução de perfil é a da origem, e é literal:** `verifyAdmin` do SAP virou `gerente` (nove
+  rotas) e `verifyLogin` virou `operador` (duas). As duas de operador são `POST /feicao` e
+  `POST /tela`, e elas **não são tela**: é o plugin gravando a medição do próprio trabalho de quem
+  está com a atividade na mão. A leitura agregada é `gerente` porque não é "a tela do módulo", é o
+  rendimento de pessoas com nome. A **pasta é `microcontrole` e o módulo é `producao`**, como
+  `src/campo/` cobra `pit`, e `modulo_em_toda_rota.test.js` varre o arquivo por isso.
+- **`atividade_id` do corpo NÃO é conferido, e a ausência é escolha.** Confirmar que a atividade é de
+  quem manda custaria uma consulta ao banco principal por rajada -- barata. O que decide é o risco: o
+  plugin envia em segundo plano, e uma amostra que chegasse logo depois de a atividade ser
+  finalizada seria recusada com 400, perdendo o lote de medições do FIM do trabalho, que é o pedaço
+  que mais interessa. O SAP também não conferia. A autoria, essa, vem do TOKEN e nunca do corpo.
+- **`tipo_monitoramento` não foi para `dominio`, e é a única tabela de código do core que não foi.**
+  Ela tem uma gêmea no outro banco (`microcontrole.tipo_operacao`), onde não existe `dominio` nenhum.
+  Separar o par faria as duas metades do mesmo subsistema parecerem coisas sem relação.
+- **O banco da telemetria tem instalação PRÓPRIA e nenhuma migração.** `er_microcontrole/` (com
+  `versao.sql` e `permissao.sql` seus), aplicado por `node create_config.js` quando se responde que
+  sim à pergunta do microcontrole. Ele **não entra na transação** do banco principal, porque não há
+  transação que abranja dois bancos e `CREATE DATABASE` nem roda dentro de bloco -- e se ele falhar, o
+  banco do SAP 3.0 já está criado e correto, que é o comportamento desejado. As perguntas ficam no
+  `create_config.js` em vez de num script à parte porque as chaves `MICRO_DB_*` e o banco que elas
+  apontam são a MESMA decisão: separados, o par se desencontra. `public.versao` de lá carimba
+  `3.0.0`, e não `1.0.0` como no SAP: os dois bancos da instalação respondem o mesmo número.
+- **`copiar_monitoramento` passou a copiar**, e não há mais interruptor sem destino. Ele entra na
+  lista da fábrica de `producao/perfil_ctrl.js` **sem caso especial**, e é isso que prova que a
+  tabela nasceu com a forma certa: (alguma coisa, subfase, lote) mais as quatro colunas de auditoria,
+  como os onze de `producao`. A lista `nao_copiado` **fica na resposta**, hoje sempre vazia: tirá-la
+  obrigaria o SAP Gerente a mudar junto, e ela é o lugar do próximo grupo que entrar no corpo antes
+  de ter destino.
+- **`monitoramento` voltou ao pacote da atividade** (`GET /api/distribuicao/dados_producao`), e a
+  pendência registrada abaixo está fechada. Sem esse campo o plugin nunca saberia armar a captura, e
+  as duas rotas de escrita nunca seriam chamadas: ele é o que liga o resto. Ele lê o banco
+  PRINCIPAL, então a telemetria fora do ar não tira a atividade de ninguém -- a falha aparece no
+  envio da amostra, que é onde ela pertence.
+
+### A fila do operador (`/api/distribuicao`), na 3.0.0
+
+As oito rotas que o plugin SAP Operador consome. As quatro consultas de fila foram **portadas de
+arquivo, e não reescritas**: elas decidem qual atividade cada pessoa recebe, e reescrevê-las de
+cabeça é como se perde comportamento. Moram em `server/src/distribuicao/sql/`, carregadas por
+`QueryFile` -- e não por `PreparedStatement`, como no SAP, porque o SCA parametriza **por nome** e a
+mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
+
+- **A fila de requisições do SAP (`asyncHandlerWithQueue`) NÃO atravessou.** Lá `/inicia` e
+  `/finaliza` passavam por uma fila de processo (`better-queue`) que serializava o servidor inteiro
+  em uma requisição por vez. Quem resolve a corrida entre dois operadores aqui é o próprio `UPDATE`:
+  `WHERE id = ... AND tipo_situacao_atividade_id IN (1, 3)`. Quem chega primeiro atualiza; o segundo
+  encontra zero linhas e recebe "não foi possível iniciar". **Nenhum dos dois recebe a atividade do
+  outro**, que é a garantia que importa, e o índice único parcial de `producao.atividade` é a segunda
+  rede. `better-queue` não entrou em `server/package.json`.
+- **`disableAllTriggersInTransaction` NÃO atravessou, e a ausência é decidida.** O SAP desligava
+  TODOS os gatilhos do banco dentro da transação de `/inicia`, `/finaliza` e `/problema_atividade`, e
+  reagendava a atualização das views materializadas depois. `ALTER TABLE ... DISABLE TRIGGER` vale
+  para a **tabela**, e não para a sessão: outra requisição em curso escreveria sem gatilho nenhum. Os
+  gatilhos ficam ligados, e `acompanhamento.refresh_view_acompanhamento_atividade` roda dentro da
+  transação. É mais lento e é correto. **Se a lentidão medir, a saída é o `REFRESH ...
+  CONCURRENTLY` sair da transação, não desligar gatilho.**
+- **PENDÊNCIA: `login_info` não vai no pacote.** O SAP entregava, junto da atividade, a credencial
+  efêmera de um papel do PostgreSQL criado no banco de EDIÇÃO (`producao.login_temporario`, que era
+  `dgeo.login_temporario`). A tabela existe no `er/`; o subsistema que a preenche -- o que abre
+  conexão ao banco de produção, cria o papel e concede permissão por camada -- não atravessou. O campo
+  **não vai como nulo nem como objeto vazio**: campo presente e vazio faria o cliente concluir que
+  não há permissão a conceder, que é outra coisa. Vale só para `tipo_dado_producao_id = 2`.
+- ~~**PENDÊNCIA: `monitoramento` não vai no pacote.**~~ **FECHADA em 2026-08-09**, quando o
+  microcontrole atravessou: o campo voltou, e é uma lista de códigos (1 feição, 2 tela), como no SAP.
+  Lista VAZIA é a resposta normal, e não erro: não existe telemetria por padrão, e sem linha em
+  `microcontrole.perfil_monitoramento` o plugin não captura nada.
+- **`denominador_escala` não vai no pacote**, e não tem sucessor: a escala é da FOLHA
+  (`acervo.produto.tipo_escala_id`). O `tipo_produto` que o SAP mandava é o **subtipo** daqui, e sai
+  da LINHA DE PRODUÇÃO, não do produto do lote: um lote do acervo atravessa linhas, e puxá-lo do
+  produto faria a UT da carta responder pelo CDGV do mesmo polígono.
+- **O metadado de edição aponta `acervo.versao`, e o campo do corpo é `versao_id`.** No SAP era
+  `produto_id`, e `macrocontrole.produto` era a folha DAQUELE lote. Aqui `acervo.produto` é a folha
+  ETERNA e o que uma corrida de produção entrega é uma versão. Os dois são `BIGINT`: manter o nome
+  antigo faria o plugin mandar o id de uma coisa e o servidor gravar noutra, **sem erro visível**.
+- **O `/finaliza` passou a conferir o dono do metadado, e o SAP não conferia.** Lá o `info_edicao`
+  atualizava `macrocontrole.produto` por id cru vindo do corpo; a conferência existia só na outra
+  rota. É o único ponto em que esta travessia **recusa o que a origem aceitava**.
+- **`polygon_ewkt` passou a exigir o prefixo `SRID=`.** A coluna é `geometry(POLYGON, 4674)` e a
+  geometria chega na projeção de EDIÇÃO da unidade de trabalho; o servidor a transforma. Sem SRID, o
+  `ST_GeomFromEWKT` produz SRID 0 e o INSERT morre com "Geometry SRID (0) does not match column SRID
+  (4674)" -- um 500 onde a resposta certa é 400. No SAP a coluna era 4326 e o cliente já mandava 4326.
+- **`/plugin_path` deixou de ser pública.** No SAP ela não tinha guarda nenhuma, e devolve uma pasta
+  de rede da instalação: responder isso a quem não está logado entrega a topologia da rede a quem
+  perguntar. As oito cobram `verifyPerfil('operador', 'producao')`, inclusive as duas de leitura --
+  nada aqui é tela, e quem só consulta a produção não abre o plugin.
+- **As chaves `tipo_problema_id` e `tipo_problema` FICAM na resposta e no corpo**, e não viram
+  `tipo_problema_atividade_id`. O plugin já instalado em cada máquina lê por esses nomes. É a mesma
+  razão pela qual o login continua aceitando `sca_web` e `sca_qgis`.
+
+### O login que os plugins esperam
+
+- **O gate de versão vale SÓ para `sap_fp`**, como no SAP. Ele é a ponta da produção: é quem executa
+  a atividade e grava o dado, e plugin velho grava com contrato velho -- o estrago aparece semanas
+  depois, numa contagem que não fecha. O `sap_fg` publica o catálogo do QGIS e distribui trabalho, e
+  travá-lo pela versão do plugin trancaria do lado de fora **justamente quem publica a versão nova**.
+  O schema exige `plugins` e `qgis` dos dois, e os **proíbe** nos outros três: no navegador eles não
+  querem dizer nada, e campo aceito e ignorado convida a mandar valor inventado. As tabelas são
+  `qgis.versao_qgis` e `qgis.plugin` (eram `dgeo.*` no SAP: aqui `dgeo` é gente).
+- **Versão ilegível conta como ATRASADA, e tabela vazia não barra ninguém.** O SAP passava a string
+  do cliente direto para `semver.gte`, e `semver.coerce` devolve `null` para o que não consegue ler:
+  uma versão estranha derrubava o login com 500. Quem não sabe dizer a própria versão não prova estar
+  em dia. Instalação nova nasce sem linha em `qgis.plugin`, e recusar todo mundo até o administrador
+  cadastrar o mínimo trancaria o sistema no primeiro dia.
+- **`verifyLoginTile` é a única guarda que aceita `?token=`, e existe só pelas camadas MVT.** O QGIS e
+  o MapLibre pedem tile por uma URL que eles montam, sem `Authorization`. O preço é real -- token em
+  query string entra no log do servidor, no histórico do navegador e no `Referer` --, e o SAP o pagava
+  em TODAS as rotas, porque o `verifyLogin` de lá lê os dois. Aqui ele fica confinado, e
+  `server/src/__tests__/routes/login_tile_exclusivo.test.js` varre os `*_route.js` para provar que
+  nenhuma outra rota a usa, que nenhuma outra guarda lê `req.query.token`, e que dentro do arquivo
+  autorizado ela só aparece em rota `.pbf`.
+- **`verifyLogin` passou a reler `dgeo.usuario.ativo` do BANCO a cada requisição** (2026-08-09). Ele
+  era a única guarda do sistema que confiava no token: `ativo`, `id` e `administrador` saíam todos
+  do JWT, que vive `JWT_EXPIRACAO` (8 h). Quem fosse desativado continuava lendo **e escrevendo** o
+  próprio cadastro por até oito horas, porque `PUT /usuarios/perfil` não filtra `ativo`. O custo foi
+  medido antes: são **cinco rotas** (sessão, perfil, senha, postos), todas de baixa frequência, e uma
+  busca por `uuid`, que é UNIQUE e portanto indexado -- a mesma consulta que `verifyPerfil`,
+  `verifyAcesso`, `verifyGerente` e `verifyAdmin` já fazem em **todas** as rotas do sistema. O que a
+  inconsistência custava era pior que a consulta: uma regra que valia em 99% do sistema e não valia
+  justamente onde se troca a senha.
+
+### O acompanhamento (`/api/acompanhamento`), na 3.0.0
+
+- **As 25 rotas são TODAS de leitura, e o piso é `consulta` em `producao`, com três exceções de
+  `gerente`.** Eram 23 quando este módulo nasceu; as duas que entraram depois são os SELETORES
+  (`GET /lotes` e `GET /lotes/:lote/subfases`), que nasceram com as telas: nem `/api/projetos/lote`
+  (cobra o ACERVO) nem `/api/producao/lote/:id/subfases` (cobra gerente) servem a um filtro de tela
+  de consulta, e baixar o piso das duas entregaria de lambuja o que elas carregam a mais. Pela régua de 2026-08-08, `consulta` LÊ as telas do módulo. As três que sobem de piso
+  não falam do trabalho e sim de QUEM trabalha, ou do que a Divisão publica para fora:
+  `/ultimos_login`, `/usuarios_sem_perfil` e `/dados_site_acompanhamento`. No SAP 2.3.5 as três eram
+  `verifyAdmin`, mas ali `verifyAdmin` era o único degrau acima de "está logado" -- não era uma
+  decisão sobre quem deve ver. Aqui existe o gerente do módulo, que é quem responde pela área.
+- **A meta do PIT deixou de ser uma coluna, e passou a ser CONTADA.** No SAP havia
+  `macrocontrole.pit (lote_id, ano, meta)`, um número digitado por lote. Aqui quem cumpre uma unidade
+  da meta é a VERSÃO, por `acervo.versao.meta_pit_id`, e a "meta do lote no ano" é o número de
+  versões daquele lote que apontam um item de meta daquele ano. O número é o mesmo que se digitava, e
+  não tem como divergir do que foi cadastrado.
+- **`/grade_acompanhamento` não devolve a grade, e ela NÃO é o caso do `microcontrole`.** No SAP a
+  rota abria uma conexão ao banco de EDIÇÃO descrito em
+  `producao.dado_producao.configuracao_producao`, e lia dali a malha `aux_grid_revisao_a`. A conexão
+  da telemetria, que passou a existir em 2026-08-09, não serve aqui e não é precedente: ela é UMA,
+  fixa, declarada nas chaves `MICRO_DB_*` e aberta sem tocar a rede. A do banco de edição seria uma
+  POR LOTE, com endereço lido de uma linha do banco em tempo de execução -- outro número de conexões,
+  outro ciclo de vida e outra superfície de falha. A rota entrega a lista de
+  atividades que TERIAM grade, com `grade: null` e o motivo -- a tela mostra a linha e diz por que o
+  quadriculado não veio, em vez de 500 ou de uma lista vazia que se leria como "ninguém revisando".
+  **A configuração de produção (servidor, porta e banco) não sai na resposta**: é endereço de máquina
+  interna, e resposta de rota é lugar público.
+- **View de acompanhamento que ainda não existe é 404, e não 500.** As views do schema são geradas em
+  tempo de execução, uma por par (lote, linha) e outra por (lote, subfase): elas nascem quando a
+  primeira etapa do par é cadastrada. `/mapa/:nome` e a rota de tile conferem `pg_matviews` ANTES de
+  consultar, porque sem isso o Postgres responde "relation does not exist" e a tela diz "erro no
+  servidor" para um lote que só não tem etapa ainda. `pg_matviews` é a fonte de verdade, e não um
+  catálogo calculado de (lote × linha): o par só vira view quando há etapa.
+- **A tile é UMA camada sobre VÁRIAS views.** A view é por par (lote, linha de produção), mas um mapa
+  de acompanhamento pergunta pela linha inteira: `/linha_producao/:id/:z/:x/:y.pbf` une as views
+  daquela linha sobre todos os lotes que a executam. **Só as oito colunas FIXAS entram** (`id`,
+  `uuid`, `nome`, `mi`, `inom`, `escala`, `subtipo_produto`, `geom`): as dinâmicas mudam quando a
+  linha ganha fase, e uma tile que as carregasse mudaria de esquema sozinha, quebrando o estilo do
+  cliente sem ninguém ter tocado no mapa. Ela responde **204** quando não há view nenhuma ou quando a
+  tile não cobre feição -- 404 faria o MapLibre marcar a camada como quebrada.
+- **A tile usa `verifyLoginTile` SOZINHO, sem `verifyPerfil` encadeado.** O cabeçalho de
+  `verify_login_tile.js` recomenda o encadeamento, e ele não se aplica aqui: `verifyPerfil` lê
+  `req.headers.authorization`, que numa requisição de tile do QGIS não existe -- encadeá-lo devolveria
+  401 a todo pedido de tile, que é o problema que aquela guarda existe para resolver. A consequência
+  é declarada: quem tem conta ativa busca a tile mesmo sem perfil em `producao`, e o que ela carrega é
+  o recorte e o nome da folha, a mesma geometria que `/api/produtos` já publica.
+- **As quatro rotas de `/projeto*` são NOVAS.** No SAP elas existiam comentadas, apontando todas para
+  um `getInfoProjetos` que era um `// TODO` com uma consulta de outro assunto dentro -- ela lia a
+  tabela de login filtrando por um `$<mes>` que a função não recebia, e nunca rodou.
+
+### A zona de perigo (`/api/perigo`), na 3.0.0
+
+- **O piso é `gerente` em `producao` nas ONZE, inclusive nas duas leituras.** `GET
+  /perigo/propriedades_camada` e `GET /perigo/insumo` não são tela: elas existem para montar o corpo
+  do `PUT` e do `DELETE` que vêm em seguida, e são metade de uma operação destrutiva. Além disso
+  `producao.insumo.caminho` é pasta de rede da instalação.
+- **As três rotas que VARREM exigem confirmação no corpo, e a forma é a do `--confirmar` dos CLIs.**
+  `acervo_cli/comandos/editar.js` obriga a repetir o id, e o comentário dele diz por quê: "a
+  confirmação repete o id, para que confirmar seja um ato, e não um enter". Aqui o que se repete é o
+  NOME DA AÇÃO (`apagar_log`, `apagar_ut_sem_atividade`), porque duas das três não têm id a
+  repetir; na terceira, `/atividades/usuario/:uuid`, o que se repete é o próprio uuid da pessoa. Um
+  `{"confirmar": true}` NÃO serviria: booleano se copia junto com a URL e sobrevive ao copiar e
+  colar. O `motivo` é opcional e vai para `auditoria.evento.motivo`.
+- **`DELETE /perigo/produtos_sem_unidade_trabalho` e `DELETE /perigo/lote_sem_produto` DEIXAM DE
+  EXISTIR** (chefe, 2026-08-09). Elas vieram do SAP 2.3.5 e a PREMISSA delas morreu na travessia: lá
+  o produto e o lote pertenciam a `macrocontrole` e só existiam para a produção, então "produto sem
+  unidade de trabalho" era lixo de cadastro e apagá-lo era faxina no próprio quintal. Aqui o produto
+  é `acervo.versao` e o lote é `acervo.lote`, e os dois existem SEM produção nenhuma: registro
+  histórico, carga externa, folha que a Divisão recebeu pronta.
+  **O porquê é medido, e não estimado**: no dump de produção de 2026-08-08 há 7.638 versões e 105
+  lotes, e o schema `producao` nasceu VAZIO. Uma varredura por esse critério selecionaria o acervo
+  INTEIRO, e o `DELETE` dela seria a perda total, com arquivo, download, metadado e histórico
+  pendurados, e com o rastro dizendo que alguém pediu.
+  **`/ut_sem_atividade` FICA**, e a diferença é exatamente essa: unidade de trabalho é objeto de
+  `producao`, criada para ser trabalhada, e uma sem atividade nenhuma é de fato configuração órfã. O
+  alcance dela para dentro do schema.
+  Não se tratou de baixar o alcance das duas nem de exigir confirmação mais forte: o critério em si
+  deixou de significar o que significava. **Rota cuja premissa morreu não vira rota mais cuidadosa,
+  vira rota que não existe** -- e é por isso que este parágrafo está aqui, para que ninguém a proponha
+  de volta "agora com uma confirmação mais forte". Saíram junto os dois controladores
+  (`limpaProdutosSemUnidadeTrabalho` e `limpaConfiguracaoLoteSemProduto`), os dois schemas de corpo e
+  os dois tokens de confirmação; o que sobra no lugar delas, em `perigo_route.js`, é o comentário que
+  explica a ausência.
+- **`/atividades/usuario/:uuid` solta as situações 1, 2 e 3, e NÃO toca nas finalizadas.** O SAP fazia
+  `UPDATE ... WHERE usuario_id = X` sem filtro de situação: ele zerava também as FINALIZADAS,
+  devolvendo-as a "Não iniciada" e apagando `data_inicio` e `data_fim`. Isso não é soltar trabalho, é
+  apagar produção entregue -- o lote passa a mostrar como não feito o que foi feito, as views de
+  acompanhamento refazem a matriz sem aquelas datas, e o PIT do ano perde as folhas daquela pessoa. O
+  problema que a rota existe para resolver (o operador saiu segurando atividade e a fila não anda)
+  se resolve inteiro nas situações 1, 2 e 3. A resposta informa quantas finalizadas foram preservadas.
+- **Os gatilhos ficam LIGADOS nas operações em massa, e o custo é conhecido.** O SAP desligava todos
+  os gatilhos da transação por um utilitário (`disableTriggers`) e refazia as views no fim. Este
+  repositório NÃO tem esse utilitário, e trazê-lo abriria uma porta para desligar gatilho em
+  transação -- na zona de perigo, e sem nenhuma outra rota precisando dela. Fica o custo: cada linha
+  alterada dispara um `REFRESH MATERIALIZED VIEW CONCURRENTLY`, e soltar dezenas de atividades demora.
+- **A trilha das três é UM evento por operação, e não um por registro.** Elas gravam na pseudo-tabela
+  `producao.zona_perigo` (ver `auditoria/mapa/producao.js`), com alvo, quantidade e a lista no
+  `detalhe`. É o mesmo desenho de `acervo.mv_produto` e da limpeza de downloads, e a razão está no
+  `registrarOperacao`: uma linha por unidade de trabalho apagada faria a trilha crescer mais rápido
+  que a produção, para registrar algo que ninguém decidiu unidade a unidade. O CRUD de
+  `propriedades_camada` e de `insumo`, esse sim, audita linha a linha.
+- **PENDÊNCIA: os códigos de `dominio.tipo_situacao_atividade` e de `dominio.tipo_status_execucao` não
+  estão em `utils/domain_constants.js`.** Aquele arquivo ainda não recebeu nenhum domínio do core de
+  produção. Enquanto isso, `acompanhamento_producao_ctrl.js` e `perigo_ctrl.js` os declaram no topo,
+  com nome e com a origem citada -- não há número solto no SQL, e o dia em que as constantes subirem
+  para `utils/` as duas listas saem inteiras, de um lugar só.
 
 ## Campo
 

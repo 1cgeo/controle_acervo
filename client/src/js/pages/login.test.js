@@ -11,7 +11,7 @@ vi.mock('@utils/backgrounds.js', () => ({
 }));
 
 import { renderLogin } from './login.js';
-import { apiPost } from '@services/api-client.js';
+import { apiPost, apiGet } from '@services/api-client.js';
 
 /** Monta a tela e devolve o container. */
 async function montar() {
@@ -45,7 +45,7 @@ describe('tela de entrada da plataforma', () => {
 
     const texto = container.textContent;
     expect(texto).toContain('Entrar no sistema');
-    expect(texto).toContain('Para quem trabalha no 1º CGEO');
+    expect(texto).toContain('Para quem trabalha no Centro');
     expect(texto).toContain('Acompanhar um pedido');
     expect(texto).toContain('Para quem solicitou cartas à Mapoteca');
 
@@ -53,6 +53,33 @@ describe('tela de entrada da plataforma', () => {
     for (const c of caminhos(container)) {
       expect(c.classList.contains('hidden')).toBe(false);
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // ESTA TELA NAO NOMEIA O CENTRO (2026-08-09)
+  // ---------------------------------------------------------------------------
+  //
+  // Ela e desenhada ANTES de alguem entrar, entao nao ha sessao para ler, e
+  // abrir uma rota anonima de instituicao publicaria QUAL OM opera esta
+  // instalacao para quem alcancasse a porta de entrada -- que e alcancavel sem
+  // conta, por causa do caminho publico do localizador. A saida foi um texto
+  // verdadeiro sem o nome.
+  //
+  // O teste guarda as DUAS metades da decisao: nenhum nome de Centro escrito na
+  // tela, e nenhuma chamada ao servidor para buscar um.
+  test('nao escreve o nome de Centro nenhum, porque aqui nao ha sessao', async () => {
+    const container = await montar();
+
+    expect(container.textContent).not.toContain('CGEO');
+    expect(container.textContent).not.toContain('Centro de Geoinformação');
+    expect(container.textContent).toContain('Sistema de Apoio à Produção');
+  });
+
+  test('nao pede a instituicao ao servidor antes do login', async () => {
+    await montar();
+
+    expect(apiGet).not.toHaveBeenCalled();
+    expect(apiPost).not.toHaveBeenCalled();
   });
 
   test('diz que a consulta NAO exige conta, que e a duvida de quem pediu carta', async () => {

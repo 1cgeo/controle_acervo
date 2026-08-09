@@ -1,0 +1,76 @@
+/*
+ * Microcontrole: a medição do trabalho no QGIS.
+ *
+ * BEM e tokens de `design-tokens.css`, sem cor literal nenhuma.
+ *
+ * O AVISO USA O ÂMBAR DE ATENÇÃO, e não o azul de informação: ele só aparece
+ * quando a cobertura de tela veio TRUNCADA, e uma lista cortada é um número que
+ * a pessoa não deve ler como total. Não é erro (o vermelho é do `estado-erro`,
+ * que mora fora daqui) e não é recado (o azul diria "para o seu conhecimento",
+ * quando o que se pede é refinar o filtro).
+ *
+ * O AVISO VAZIO NÃO OCUPA ESPAÇO: ele é um `<p>` que existe sempre no DOM e
+ * recebe texto só quando há truncamento, e o `:empty` é o que impede a caixa de
+ * borda aparecer em branco no caso normal.
+ */
+
+.microcontrole__filtro {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  align-items: flex-start;
+  padding: var(--space-md);
+  margin-bottom: var(--space-lg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+}
+
+/* O botão desce até a linha de base dos campos, que carregam rótulo em cima. */
+.microcontrole__filtro-acao {
+  display: flex;
+  align-items: flex-end;
+  align-self: stretch;
+  padding-bottom: var(--space-xs);
+}
+
+.microcontrole__secao {
+  margin-bottom: var(--space-xl);
+}
+
+.microcontrole__titulo {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.microcontrole__subtitulo {
+  margin: var(--space-lg) 0 var(--space-sm);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.microcontrole__nota {
+  margin: 0 0 var(--space-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height);
+}
+
+.microcontrole__aviso {
+  margin: 0 0 var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-warning);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height);
+}
+
+.microcontrole__aviso:empty {
+  display: none;
+}

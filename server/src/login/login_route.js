@@ -14,10 +14,15 @@ router.post(
   '/',
   schemaValidation({ body: loginSchema.login }),
   asyncHandler(async (req, res, next) => {
+    // `plugins` e `qgis` só chegam dos dois clientes de QGIS, e o Joi já os
+    // proibiu nos demais. Eles alimentam o gate de versão de `login_ctrl.js`,
+    // que só barra o 'sap_fp'.
     const dados = await loginCtrl.login(
       req.body.usuario,
       req.body.senha,
-      req.body.cliente
+      req.body.cliente,
+      req.body.plugins,
+      req.body.qgis
     )
 
     return res.sendJsonAndLog(

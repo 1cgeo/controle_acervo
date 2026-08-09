@@ -28,9 +28,11 @@ export function createNavbar({ onToggleSidebar }) {
   }, [el('span', { className: 'navbar__toggle-icon' })]);
 
   // Titulo da plataforma. O nome do modulo ativo aparece na sidebar, nao aqui.
+  // 'SCA' ate 2026-08-09, quando o sistema passou a se chamar SAP. O 3.0 e a
+  // VERSAO do servico, e nao entra no rotulo.
   const title = el('span', {
     className: 'navbar__title',
-    textContent: 'SCA',
+    textContent: 'SAP',
   });
 
   // Theme toggle

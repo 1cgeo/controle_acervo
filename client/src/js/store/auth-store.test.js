@@ -4,6 +4,7 @@ import {
   isAuthenticated, isAdmin, clearAuth,
   getPerfil, temPerfil, temAcessoModulo, getCatalogoModulos, nomeModulo,
   permissoes, atualizarSessao, temAlgumAcesso, meusAcessos,
+  instituicaoDaSessao, nomeInstituicao, siglaInstituicao,
 } from './auth-store.js';
 
 const CATALOGO = [
@@ -265,5 +266,88 @@ describe('auth-store: acesso ao sistema', () => {
       { modulo: 'mapoteca', nome: 'Mapoteca', nivel: 2, perfil: 'Operador' },
       { modulo: 'orcamento', nome: 'Orçamento', nivel: 3, perfil: 'Gerente' },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A INSTITUICAO que opera esta instalacao (2026-08-09)
+// ---------------------------------------------------------------------------
+//
+// Ela chega pelo LOGIN, ao lado de `perfis` e `modulos`, e nao por uma chamada
+// propria: o client precisa dela para DESENHAR (o remetente da etiqueta de
+// envio, o orgao produtor sugerido, o nome de arquivo do Anuario quando o
+// cabecalho nao vem), e uma volta a mais no boot custaria caro por um dado que
+// muda uma vez por instalacao.
+//
+// Ate aqui o "1º CGEO" estava escrito em quatro lugares do client, e outro CGEO
+// veria o nome do nosso Centro depois de configurar o proprio. Por isso os
+// testes abaixo usam OUTRA instituicao: confirmar a nossa passaria igual com o
+// nome no codigo.
+describe('auth-store: a instituicao da sessao', () => {
+  const NOSSA = { nome: '1º Centro de Geoinformação', sigla: '1º CGEO' };
+  const OUTRA = { nome: '4º Centro de Geoinformação', sigla: '4º CGEO' };
+
+  test('saveAuth guarda o nome e a sigla que vieram no login', () => {
+    saveAuth({ token: 'jwt', administrador: false, uuid: 'u', instituicao: NOSSA }, 'x');
+
+    expect(nomeInstituicao()).toBe('1º Centro de Geoinformação');
+    expect(siglaInstituicao()).toBe('1º CGEO');
+    expect(instituicaoDaSessao()).toEqual(NOSSA);
+  });
+
+  test('OUTRA instalacao devolve o nome DELA', () => {
+    saveAuth({ token: 'jwt', administrador: false, uuid: 'u', instituicao: OUTRA }, 'x');
+
+    expect(nomeInstituicao()).toBe('4º Centro de Geoinformação');
+    expect(siglaInstituicao()).toBe('4º CGEO');
+  });
+
+  // Banco sem a linha de `dgeo.instituicao` responde `null`, e entrar continua
+  // valendo: a pessoa nao pode ficar trancada do lado de fora por causa de um
+  // rotulo. Quem le trata a cadeia vazia.
+  test('login sem instituicao devolve cadeia vazia, e nunca undefined', () => {
+    saveAuth({ token: 'jwt', administrador: false, uuid: 'u' }, 'x');
+
+    expect(nomeInstituicao()).toBe('');
+    expect(siglaInstituicao()).toBe('');
+    expect(instituicaoDaSessao()).toEqual({ nome: '', sigla: '' });
+  });
+
+  test('sessao encerrada leva a instituicao junto', () => {
+    saveAuth({ token: 'jwt', administrador: false, uuid: 'u', instituicao: NOSSA }, 'x');
+    clearAuth();
+
+    expect(nomeInstituicao()).toBe('');
+    expect(localStorage.getItem('@sca-instituicao')).toBeNull();
+  });
+
+  // O administrador corrige a sigla em `#/instituicao` no meio do expediente. O
+  // retrato seguinte chega diferente, e `mudou` e o que faz o client recarregar
+  // a tela: sem ele o nome novo so apareceria na sessao seguinte.
+  test('atualizarSessao troca a instituicao e ACUSA a mudanca', () => {
+    saveAuth(
+      { token: 'jwt', administrador: false, uuid: 'u', perfis: {}, modulos: CATALOGO, instituicao: NOSSA },
+      'x'
+    );
+
+    const mudou = atualizarSessao({
+      administrador: false, perfis: {}, modulos: CATALOGO, instituicao: OUTRA,
+    });
+
+    expect(mudou).toBe(true);
+    expect(nomeInstituicao()).toBe('4º Centro de Geoinformação');
+  });
+
+  test('o mesmo retrato de novo nao acusa mudanca', () => {
+    saveAuth(
+      { token: 'jwt', administrador: false, uuid: 'u', perfis: {}, modulos: CATALOGO, instituicao: NOSSA },
+      'x'
+    );
+
+    const mudou = atualizarSessao({
+      administrador: false, perfis: {}, modulos: CATALOGO, instituicao: NOSSA,
+    });
+
+    expect(mudou).toBe(false);
   });
 });

@@ -514,10 +514,49 @@ export async function apiImagem(endpoint) {
 }
 
 /**
+ * O nome de arquivo que o SERVIDOR mandou, lido do `Content-Disposition`.
+ *
+ * QUEM MANDA E O CABECALHO, e nao o nome que quem chamou montou. Os dois lados
+ * sabiam montar o nome do Anuario, e duas montagens divergem no primeiro dia em
+ * que uma delas muda -- foi o que aconteceu quando o nome passou a levar a sigla
+ * da instituicao. O nome de la e o unico; o daqui e queda.
+ *
+ * DUAS FORMAS, e a ordem importa. `filename*=UTF-8''...` (RFC 5987) e a que
+ * carrega charset e vem percent-encoded, entao ela ganha quando as duas
+ * aparecem: o `filename=` ao lado dela existe para cliente antigo, e costuma ser
+ * a versao degradada do nome. O `filename=` simples e literal e NAO se decodifica
+ * -- decodificar 'Relatorio_100%_2026.ods' lancaria URIError e derrubaria um
+ * download que estava indo bem.
+ *
+ * @param {string|null} disposition
+ * @returns {string|null} o nome, ou null quando o cabecalho nao traz nenhum
+ */
+function nomeDoCabecalho(disposition) {
+  if (!disposition) return null;
+
+  const estendido = /filename\*\s*=\s*[^']*'[^']*'([^;]+)/i.exec(disposition);
+  if (estendido) {
+    const bruto = estendido[1].trim().replace(/^"|"$/g, '');
+    try {
+      return decodeURIComponent(bruto) || null;
+    } catch {
+      // Percent-encoding quebrado: o literal ainda e melhor que nenhum nome.
+      return bruto || null;
+    }
+  }
+
+  const simples = /filename\s*=\s*"?([^";]+)"?/i.exec(disposition);
+  if (simples) return simples[1].trim() || null;
+
+  return null;
+}
+
+/**
  * Download a file (e.g. CSV export) with the Bearer token.
  * Fetches the endpoint as a blob and triggers a browser download.
  * @param {string} endpoint - e.g. '/relatorio/secao3/markdown?ano=2026&mes=5'
- * @param {string} fallbackFilename - used when Content-Disposition is absent
+ * @param {string} fallbackFilename - so vale quando o servidor NAO manda
+ *   `Content-Disposition` com nome. O nome do servidor sempre ganha.
  * @returns {Promise<void>}
  */
 export async function apiDownload(endpoint, fallbackFilename) {
@@ -544,12 +583,8 @@ export async function apiDownload(endpoint, fallbackFilename) {
     );
   }
 
-  let filename = fallbackFilename;
-  const disposition = response.headers.get('Content-Disposition');
-  if (disposition) {
-    const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
-    if (match) filename = decodeURIComponent(match[1]);
-  }
+  const filename =
+    nomeDoCabecalho(response.headers.get('Content-Disposition')) || fallbackFilename;
 
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);

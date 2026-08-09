@@ -1,8 +1,40 @@
-# CLAUDE.md - Controle do Acervo (SCA)
+# CLAUDE.md - SAP (Sistema de Apoio à Produção)
 
 Só o que muda o que você digita. Estrutura, stack, comandos, rotas e banco: `README.md`. Como subir
 o ambiente: `levantar_servico.md`. O **porquê** de cada escolha que parece defeito, e o que custou a
 alternativa: `docs/decisoes.md`, que é também onde uma decisão nova se registra.
+
+## O nome
+
+O sistema se chamava **Controle do Acervo (SCA)** até 2026-08-09, quando o chefe decidiu que ele
+passa a ser o **SAP**, **Sistema de Apoio à Produção**, e que o SAP 2.3.5 (outro repositório) será
+aposentado com todo o conteúdo dele vindo para cá.
+
+**O nome é "SAP", sem número.** O **3.0** é a VERSÃO do serviço, não parte do nome: ele vive em
+`VERSION` (`server/src/config.js`) e em `public.versao`, e em lugar nenhum do rótulo. A versão
+CONTINUA a numeração do sistema aposentado em vez de abrir série nova, justamente para que a de cá
+e a de lá se comparem número a número.
+
+- **O que mudou é RÓTULO:** `README.md`, `levantar_servico.md`, este arquivo, o `<title>` e o
+  cabeçalho do client, a mensagem de `GET /api`, o erro do login, o Swagger, o `description` dos
+  `package.json` e os READMEs dos sete CLIs.
+- **O que NÃO mudou, e é deliberado:** o schema `acervo`, o módulo `acervo` de `dominio.modulo`
+  (code 1, `nome_abrev` = `acervo`), o `acervo_cli` e as rotas `/api/acervo/*`. **O acervo é uma
+  PARTE do SAP, e não o todo.** Também não mudaram o nome do banco, as chaves `SCA_*` de
+  ambiente, o cache de sessão dos CLIs em `~/.sca`, o processo PM2 `controle-acervo`, o `name` dos
+  `package.json`, o diretório do repositório nem os remotes de git: são IDENTIFICADORES.
+- **`sca_web` e `sca_qgis` continuam aceitos no login**, ao lado de `sap_web`, `sap_fp` (SAP
+  Operador) e `sap_fg` (SAP Gerente). Recusá-los derrubaria no deploy todo cliente que já está no
+  ar, e `dgeo.login.cliente` guarda os nomes antigos no histórico inteiro.
+- **Comentário de código e migração antiga que dizem "SCA" NÃO se reescrevem.** Migração é registro
+  histórico, pela mesma razão que a trilha de `auditoria.evento` é append-only.
+- **"SAP" sozinho quer dizer ESTE sistema, e o aposentado SEMPRE leva o número.** Ao escrever sobre
+  o sistema de lá, diga **"SAP 2.3.5"**, com a versão, toda vez. Onde os dois aparecem no mesmo
+  parágrafo, o desempate é o NÚMERO DE VERSÃO nos dois lados: **3.0.0** é o que roda aqui, **2.3.5**
+  é o que está sendo aposentado. Ao LER, cuidado com a prosa da travessia (`er/producao.sql`,
+  `er/metadado.sql`, `er/qgis.sql`, `er/acompanhamento_producao.sql`, os testes de
+  `__tests__/routes/producao/`): lá "SAP" sozinho quer dizer o **2.3.5**, e essas linhas ficam como
+  estão.
 
 ## Não se negocia
 
@@ -31,26 +63,38 @@ alternativa: `docs/decisoes.md`, que é também onde uma decisão nova se regist
 dgeo.usuario.administrador BOOLEAN   -- administrador de TUDO, global e unico
 dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id)
 dominio.tipo_perfil   -- 1 consulta, 2 operador, 3 gerente (hierarquicos)
-dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 pit, 5 efetivo, 6 equipamento
+dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 pit, 5 efetivo, 6 equipamento,
+                      -- 7 producao (o core herdado do SAP 2.3.5, com rota e tela desde a 3.0.0)
 ```
 
 > **Armadilha que já custou caro:** o default de `verifyPerfil(minimo, modulo)` é `'acervo'`. Rota de
 > outro módulo que esquece o segundo argumento passa a cobrar perfil no ACERVO, sem erro visível.
 > `server/src/__tests__/routes/modulo_em_toda_rota.test.js` varre `orcamento`, `mapoteca`,
-> `equipamento` e `campo` (que cobra `pit`): em `efetivo` e no resto de `pit`, ninguém cobra por
-> você.
+> `equipamento`, `campo` (que cobra `pit`), `producao` e `microcontrole` (que também cobra
+> `producao`), e os quatro outros módulos do core têm varredura própria ao lado deles
+> (`routes/producao/perfil.test.js`, `routes/gerencia_producao/perfil.test.js`,
+> `routes/metadado/modulo_na_rota.test.js` e as de `distribuicao`, `acompanhamento_producao` e
+> `perigo`). **Em `efetivo` e no resto de `pit`, ninguém cobra por você.**
 
 - **`dominio.modulo.nome` é RÓTULO, e trocar é inocente. `nome_abrev` é IDENTIFICADOR:** o
   `verifyPerfil`, o mapa `MODULO`, o prefixo de rota e a chave dos `perfis` o comparam por igualdade
   de string, e trocá-lo derruba a autorização sem erro de sintaxe e sem teste vermelho. O rótulo do
   MENU já não é uma terceira coisa: o code 4 se chamava `producao` até 2026-08-09, e virou `pit`
-  para devolver o nome ao core do SAP, que vai entrar como Produção. A **pasta** ainda pode divergir
-  do módulo (`server/src/campo/` cobra `pit`).
+  para devolver o nome ao core de produção herdado do SAP 2.3.5, que vai entrar como Produção. A
+  **pasta** ainda pode divergir do módulo (`server/src/campo/` cobra `pit`).
 - **A régua, de 2026-08-08:** `consulta` LÊ as telas do módulo, `operador` LANÇA, `gerente` responde
   pela área e vê tudo dela. Rota nova escolhe o piso por essa frase, e não por costume. As duas
   exceções são deliberadas: a lista NÃO hierárquica (`perfis: ['consulta','gerente']`, lida por
   `ehDeAlgumPerfil` e nunca por `temPerfil`, para a tela que o operador não vê) e
   `#/acervo/administracao`, do ADMINISTRADOR, a única tela que o gerente da área não alcança.
+- **`producao` INVERTE a régua acima, e o módulo INTEIRO é não hierárquico** (chefe, 2026-08-09):
+  `consulta` VÊ TUDO e não modifica nada, `operador` vê DUAS telas (o Dashboard e a própria
+  atividade), `gerente` vê tudo e mexe em tudo. **O visualizador não é um operador rebaixado**: ele é
+  quem acompanha a produção de cima, e o operador é quem executa. Por isso as onze rotas do
+  manifesto declaram `perfis` (LISTA) e **nenhuma** declara `perfil` (mínimo): com o mínimo, o
+  operador voltaria a ver tudo por ser um nível acima, sem erro nenhum. O servidor NÃO cobra esse
+  recorte, porque `verifyPerfil` só compara nível; ele é do client, e o que o servidor barra é a
+  ESCRITA. Quem faz cumprir é `client/src/js/modules/producao/index.test.js`.
 - **`verifyPerfil` lê o BANCO a cada requisição**, e não o token: rebaixar perfil vale na hora.
   `administrador` é global e curto-circuita qualquer módulo, e não existe administrador de módulo.
   Quem não tem linha para um módulo não o acessa, e conceder é ato explícito.

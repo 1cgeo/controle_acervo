@@ -21,14 +21,14 @@ const modulosNaTela = (raiz) => [...raiz.querySelectorAll('.sidebar__module-head
 
 beforeEach(() => localStorage.clear());
 
-describe('sidebar: os quatro modulos convivem, cada um colapsavel', () => {
+describe('sidebar: os cinco modulos convivem, cada um colapsavel', () => {
   test('lista TODOS os modulos acessiveis, mesmo numa rota de plataforma', () => {
     logar({ administrador: true });
     const { sidebar } = createSidebar({ modulo: null });
 
     // Era o defeito: em #/usuarios o menu inteiro sumia e sobrava a plataforma.
     //
-    // Depois dos quatro módulos vêm PIT e EFETIVO, que se desenham como
+    // Depois dos cinco módulos vêm PIT e EFETIVO, que se desenham como
     // sistema sem ser módulo. A ordem é asserida inteira
     // de propósito: a posição é metade do que ela comunica. PIT antes de
     // Efetivo porque é a seção que fala do TRABALHO, e Efetivo é quem o faz.
@@ -43,6 +43,9 @@ describe('sidebar: os quatro modulos convivem, cada um colapsavel', () => {
       '#/mapoteca/dashboard',
       '#/orcamento/dashboard',
       '#/equipamento/',
+      // `producao` entrou na 3.0.0, e a home dele é '/' como a do equipamento:
+      // o painel mora na raiz do módulo.
+      '#/producao/',
       '#/metas',
       '#/acessos',
     ]);
@@ -69,12 +72,12 @@ describe('sidebar: os quatro modulos convivem, cada um colapsavel', () => {
     const secoes = () => [...ctrl.sidebar.querySelectorAll('.sidebar__module')]
       .map(s => s.classList.contains('sidebar__module--open'));
 
-    // Seis seções: os quatro módulos, PIT e Efetivo, nesta ordem.
-    expect(secoes()).toEqual([false, false, true, false, false, false]);
+    // Sete seções: os CINCO módulos, PIT e Efetivo, nesta ordem.
+    expect(secoes()).toEqual([false, false, true, false, false, false, false]);
     const antes = ids(ctrl.sidebar).length;
 
     ctrl.setModulo('acervo');
-    expect(secoes()).toEqual([true, false, false, false, false, false]);
+    expect(secoes()).toEqual([true, false, false, false, false, false, false]);
 
     // Nenhum item foi destruido: a sidebar so abriu e fechou seção.
     expect(ids(ctrl.sidebar).length).toBe(antes);
@@ -574,6 +577,9 @@ describe('sidebar: o menu de cada seção e plano, sem grupo colapsavel', () => 
 // ---------------------------------------------------------------------------
 const GUARDA_DA_ROTA = {
   '/usuarios': adminLoader,
+  // A instituição entrou em 2026-08-09, ao lado da Gestão: as duas são do
+  // administrador global e as duas dizem como esta instalação está montada.
+  '/instituicao': adminLoader,
   '/acessos': perfilLoader('efetivo', 'consulta'),
   '/rastreabilidade': gerenteLoader,
   '/rpcmtec': gerenteLoader,

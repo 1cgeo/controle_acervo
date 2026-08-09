@@ -13,18 +13,27 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 });
 
 import {
-  REMETENTE,
+  REMETENTE_ENDERECO,
+  remetente,
   extrairCep,
   linhasEndereco,
   montarEtiquetaHtml,
   openEtiquetaEnvioDialog,
 } from '@modules/mapoteca/pages/pedidos/etiqueta-envio.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
+import { saveAuth, clearAuth } from '@store/auth-store.js';
+
+/** Entra na sessao como o Centro informado, que e de onde sai o remetente. */
+const entrarComo = (instituicao) =>
+  saveAuth({ token: 'nao-jwt', administrador: false, uuid: 'u-1', instituicao }, 'fulano');
 
 const botao = (rotulo) => [...document.querySelectorAll('.modal__footer button')]
   .find(b => b.textContent.trim() === rotulo);
 
 beforeEach(() => {
+  // A sessao padrao e a desta instalacao. O remetente sai DELA desde 2026-08-09,
+  // e nao de um nome escrito no codigo.
+  entrarComo({ nome: '1º Centro de Geoinformação', sigla: '1º CGEO' });
   // O padrao e o pedido SEM etiqueta salva, que e a primeira abertura.
   svc.getEtiquetaEnvio.mockResolvedValue(null);
   svc.salvarEtiquetaEnvio.mockImplementation((pedidoId, dados) => Promise.resolve({
@@ -36,6 +45,7 @@ beforeEach(() => {
 
 afterEach(() => {
   document.body.innerHTML = '';
+  clearAuth();
   vi.clearAllMocks();
 });
 
@@ -80,9 +90,59 @@ describe('montarEtiquetaHtml', () => {
   test('o remetente e sempre a mapoteca, sem depender do pedido', () => {
     const html = montarEtiquetaHtml({ destinatario: 'OM Qualquer' });
 
-    expect(html).toContain(REMETENTE.nome);
-    REMETENTE.linhas.forEach((linha) => expect(html).toContain(linha));
-    expect(html).toContain(REMETENTE.telefone);
+    expect(html).toContain(remetente().nome);
+    REMETENTE_ENDERECO.linhas.forEach((linha) => expect(html).toContain(linha));
+    expect(html).toContain(REMETENTE_ENDERECO.telefone);
+  });
+
+  // ---------------------------------------------------------------------------
+  // O NOME DO CENTRO VEM DA SESSAO, e nao do codigo (2026-08-09)
+  // ---------------------------------------------------------------------------
+  //
+  // A prova que interessa e com OUTRA instituicao: um teste que so confirma
+  // '1º Centro de Geoinformação' passaria igual com o nome escrito aqui dentro,
+  // que e exatamente o defeito que esta mudanca conserta.
+
+  test('o remetente sai da instituicao da sessao', () => {
+    entrarComo({ nome: '1º Centro de Geoinformação', sigla: '1º CGEO' });
+    expect(montarEtiquetaHtml({ destinatario: 'OM Qualquer' }))
+      .toContain('1º Centro de Geoinformação - Mapoteca');
+  });
+
+  test('OUTRO Centro na sessao imprime o nome DELE, e nunca o nosso', () => {
+    entrarComo({ nome: '4º Centro de Geoinformação', sigla: '4º CGEO' });
+
+    const html = montarEtiquetaHtml({ destinatario: 'OM Qualquer' });
+
+    expect(html).toContain('4º Centro de Geoinformação - Mapoteca');
+    expect(html).not.toContain('1º Centro de Geoinformação');
+  });
+
+  // Sessao sem instituicao e o banco sem a linha de `dgeo.instituicao`. A
+  // etiqueta sai incompleta de proposito: a previa mostra isso antes de
+  // imprimir, e e melhor do que colar no pacote o nome de outro Centro.
+  test('sem instituicao na sessao, o remetente e so a Mapoteca', () => {
+    clearAuth();
+
+    const html = montarEtiquetaHtml({ destinatario: 'OM Qualquer' });
+
+    expect(html).toContain('Mapoteca');
+    expect(html).not.toContain('Centro de Geoinformação - Mapoteca');
+    // O endereco postal continua no codigo, e por isso continua saindo.
+    expect(html).toContain(REMETENTE_ENDERECO.telefone);
+  });
+
+  // O nome e lido a cada montagem, e nao no `import`: o administrador corrige a
+  // instituicao no meio do expediente, e a etiqueta seguinte tem de acompanhar.
+  test('trocar a instituicao muda a etiqueta seguinte, sem recarregar o modulo', () => {
+    entrarComo({ nome: '1º Centro de Geoinformação', sigla: '1º CGEO' });
+    const antes = montarEtiquetaHtml({ destinatario: 'OM Qualquer' });
+
+    entrarComo({ nome: 'Centro de Geoinformação de Teste', sigla: 'CGEO-T' });
+    const depois = montarEtiquetaHtml({ destinatario: 'OM Qualquer' });
+
+    expect(antes).toContain('1º Centro de Geoinformação - Mapoteca');
+    expect(depois).toContain('Centro de Geoinformação de Teste - Mapoteca');
   });
 
   // Os oito quadradinhos do modelo em .doc: um digito por quadrado, com o traco

@@ -53,9 +53,35 @@ const SEM_PAINEL_JUSTIFICADO = {
 //
 // Cada entrada aponta onde o plano está escrito.
 //
-// ESTÁ VAZIA. Entrada aqui é lacuna de CLASSE C: agregado que registra evento
-// e não tem tela nenhuma.
+// Entrada aqui é lacuna de CLASSE C: agregado que registra evento e não tem
+// tela nenhuma.
+// ESTA VAZIA. A ultima entrada saiu em 2026-08-09: `dgeo.instituicao` entrou
+// naquele dia com a tabela e as rotas e SEM tela, e a tela veio no mesmo dia
+// (`client/src/js/pages/instituicao/`), com painel de historico e destino na
+// varredura. A divida durou horas, e some junto com o motivo dela.
 const PENDENTE_COM_PLANO = {}
+
+// DÍVIDA DE MÓDULO INTEIRO, e ela é de outra natureza que as duas listas acima.
+//
+// As duas listam AGREGADO. Esta lista MÓDULO, e a diferença não é comodidade:
+// o módulo `producao` entrou na 3.0.0 com os schemas e o servidor, e as telas
+// dele vêm na onda seguinte. Enquanto isso, TODO agregado dele nasce órfão, e
+// a cada rota nova a lista por agregado mudaria -- viraria um arquivo que se
+// edita por obrigação, e lista que se edita por obrigação para de ser lida.
+//
+// A FOLGA NÃO É LIVRE, e é isso que a mantém honesta:
+//
+//   1. só o módulo nomeado aqui a recebe. Módulo novo sem tela derruba o teste,
+//      que é o alarme que a lista por agregado dava;
+//   2. o caso `a divida de modulo se esvazia` abaixo cobra que TODO módulo
+//      listado aqui ainda esteja sem tela nenhuma. No dia em que a primeira
+//      tela de produção chamar `criarHistorico`, ele fica VERMELHO e manda tirar
+//      o módulo daqui -- a linha não sobrevive ao motivo dela.
+//
+// Ver `docs/decisoes.md`, secao "O core de producao, na 3.0.0".
+const MODULO_SEM_TELA_AINDA = {
+  producao: 'Schemas e servidor entraram na 3.0.0; as telas vem na onda seguinte'
+}
 
 /** Todo arquivo .js do cliente, menos teste. */
 const arquivosDoCliente = () => {
@@ -82,6 +108,33 @@ const entidadesComPainel = () => {
     }
   }
   return achadas
+}
+
+// Os pares 'modulo:entidade' que o cliente pede a `criarHistorico`.
+//
+// POR QUE O PAR, E NÃO SÓ A ENTIDADE. `entidadesComPainel` acima casa por NOME,
+// e nome de entidade se repete entre módulos: há `produto` no acervo e há
+// `produto` em `producao` (a ficha de metadado). Casando só pelo nome, o painel
+// do acervo responde pelo agregado da produção, e o teste dá verde para uma
+// tela que não existe.
+//
+// A leitura por nome fica onde está, porque os casos que ela cobre já são
+// verdes e apertá-la agora misturaria duas mudanças. O PAR é usado onde a
+// confusão importa: na dívida por módulo, que é justamente "este módulo ainda
+// não tem tela nenhuma".
+const paresComPainel = () => {
+  const achados = new Set()
+  for (const p of arquivosDoCliente()) {
+    const s = fs.readFileSync(p, 'utf8')
+    if (!s.includes('criarHistorico({')) continue
+    for (const m of s.matchAll(/criarHistorico\(\{(.*?)\}\)/gs)) {
+      const corpo = m[1]
+      const mod = corpo.match(/modulo:\s*'([a-z_]+)'/)
+      const ent = corpo.match(/entidade:\s*'([a-z_]+)'/)
+      if (mod && ent) achados.add(`${mod[1]}:${ent[1]}`)
+    }
+  }
+  return achados
 }
 
 // As chaves 'modulo:entidade' do mapa DESTINO da varredura.
@@ -125,10 +178,11 @@ describe('A entrega do rastro', () => {
     const orfaos = []
 
     for (const [chave, tabelas] of agregados()) {
-      const entidade = chave.split(':')[1]
+      const [modulo, entidade] = chave.split(':')
       if (comPainel.has(entidade)) continue
       if (SEM_PAINEL_JUSTIFICADO[entidade]) continue
       if (PENDENTE_COM_PLANO[entidade]) continue
+      if (MODULO_SEM_TELA_AINDA[modulo]) continue
       orfaos.push(`${chave} (${tabelas.join(', ')})`)
     }
 
@@ -137,11 +191,46 @@ describe('A entrega do rastro', () => {
     expect(orfaos).toEqual([])
   })
 
+  // A LINHA NÃO SOBREVIVE AO MOTIVO DELA.
+  //
+  // `MODULO_SEM_TELA_AINDA` vale enquanto o módulo não tem tela NENHUMA. Assim
+  // que a primeira ficha de produção chamar `criarHistorico`, a folga deixa de
+  // ter razão, e este caso fica vermelho dizendo para tirá-la -- em vez de o
+  // módulo seguir dispensado para sempre porque a lista virou paisagem.
+  //
+  // Ele compara com o mapa de auditoria, e não com uma lista de entidades
+  // escrita à mão: o que prova que o módulo ganhou tela é uma entidade DELE
+  // aparecer num `criarHistorico` do cliente.
+  test('a divida de modulo se esvazia sozinha quando a tela chega', () => {
+    const pares = paresComPainel()
+    const jaTemTela = []
+
+    for (const modulo of Object.keys(MODULO_SEM_TELA_AINDA)) {
+      const comTela = [...agregados().keys()]
+        .filter(c => c.startsWith(`${modulo}:`) && pares.has(c))
+      if (comTela.length > 0) {
+        jaTemTela.push(`${modulo} (ja tem painel em: ${comTela.join(', ')})`)
+      }
+    }
+
+    // Para consertar: tire o módulo de MODULO_SEM_TELA_AINDA e trate os
+    // agregados que ainda faltarem, um a um, como os outros módulos fazem.
+    expect(jaTemTela).toEqual([])
+  })
+
   test('todo agregado tem destino na varredura de rastreabilidade', () => {
     const destinos = destinosDaVarredura()
     const semDestino = []
 
     for (const [chave] of agregados()) {
+      if (MODULO_SEM_TELA_AINDA[chave.split(':')[0]]) continue
+      // A PENDÊNCIA DECLARADA VALE PARA AS DUAS PONTAS, e não só para o painel:
+      // agregado sem tela nenhuma não tem para onde apontar, e forçar uma
+      // entrada no `DESTINO` obrigaria a inventar rota -- que é o defeito do
+      // DFD ('orcamento:dfd' apontando `#/orcamento/dfd/:id`, que nunca
+      // existiu) e é justamente o que o caso seguinte pega. O que se cobra da
+      // lacuna é que ela esteja ESCRITA, com o motivo.
+      if (PENDENTE_COM_PLANO[chave.split(':')[1]]) continue
       if (!destinos.has(chave)) semDestino.push(chave)
     }
 
@@ -173,11 +262,19 @@ describe('A entrega do rastro', () => {
       expect(motivo.length).toBeGreaterThan(20)
     }
 
-    // A dívida está zerada. Entrada aqui é agregado que registra evento e não
-    // tem tela nenhuma, e tem de vir com o plano por escrito.
+    // A DÍVIDA ESTÁ VAZIA, e voltar a ter entrada é decisão. A última foi
+    // `instituicao`, que entrou e saiu em 2026-08-09: a tabela e as rotas
+    // chegaram sem tela pela manhã, e a tela veio no mesmo dia. Entrada aqui é
+    // agregado que registra evento e não tem tela nenhuma, e tem de vir com o
+    // plano escrito.
     expect(Object.keys(PENDENTE_COM_PLANO)).toEqual([])
     for (const plano of Object.values(PENDENTE_COM_PLANO)) {
-      expect(plano).toMatch(/01-Projects/)
+      // O PLANO TEM DE APONTAR ONDE ELE ESTÁ ESCRITO. Até 2026-08-09 o único
+      // formato era a pasta de projetos do chefe (`01-Projects/...`);
+      // `docs/decisoes.md` entra ao lado porque é onde ESTE repositório manda
+      // registrar decisão, e dívida cujo plano mora no próprio repositório é
+      // mais fácil de cobrar do que uma que mora fora dele.
+      expect(plano).toMatch(/01-Projects|docs\/decisoes\.md/)
     }
   })
 })

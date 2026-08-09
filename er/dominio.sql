@@ -326,8 +326,9 @@ INSERT INTO dominio.tipo_perfil (code, nome) VALUES
 (3, 'Gerente');
 
 -- Modulo funcional. E tabela, e nao CHECK na coluna, e a promessa ja foi cobrada
--- DUAS vezes: producao e efetivo entraram na 1.33.0 por INSERT, e equipamento na
--- 1.46.0, nenhum deles com migracao de constraint. Os SEIS sao compartimentos
+-- TRES vezes: producao e efetivo entraram na 1.33.0 por INSERT, equipamento na
+-- 1.46.0 e producao (o de verdade, o code 7) em 2026-08-09, nenhum deles com
+-- migracao de constraint. Os SETE sao compartimentos
 -- distintos de proposito: quem atende a mapoteca nao cataloga o acervo, quem
 -- lanca empenho nao precisa de nenhum dos dois, e quem lanca a execucao do PIT
 -- nao mexe em dinheiro.
@@ -372,6 +373,15 @@ CREATE TABLE dominio.modulo(
 -- ocupado por quem não é produção, o módulo novo nasceria com um nome de
 -- segunda ou herdaria as telas do PIT por engano.
 --
+-- O CODE 7 É O MÓDULO PRODUÇÃO DE VERDADE, e nasceu em 2026-08-09, no mesmo dia
+-- em que o 4 devolveu o nome. Ele cobre o core de produção que veio do SAP
+-- 2.3.5: a linha de produção, as subfases, as unidades de trabalho, a fila de
+-- distribuição e o acompanhamento, que moram no schema `producao`. Não tem
+-- rota ainda, e o mapa `MODULO` de server/src/login/verify_perfil.js só o ganha
+-- quando as rotas do módulo entrarem: conceder perfil num módulo sem tela é
+-- linha morta em `dgeo.usuario_perfil`, e o DDL é que nasce primeiro porque a
+-- chave estrangeira precisa do code existir antes da primeira concessão.
+--
 -- O CORPO DESTE INSERT NÃO ACEITA PROSA, e o comentário mora aqui em cima por
 -- isso: `__tests__/routes/orcamento/verify_perfil.test.js` lê este bloco com um
 -- `[\s\S]*?;` não guloso, e um ponto e vírgula dentro dele corta a captura no
@@ -382,7 +392,8 @@ INSERT INTO dominio.modulo (code, nome, nome_abrev) VALUES
 (3, 'Orçamento', 'orcamento'),
 (4, 'PIT', 'pit'),
 (5, 'Efetivo', 'efetivo'),
-(6, 'Equipamento', 'equipamento');
+(6, 'Equipamento', 'equipamento'),
+(7, 'Produção', 'producao');
 
 -- ---------------------------------------------------------------------------
 -- Domínios do PIT e do efetivo, absorvidos do SAP.
@@ -506,5 +517,286 @@ INSERT INTO dominio.origem_subsecao (code, nome, descricao) VALUES
 (1, 'Calculada', 'O SCA a monta do banco. Recalcula enquanto a edição está aberta e congela no fechamento.'),
 (2, 'Digitada', 'O gestor a preenche na edição do mês. É o que o SCA não sabe calcular.'),
 (3, 'Fixa', 'Texto imutável do documento, igual em toda edição.');
+
+-- ---------------------------------------------------------------------------
+-- Domínios do módulo PRODUÇÃO (code 7), absorvidos do SAP 2.3.5 em 2026-08-09.
+--
+-- São os domínios que o schema `producao` referencia. Eles moram aqui, e não em
+-- producao.sql, porque o schema `dominio` é único na plataforma: é a mesma
+-- regra que já trouxe para cá os domínios do orçamento e os do PIT.
+--
+-- OS CÓDIGOS SÃO OS MESMOS DO SAP, code a code, e isso é deliberado: o dump de
+-- produção do SAP 2.3.5 é o que vai popular estes schemas, e linha migrada não
+-- pode precisar de tradução de código. Renumerar custaria um de-para em toda a
+-- carga para não ganhar nada.
+--
+-- DOIS NOMES FORAM QUALIFICADOS. `tipo_situacao` e `tipo_problema` eram nomes
+-- bons num banco que só falava de produção, e são genéricos demais num
+-- `dominio` de sete módulos: aqui situação já é a do pedido da mapoteca, a da
+-- capacitação, a do Extra-PIT e a do exercício do PIT. Entram como
+-- `tipo_situacao_atividade` e `tipo_problema_atividade`, que é do que eles
+-- sempre falaram: da atividade de `producao.atividade`.
+--
+-- QUATRO DOMÍNIOS DO SAP NÃO ATRAVESSARAM. Quem vier procurar por eles lê aqui
+-- o porquê, porque procurar e não achar é o que faz alguém recriá-los:
+--
+--   `dominio.status` do SAP (Previsto / Em Execução, Finalizado, Abandonado)
+--   duplicaria `dominio.tipo_status_execucao` deste arquivo, que o
+--   `acervo.projeto` e o `acervo.lote` já usam. Toda coluna que apontava para
+--   ela passa a apontar `dominio.tipo_status_execucao (code)`. Dois catálogos
+--   para a mesma pergunta é a segunda verdade que este banco vem eliminando.
+--
+--   `dominio.tipo_posto_grad` do SAP já existe aqui, no topo deste arquivo, e é
+--   IDÊNTICA: os mesmos 19 códigos, o mesmo `nome` e a mesma `nome_abrev`,
+--   conferidos linha a linha em 2026-08-09. Não há o que trazer.
+--
+--   `dominio.tipo_produto` do SAP é o `dominio.subtipo_produto` daqui, código a
+--   código: 22 dos 23 batem até no nome, e só o 19 difere de rótulo ('Carta
+--   ortoimagem de OM' lá, 'Carta Ortoimagem de SARP' aqui). Toda coluna que no
+--   SAP apontava `dominio.tipo_produto` passa a apontar
+--   `dominio.subtipo_produto (code)`. CUIDADO com o homônimo: o
+--   `dominio.tipo_produto` DESTE arquivo é outra coisa, um nível acima do
+--   subtipo, e apontar para ele daria a granularidade errada sem erro nenhum.
+--
+--   `dominio.tipo_turno` (Manhã, Tarde, Integral) foi REMOVIDA por decisão do
+--   chefe em 2026-08-09. Ela tinha dois consumidores no SAP, e nenhum dos dois
+--   atravessa: `dgeo.usuario.tipo_turno_id`, e usuário aqui é o do SCA (que
+--   nunca teve turno), e o code 3 de `tipo_restricao`, que sai junto. Leia o
+--   comentário daquela tabela, que é onde está a medição.
+-- ---------------------------------------------------------------------------
+
+-- Fase agrupa subfases, e corresponde às fases do RTM e às do metadado do
+-- BDGEx. A `cor` (R,G,B em texto) não é enfeite: as funções do schema
+-- `acompanhamento` a injetam no estilo das views que o QGIS abre, e por isso
+-- ela viaja no domínio e não no client.
+CREATE TABLE dominio.tipo_fase(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL,
+  cor VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_fase (code, nome, cor) VALUES
+(1, 'Extração', '252,141,89'),
+(2, 'Reambulação', '254,224,139'),
+(3, 'Validação', '255,255,191'),
+(4, 'Edição', '217,239,139'),
+(5, 'Disseminação', '145,207,96'),
+(6, 'Vetorização', '222,119,174'),
+(7, 'Avaliação', '175,141,195'),
+(8, 'Generalização', '224,243,248'),
+(9, 'Fototriangulação', '44,127,184'),
+(10, 'Restituição', '186,186,186'),
+(11, 'Processamento Digital de Imagens', '215,48,39'),
+(12, 'Medição de pontos de controle', '0,0,0'),
+(13, 'Geração de ortoimagem', '128,205,193'),
+(14, 'Geração de MDE', '191,129,45'),
+(15, 'Levantamento topográfico', '37,52,148'),
+(16, 'Preparo', '175,141,195');
+
+-- O que uma subfase exige da subfase anterior para liberar a distribuição.
+CREATE TABLE dominio.tipo_pre_requisito(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_pre_requisito (code, nome) VALUES
+(1, 'Região concluída'),
+(2, 'Região não estar em execução');
+
+-- O papel da etapa dentro da subfase. É o que distingue quem produz de quem
+-- confere, e é sobre ele que a restrição de operador é escrita.
+CREATE TABLE dominio.tipo_etapa(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_etapa (code, nome) VALUES
+(1, 'Execução'),
+(2, 'Revisão'),
+(3, 'Correção'),
+(4, 'Revisão/Correção'),
+(5, 'Revisão final');
+
+-- Quanto da linhagem o operador vê. Quem revisa precisa saber quem executou;
+-- quem executa nem sempre precisa saber quem revisou.
+CREATE TABLE dominio.tipo_exibicao(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_exibicao (code, nome) VALUES
+(1, 'Não exibir usuários na linhagem'),
+(2, 'Exibir usuários na linhagem somente para revisores'),
+(3, 'Sempre exibir usuários na linhagem');
+
+-- Restrição entre duas etapas da MESMA unidade de trabalho: quem fez uma não
+-- pode (ou tem de) fazer a outra. É o que impede o operador de revisar o
+-- próprio trabalho.
+--
+-- SÃO DOIS CÓDIGOS, E NÃO TRÊS. O code 3 era 'Operadores no mesmo turno' e não
+-- atravessou: ele dependia de `dominio.tipo_turno`, removida por decisão do
+-- chefe em 2026-08-09. A ausência foi MEDIDA antes de decidir, no dump de
+-- produção do SAP em 2026-08-09: `restricao_etapa` tem 98 linhas, 49 do tipo 1
+-- e 49 do tipo 2, e ZERO do tipo 3. Ressuscitá-lo é decisão, e decisão se
+-- registra em docs/decisoes.md.
+CREATE TABLE dominio.tipo_restricao(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_restricao (code, nome) VALUES
+(1, 'Operadores distintos'),
+(2, 'Operadores iguais');
+
+-- COMO o insumo chega ao operador. Não é o que o insumo É: é o caminho que o
+-- QGIS percorre para abri-lo, e por isso 'cópia via rede' e 'aberto via rede'
+-- são dois códigos para o mesmo arquivo.
+CREATE TABLE dominio.tipo_insumo(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_insumo (code, nome) VALUES
+(1, 'Arquivo (cópia via rede)'),
+(2, 'Arquivo (aberto via rede)'),
+(3, 'Banco de dados PostGIS'),
+(4, 'Insumo físico'),
+(5, 'URL'),
+(6, 'Serviço WMS'),
+(7, 'Serviço WFS'),
+(8, 'XYZ Tiles'),
+(9, 'Download via HTTP'),
+(10, 'ArcGis MapServer');
+
+-- Quanto o sistema manda no dado que a subfase produz. O code 2 é o único em
+-- que ele concede e revoga permissão no banco de produção a cada distribuição.
+CREATE TABLE dominio.tipo_dado_producao(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_dado_producao (code, nome) VALUES
+(1, 'Dado não controlado pelo SAP'),
+(2, 'Banco de dados PostGIS com controle de permissões'),
+(3, 'Banco de dados PostGIS');
+
+-- O ESTADO DE UMA ATIVIDADE, e o coração da distribuição. Chamava-se
+-- `dominio.tipo_situacao` no SAP.
+--
+-- 'Não finalizada' (5) NÃO é 'Pausada' (3), e confundi-las mente na estatística
+-- de produção: pausada é a que volta para a mesma mão, e não finalizada é a que
+-- foi interrompida por fora e não volta. É o que o SAP grava quando o gerente
+-- interrompe a atividade em execução e quando unidades de trabalho são fundidas
+-- ou redivididas por baixo dela (conferido no código do SAP 2.3.5 em
+-- 2026-08-09).
+CREATE TABLE dominio.tipo_situacao_atividade(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_situacao_atividade (code, nome) VALUES
+(1, 'Não iniciada'),
+(2, 'Em execução'),
+(3, 'Pausada'),
+(4, 'Finalizada'),
+(5, 'Não finalizada');
+
+-- Ferramenta de aquisição do DSGTools que o perfil de configuração liga.
+CREATE TABLE dominio.tipo_configuracao(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_configuracao (code, nome) VALUES
+(1, 'DSGTools - Centroide'),
+(2, 'DSGTools - Mão livre'),
+(3, 'DSGTools - Seletor Genérico'),
+(4, 'DSGTools - Ângulo Reto');
+
+-- Como a fila prioritária escolhe entre as unidades de trabalho disponíveis
+-- para um operador, dada a dificuldade delas.
+CREATE TABLE dominio.tipo_perfil_dificuldade(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_perfil_dificuldade (code, nome) VALUES
+(1, 'Distribuir atividades mais fáceis'),
+(2, 'Distribuir atividades mais difíceis'),
+(3, 'Distribuir de forma balanceada');
+
+-- Quanto controle de qualidade a rotina de criação de fluxo põe nas subfases.
+-- NÃO é coluna de tabela nenhuma: é argumento da criação em massa, e por isso
+-- não tem chave estrangeira apontando para cá.
+CREATE TABLE dominio.tipo_controle_qualidade(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_controle_qualidade (code, nome) VALUES
+(1, 'Sem controle de qualidade nas subfases'),
+(2, 'Uma Revisão/Correção em todas as subfases'),
+(3, 'Uma Revisão em todas as subfases');
+
+-- Em que pedaço o produto vira unidade de trabalho. Também é argumento de
+-- rotina de criação em massa, e não coluna.
+CREATE TABLE dominio.tipo_criacao_unidade_trabalho(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_criacao_unidade_trabalho (code, nome) VALUES
+(1, 'Produto'),
+(2, '1/4 de produto'),
+(3, '1/9 de produto'),
+(4, 'Bloco'),
+(5, '1/4 de bloco'),
+(6, '1/9 de bloco');
+
+-- O QUE O OPERADOR RECLAMOU. Chamava-se `dominio.tipo_problema` no SAP.
+--
+-- O 99 É 'Outros', e não 8: a lacuna deixa o catálogo crescer pelo fim sem que
+-- 'Outros' deixe de ser o último da lista e sem renumerar linha já gravada.
+CREATE TABLE dominio.tipo_problema_atividade(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_problema_atividade (code, nome) VALUES
+(1, 'Insumo não é suficiente para execução da atividade'),
+(2, 'Problema em etapa anterior, necessita ser refeita'),
+(3, 'Erro durante execução da atividade atual'),
+(4, 'Problema em unidade de trabalho vizinha'),
+(5, 'Grande quantidade de objetos na unidade de trabalho, necessita ser dividida'),
+(6, 'Problema nas rotinas'),
+(7, 'Finalizei a atividade incorretamente'),
+(99, 'Outros');
+
+-- A regra espacial que casa um insumo com as unidades de trabalho. Argumento
+-- da rotina de associação, e não coluna.
+CREATE TABLE dominio.tipo_estrategia_associacao(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_estrategia_associacao (code, nome) VALUES
+(1, 'Centroide da unidade de trabalho contido no insumo'),
+(2, 'Centroide do insumo contido na unidade de trabalho'),
+(3, 'Interseção entre insumo e unidade de trabalho'),
+(4, 'Sobreposição entre insumo e unidade de trabalho'),
+(5, 'Associar insumo a todas as unidades de trabalho');
+
+-- Para que serve a rotina que o perfil de requisito de finalização exige. A
+-- diferença entre 1 e 2 é se o operador pode marcar apontamento como falso
+-- positivo e finalizar assim mesmo.
+CREATE TABLE dominio.tipo_rotina(
+  code SMALLINT NOT NULL PRIMARY KEY,
+  nome VARCHAR(255) NOT NULL
+);
+
+INSERT INTO dominio.tipo_rotina (code, nome) VALUES
+(1, 'Controle de qualidade sem falso positivo'),
+(2, 'Controle de qualidade com falso positivo'),
+(3, 'Auxiliar');
 
 COMMIT;

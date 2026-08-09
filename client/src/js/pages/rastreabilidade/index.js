@@ -112,6 +112,9 @@ const DESTINO = {
   // da ficha, e é por isso que o link acima leva direto a ela.
   'equipamento:tipo_equipamento': { tipo: 'lista', href: () => '#/equipamento/configuracao' },
   'plataforma:usuario': { tipo: 'lista', href: () => '#/usuarios' },
+  // A INSTITUICAO E UMA LINHA SO, entao nao ha ficha a abrir: o destino e a
+  // propria tela, que ja mostra aquela linha. O `id` e sempre 1, por CHECK.
+  'plataforma:instituicao': { tipo: 'lista', href: () => '#/instituicao' },
   'plataforma:capacitacao': { tipo: 'lista', href: (id, evento) => telaDaCapacitacao(evento) },
   'plataforma:meta': { tipo: 'lista', href: () => '#/metas' },
   'plataforma:exercicio': { tipo: 'lista', href: () => '#/metas' },

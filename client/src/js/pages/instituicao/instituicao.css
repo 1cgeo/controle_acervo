@@ -1,0 +1,45 @@
+/* A tela da instituicao (#/instituicao). Formulario curto, do administrador. */
+
+.instituicao {
+  max-width: 640px;
+}
+
+.instituicao__cabecalho {
+  margin-bottom: var(--space-lg);
+}
+
+.instituicao__subtitulo {
+  color: var(--color-text-secondary);
+  margin: var(--space-xs) 0 0;
+}
+
+.instituicao__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* O AVISO DA AREA DE SUPRIMENTO. Ele nao e erro nem sucesso: e uma consequencia
+   que quem edita precisa saber ANTES de salvar, e por isso usa o tom de aviso e
+   nao o de perigo. Ver o comentario no index.js. */
+.instituicao__aviso {
+  border-left: 3px solid var(--color-warning);
+  background: var(--color-warning-bg, var(--color-surface-2));
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+}
+
+.instituicao__aviso p {
+  margin: var(--space-xs) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.instituicao__acoes {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.instituicao__carregando {
+  color: var(--color-text-secondary);
+}

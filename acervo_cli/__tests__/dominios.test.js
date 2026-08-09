@@ -44,13 +44,21 @@ test('valor desconhecido explica em vez de so recusar', () => {
 })
 
 test('dominio de subconjunto avisa que a tabela viva esta no servidor', () => {
-  // tipo_produto e subtipo_produto so existem parcialmente no domain_constants
-  // (o proprio arquivo diz "subconjuntos usados em queries"); esconder isso
-  // faria o CLI mentir sobre o que sabe.
+  // `tipo_produto` tem 5 dos 13 codigos no domain_constants; esconder isso faria
+  // o CLI mentir sobre o que sabe. O aviso manda ler a tabela viva.
   assert.throws(
-    () => dominios.resolver('subtipo_produto', 'carta-aeronautica'),
-    /SUBCONJUNTO|acervo dominio subtipo_produto/
+    () => dominios.resolver('tipo_produto', 'levantamento-topografico'),
+    /SUBCONJUNTO|acervo dominio tipo_produto/
   )
+})
+
+test('subtipo_produto deixou de ser subconjunto, e resolve offline', () => {
+  // ELE ERA PARCIAL ATE 2026-08-09, com 5 dos 30 codigos, e o caso acima usava
+  // ele. Passou a ter os 30 quando o core de producao precisou deles, e o
+  // `completa: true` acompanhou. Este caso existe para a volta ser barulhenta:
+  // se alguem podar o grupo de constantes, ele fica vermelho aqui, e nao num
+  // comando que silenciosamente manda o agente ao servidor.
+  assert.strictEqual(dominios.resolver('subtipo_produto', 'carta-aeronautica'), 29)
 })
 
 test('campoDe diz em que chave do corpo o dominio entra', () => {

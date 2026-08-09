@@ -10,6 +10,10 @@
 //   - `modulos`: o catalogo dominio.modulo, para o seletor exibir o NOME de cada
 //     modulo em vez de decorar codigo (GET /usuarios/dominio/modulo e admin-only,
 //     entao quem so tem consulta nao consegue le-lo)
+//   - `instituicao`: o nome e a sigla de quem opera esta instalacao, para o
+//     client DESENHAR com eles (2026-08-09). Ate essa data o "1º CGEO" estava
+//     escrito em quatro lugares do client, e outro Centro veria o nosso nome
+//     depois de configurar o proprio.
 // Nada disso vai para dentro do JWT de proposito: quem decide o que a pessoa
 // pode e o verifyPerfil, lendo o banco a cada requisicao.
 
@@ -56,6 +60,8 @@ const MODULOS = [
   { code: 3, nome: 'Controle Orçamentário', nome_abrev: 'orcamento' }
 ]
 
+const INSTITUICAO = { nome: '1º Centro de Geoinformação', sigla: '1º CGEO' }
+
 const usuario = (extra = {}) => ({
   id: 7,
   uuid: 'uuid-7',
@@ -63,6 +69,17 @@ const usuario = (extra = {}) => ({
   senha: HASH,
   ...extra
 })
+
+// O `oneOrNone` atende DOIS pedidos na mesma transacao: o usuario e a
+// instituicao. Roteia pelo SQL, e nao pela ordem das chamadas, porque ordem se
+// quebra em silencio quando alguem insere uma consulta no meio.
+let usuarioAtual
+let instituicaoAtual
+
+const roteiaOneOrNone = sql =>
+  Promise.resolve(
+    /dgeo\.instituicao/.test(String(sql)) ? instituicaoAtual : usuarioAtual
+  )
 
 beforeAll(async () => {
   // Custo 4, e nao o 10 de producao: aqui o que se prova e que o caminho passa
@@ -75,7 +92,9 @@ beforeEach(() => {
   jest.clearAllMocks()
   mockDb.conn.tx.mockImplementation(fn => fn(mockT))
   mockDb.conn.task.mockImplementation(fn => fn(mockT))
-  mockT.oneOrNone.mockResolvedValue(usuario())
+  usuarioAtual = usuario()
+  instituicaoAtual = INSTITUICAO
+  mockT.oneOrNone.mockImplementation(roteiaOneOrNone)
   mockT.none.mockResolvedValue(undefined)
   // 1a chamada: perfis do usuario. 2a chamada: catalogo de modulos.
   mockT.any
@@ -114,8 +133,66 @@ describe('login_ctrl.login', () => {
     expect(decoded.modulos).toBeUndefined()
   })
 
+  // ---------------------------------------------------------------------------
+  // A INSTITUICAO, que o client usa para DESENHAR (2026-08-09)
+  // ---------------------------------------------------------------------------
+
+  test('devolve a instituicao desta instalacao, com nome e sigla', async () => {
+    const dados = await ctrl.login('fulano', SENHA_CERTA, 'sca_web')
+
+    expect(dados.instituicao).toEqual(INSTITUICAO)
+    expect(mockT.oneOrNone).toHaveBeenCalledWith(
+      expect.stringContaining('dgeo.instituicao')
+    )
+  })
+
+  // A prova que interessa: com o nome escrito no codigo do client, este teste
+  // passaria e a tela continuaria errada. Aqui e o CONTRATO que se guarda -- o
+  // que o banco tem e o que o client recebe.
+  test('OUTRA instalacao devolve o nome DELA', async () => {
+    instituicaoAtual = { nome: '4º Centro de Geoinformação', sigla: '4º CGEO' }
+
+    const dados = await ctrl.login('fulano', SENHA_CERTA, 'sca_web')
+
+    expect(dados.instituicao).toEqual({
+      nome: '4º Centro de Geoinformação',
+      sigla: '4º CGEO'
+    })
+  })
+
+  // A linha e semeada pelo `er/dgeo.sql` e pela migracao, mas um banco sem ela
+  // nao pode trancar ninguem do lado de fora por causa de um rotulo. Quem cobra
+  // a ausencia e o GET /api/instituicao, com a mensagem que diz o que aplicar.
+  test('banco sem a linha da instituicao NAO impede o login', async () => {
+    instituicaoAtual = null
+
+    const dados = await ctrl.login('fulano', SENHA_CERTA, 'sca_web')
+
+    expect(dados.token).toBeTruthy()
+    expect(dados.instituicao).toBeNull()
+  })
+
+  // Ela e dado de INSTALACAO, e nao credencial: cabe na resposta e nao dentro
+  // do token, que e o mesmo tratamento de `perfis` e `modulos`.
+  test('a instituicao tambem fica FORA do token', async () => {
+    const dados = await ctrl.login('fulano', SENHA_CERTA, 'sca_web')
+    const decoded = jwt.verify(dados.token, JWT_SECRET)
+
+    expect(decoded.instituicao).toBeUndefined()
+  })
+
+  // A senha NUNCA volta por rota, e a consulta da instituicao nao muda isso: o
+  // hash e lido para conferir, e nada do usuario alem de uuid e administrador
+  // sai daqui.
+  test('a resposta do login nao carrega senha nenhuma', async () => {
+    const dados = await ctrl.login('fulano', SENHA_CERTA, 'sca_web')
+
+    expect(dados.senha).toBeUndefined()
+    expect(JSON.stringify(dados)).not.toContain(HASH)
+  })
+
   test('administrador global vem no corpo, mesmo sem perfil nenhum', async () => {
-    mockT.oneOrNone.mockResolvedValue(usuario({ administrador: true }))
+    usuarioAtual = usuario({ administrador: true })
     mockT.any.mockReset()
     mockT.any
       .mockResolvedValueOnce([])
@@ -139,7 +216,7 @@ describe('login_ctrl.login', () => {
   })
 
   test('usuario inexistente ou inativo nao chega a conferir senha', async () => {
-    mockT.oneOrNone.mockResolvedValue(null)
+    usuarioAtual = null
 
     await expect(ctrl.login('ninguem', SENHA_CERTA, 'sca_web')).rejects.toThrow(
       'Usuário não autorizado'
@@ -152,7 +229,7 @@ describe('login_ctrl.login', () => {
   // tentar para sempre a senha certa. Por isso a mensagem e OUTRA, e o teste
   // guarda a diferenca: as duas passariam num `rejects.toThrow()` sem texto.
   test('senha nula tem mensagem propria, diferente de senha invalida', async () => {
-    mockT.oneOrNone.mockResolvedValue(usuario({ senha: null }))
+    usuarioAtual = usuario({ senha: null })
 
     await expect(ctrl.login('fulano', SENHA_CERTA, 'sca_web')).rejects.toThrow(
       'Usuário sem senha cadastrada no sistema'
@@ -176,6 +253,47 @@ describe('login_ctrl.login', () => {
     await expect(ctrl.login('fulano', 'errada', 'sca_web')).rejects.toThrow()
 
     expect(mockT.none).not.toHaveBeenCalled()
+  })
+})
+
+// A rota de sessao devolve a MESMA foto do login, sem trocar o token: e o que
+// o client reconfere no boot e a cada 403. A instituicao entrou nela junto,
+// senao quem corrigisse o nome do Centro so o veria na sessao seguinte.
+describe('login_ctrl.sessao', () => {
+  beforeEach(() => {
+    // Fila propria e explicita: os testes de login que rejeitam antes de chamar
+    // `any` deixam pares enfileirados, e aqui o que se le tem de ser deste teste.
+    mockT.any.mockReset()
+    mockT.any
+      .mockResolvedValueOnce([{ modulo: 'acervo', perfil_id: 1 }])
+      .mockResolvedValueOnce(MODULOS)
+  })
+
+  test('devolve a mesma foto do login, com a instituicao junto', async () => {
+    const dados = await ctrl.sessao('uuid-7')
+
+    expect(dados.perfis).toEqual({ acervo: 1 })
+    expect(dados.modulos).toEqual(MODULOS)
+    expect(dados.instituicao).toEqual(INSTITUICAO)
+    // Nao devolve token: a sessao continua sendo a mesma.
+    expect(dados.token).toBeUndefined()
+  })
+
+  test('OUTRA instalacao devolve o nome DELA tambem na sessao', async () => {
+    instituicaoAtual = { nome: '4º Centro de Geoinformação', sigla: '4º CGEO' }
+
+    const dados = await ctrl.sessao('uuid-7')
+
+    expect(dados.instituicao.sigla).toBe('4º CGEO')
+  })
+
+  test('banco sem a linha da instituicao nao derruba a sessao', async () => {
+    instituicaoAtual = null
+
+    const dados = await ctrl.sessao('uuid-7')
+
+    expect(dados.instituicao).toBeNull()
+    expect(dados.perfis).toEqual({ acervo: 1 })
   })
 })
 

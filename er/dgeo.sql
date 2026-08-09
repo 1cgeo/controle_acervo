@@ -168,4 +168,89 @@ COMMENT ON TABLE dgeo.impedimento IS
 CREATE INDEX idx_impedimento_usuario ON dgeo.impedimento (usuario_uuid);
 CREATE INDEX idx_impedimento_inicio ON dgeo.impedimento (data_inicio);
 
+-- ---------------------------------------------------------------------------
+-- A INSTITUIÇÃO que opera esta instalação
+-- ---------------------------------------------------------------------------
+--
+-- POR QUE ELA EXISTE. O "1º CGEO" estava escrito em texto de tela, em semente de
+-- domínio e, o pior, numa COLUNA (`limites.area_suprimento.e_1cgeo`). Enquanto
+-- for assim, outro Centro não instala este sistema sem editar código, e "de quem
+-- é esta instalação" fica sendo uma constante espalhada em vez de um dado.
+--
+-- POR QUE EM `dgeo`, E NÃO EM OUTRO SCHEMA. Aqui mora a camada de IDENTIDADE da
+-- instalação: quem entra, quem tem perfil em que módulo, quem acessou e quando.
+-- "De quem é esta instalação" é a mesma pergunta, um degrau acima da pessoa.
+--
+--   NÃO em `dominio`, que é tabela de CÓDIGO: lá o que existe é catálogo lido
+--   por chave estrangeira, com `code` estável e semeado pelo `er/`. Esta linha é
+--   dado que a tela EDITA, e ninguém a referencia por código.
+--
+--   NÃO em `metadado`, apesar de aquele schema ter os cinco Centros em
+--   `metadado.organizacao`: ele instala DEPOIS de `dgeo` (ver a ordem em
+--   `create_config.js`) e é do core de produção herdado do SAP 2.3.5. A
+--   instituição precisa existir antes, e não pode depender de um schema que
+--   chega no fim.
+--
+--   NÃO em `public`, que neste banco guarda o que é do PostgreSQL e do QGIS
+--   (`versao`, `layer_styles`) e não dado da Divisão.
+--
+-- SEM CHAVE ESTRANGEIRA PARA `metadado.organizacao`, pela mesma razão de ordem:
+-- a FK inverteria a instalação, e `er/dgeo.sql` passaria a exigir um arquivo que
+-- roda nove posições depois dele.
+--
+-- POR QUE A LINHA É ÚNICA, E QUEM GARANTE. Uma instalação serve UM Centro: o
+-- banco é dele, o acervo é dele, o RPCMTec é o dele, e o `cgeo` da área de
+-- suprimento se compara com o `nome` DESTA linha. Uma segunda linha não seria
+-- "outro Centro atendido": seria uma segunda resposta para a pergunta de quem é
+-- a instalação, e todo leitor teria de escolher uma sem ter critério.
+--
+-- Quem garante é o CHECK, e não a aplicação: `id` tem DEFAULT 1 e `CHECK
+-- (id = 1)`, então a segunda linha bate na chave primária quando o `id` é
+-- omitido (o default repete o 1) e bate no CHECK quando alguém informa outro
+-- valor. Fechar isso no código deixaria a garantia a um `INSERT` de distância de
+-- ser furada, e este é um dado que se conserta por `psql` em servidor.
+--
+-- POR ISSO NÃO HÁ ROTA DE CRIAÇÃO NEM DE EXCLUSÃO: a linha nasce com a
+-- instalação (semeada aqui, e perguntada por `create_config.js`) e só se ALTERA,
+-- por `PUT /api/instituicao`, do administrador.
+CREATE TABLE dgeo.instituicao(
+  id SMALLINT NOT NULL PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  -- O nome por extenso, como ele aparece no relatório e no metadado.
+  nome VARCHAR(255) NOT NULL,
+  -- A sigla, como ela aparece em cabeçalho e em nome de arquivo.
+  sigla VARCHAR(50) NOT NULL,
+  -- A Unidade Gestora desta OM, para o orçamento.
+  --
+  -- ANULÁVEL: nem toda instalação usa o módulo orçamento, e exigir a UG de quem
+  -- nunca vai lançar nota de crédito obrigaria a inventar um número.
+  --
+  -- VARCHAR(10), E NÃO INTEIRO, porque `dominio.ug.code` é VARCHAR(10): é o
+  -- mesmo tipo de `orcamento.nota_credito.ug_emitente` e de
+  -- `orcamento.nota_empenho.ug_emitente`, que já apontam para lá. Um INTEIRO
+  -- aqui nem chegaria a existir -- o PostgreSQL recusa a chave estrangeira entre
+  -- tipos incompatíveis, e a instalação nova morreria neste arquivo.
+  ug_code VARCHAR(10) REFERENCES dominio.ug (code),
+  -- SEM `data_cadastramento` e SEM `usuario_cadastramento_uuid`, ao contrário do
+  -- resto do sistema: a linha não é cadastrada por ninguém, ela nasce com o
+  -- banco. Na instalação nova quem a escreve é este arquivo, antes de existir o
+  -- primeiro usuário; num banco atualizado quem a escreve é a migração, que não
+  -- tem autor. Colunas obrigatórias sem valor honesto viram zero ou um UUID
+  -- inventado, e é isso que se evita.
+  data_modificacao TIMESTAMP WITH TIME ZONE,
+  usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
+);
+
+COMMENT ON TABLE dgeo.instituicao IS
+    'A instituição que opera esta instalação: nome, sigla e Unidade Gestora. LINHA ÚNICA, garantida pelo CHECK (id = 1); uma instalação serve UM Centro.';
+
+-- A SEMENTE É O 1º CGEO, e é PADRÃO e não verdade: `create_config.js` pergunta
+-- os três valores na instalação nova (`--om-nome`, `--om-sigla`, `--om-ug`) e
+-- atualiza esta linha quando a resposta for outra. A UG 160382 já existe em
+-- `dominio.ug`, semeada por `er/dominio.sql`, que roda antes deste arquivo.
+--
+-- O NOME POR EXTENSO É COMPARADO COM `limites.area_suprimento.cgeo`, e por isso
+-- ele se escreve exatamente como a fonte externa o escreve, com o 'º' ordinal.
+INSERT INTO dgeo.instituicao (id, nome, sigla, ug_code) VALUES
+(1, '1º Centro de Geoinformação', '1º CGEO', '160382');
+
 COMMIT;

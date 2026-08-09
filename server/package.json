@@ -1,7 +1,7 @@
 {
   "name": "controle-acervo-server",
   "version": "1.0.0",
-  "description": "API REST do Sistema de Controle do Acervo",
+  "description": "API REST do Sistema de Apoio à Produção (SAP)",
   "main": "src/index.js",
   "scripts": {
     "dev": "nodemon src/index.js",

@@ -24,6 +24,20 @@ jest.mock('../../database', () => ({
 // O gerador inteiro fica de fora: aqui se testa o que a MONTAGEM faz com o que
 // ele devolve, e o `calcular` de verdade cruza vinte consultas (a vigésima é a
 // 7.1, calculada desde 2026-08-08).
+// A INSTITUICAO NAO E O ASSUNTO DESTE ARQUIVO, e `montar` a le desde 2026-08-09
+// para o nome do Centro entrar na 1.1, na capa e no rodape. Vai dublada para
+// nao virar uma consulta a mais em cada encenacao, e o valor e a SEMENTE de
+// `er/dgeo.sql` -- e nao uma constante do sistema. Que o documento ACOMPANHA
+// outra instituicao e o que `routes/rpcmtec.test.js` prova, contra o banco.
+jest.mock('../../instituicao/instituicao_ctrl', () => ({
+  paraDocumento: jest.fn(async () => ({
+    id: 1,
+    nome: '1º Centro de Geoinformação',
+    sigla: '1º CGEO',
+    sigla_slug: '1CGEO'
+  }))
+}))
+
 jest.mock('../../rpcmtec/rpcmtec_ctrl', () => ({ calcular: jest.fn() }))
 
 const rpcmtecCtrl = require('../../rpcmtec/rpcmtec_ctrl')

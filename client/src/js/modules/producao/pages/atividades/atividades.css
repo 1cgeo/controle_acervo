@@ -1,0 +1,21 @@
+/*
+ * Atividades da produção (#/producao/atividades).
+ *
+ * BEM e tokens de `design-tokens.css`. A tabela em si é o `data-table` da casa:
+ * aqui só mora a linha de resumo que fica acima dela.
+ */
+
+.producao-atividades__resumo {
+  margin: 0 0 var(--space-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/*
+ * A linha vazia não deixa a tabela pular. Sem isto, o texto do resumo aparece
+ * depois da carga e empurra a tabela alguns pixels para baixo, justamente
+ * enquanto a pessoa move o ponteiro para a primeira linha.
+ */
+.producao-atividades__resumo:empty::before {
+  content: '\00a0';
+}

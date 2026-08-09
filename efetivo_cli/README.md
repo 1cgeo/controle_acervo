@@ -1,6 +1,6 @@
 # efetivo_cli
 
-Interface de linha de comando de **identidade** e de **efetivo** do SCA, desenhada para **agentes**. Duas perguntas e o mesmo dono do dado (a pessoa); a guarda deixou de ser a mesma na 1.33.0, e a seção **Acesso** a detalha:
+Interface de linha de comando de **identidade** e de **efetivo** do SAP, desenhada para **agentes**. Duas perguntas e o mesmo dono do dado (a pessoa); a guarda deixou de ser a mesma na 1.33.0, e a seção **Acesso** a detalha:
 
 | Pergunta | O que responde |
 |---|---|
@@ -15,7 +15,7 @@ node efetivo_cli/efetivo.js --ajuda
 
 ## Por que existe
 
-A autenticação é do próprio SCA: o hash mora em `dgeo.usuario.senha`, o login é local, e não há serviço externo. O efetivo se amarra ao mesmo `dgeo.usuario`, e por isso mora aqui, e não num CLI à parte: quem esteve na Divisão é dado de **pessoal**, nominal, e guardado inclusive na leitura. O que guarda deixou de ser o `verifyAdmin` do histórico de acesso: desde a 1.33.0 é o módulo **Efetivo** (code 5), com a régua da seção **Acesso**.
+A autenticação é do próprio SAP: o hash mora em `dgeo.usuario.senha`, o login é local, e não há serviço externo. O efetivo se amarra ao mesmo `dgeo.usuario`, e por isso mora aqui, e não num CLI à parte: quem esteve na Divisão é dado de **pessoal**, nominal, e guardado inclusive na leitura. O que guarda deixou de ser o `verifyAdmin` do histórico de acesso: desde a 1.33.0 é o módulo **Efetivo** (code 5), com a régua da seção **Acesso**.
 
 ## Os cinco princípios
 
@@ -31,7 +31,7 @@ A autenticação é do próprio SCA: o hash mora em `dgeo.usuario.senha`, o logi
 
 ## O guardrail: uuid não diz nada, nome diz
 
-Este é o CLI de **maior raio de explosão** do SCA: o que se faz aqui vale em todos os módulos de uma vez (são seis em `dominio.modulo`: acervo, mapoteca, orçamento, PIT, efetivo e equipamento), e o servidor lê o banco a cada requisição (`verifyPerfil`), então desativar alguém tem efeito no mesmo segundo.
+Este é o CLI de **maior raio de explosão** do SAP: o que se faz aqui vale em todos os módulos de uma vez (são sete em `dominio.modulo`: acervo, mapoteca, orçamento, PIT, efetivo, equipamento e produção), e o servidor lê o banco a cada requisição (`verifyPerfil`), então desativar alguém tem efeito no mesmo segundo.
 
 Por isso toda operação em **lote** (e a irreversível) resolve os `uuid` para **nome** antes de pedir confirmação:
 
@@ -105,7 +105,7 @@ efetivo impedimentos editar --id 30 --data '{"descricao":"...","percentual":50,
 efetivo impedimentos excluir --id 30 --confirmar 30
 
 # sessão
-efetivo status     # o SCA está no ar? há token em cache? sou administrador?
+efetivo status     # o SAP está no ar? há token em cache? sou administrador?
 efetivo login      # autentica uma vez, guarda o token (~1h)
 efetivo logout
 ```
@@ -121,7 +121,7 @@ Nunca ponha senha na linha de comando.
 | `SCA_SENHA` | senha (preferir a variável ao `--senha`) |
 | `SCA_TOKEN` | JWT pronto, dispensa o login |
 
-O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar a instância local com a de produção. O diretório é o do SCA, e não o deste CLI, de propósito: **um login serve todos os CLIs irmãos**. Por isso o `efetivo logout` diz que derruba a sessão deles junto. `--sem-cache` desliga.
+O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar a instância local com a de produção. O diretório é o do SAP, e não o deste CLI, de propósito: **um login serve todos os CLIs irmãos**. Por isso o `efetivo logout` diz que derruba a sessão deles junto. `--sem-cache` desliga.
 
 ## Acesso
 
@@ -156,7 +156,7 @@ Repare que `usuario_uuid` **não** entra no corpo: o `meuPeriodo` e o `meuImpedi
 
 As exceções, que bastam login (`verifyLogin`, a própria conta): `efetivo usuario meu-perfil`, `efetivo usuario trocar-senha` e o domínio `tipo_posto_grad`. **Login não é acesso**: quem não tem perfil em módulo nenhum alcança só essas três, e é isso que `verifyAcesso` separa de `verifyLogin`.
 
-**Não há comando de aplicação.** Não existe catálogo de aplicação no SCA: a lista de clientes é fechada (`sca_web`, `sca_qgis`) e vive no Joi do login. Um CRUD de catálogo de duas linhas seria administração inventada, e o teste `schema.test.js` reprova o dia em que alguém acrescentar o recurso.
+**Não há comando de aplicação.** Não existe catálogo de aplicação no SAP: a lista de clientes é fechada (`sap_web`, `sap_fp`, `sap_fg`, mais `sca_web` e `sca_qgis`, ainda aceitos enquanto houver cliente antigo no ar) e vive no Joi do login. Um CRUD de catálogo desse tamanho seria administração inventada, e o teste `schema.test.js` reprova o dia em que alguém acrescentar o recurso.
 
 ## O que o CLI protege
 
@@ -165,7 +165,7 @@ As exceções, que bastam login (`verifyLogin`, a própria conta): `efetivo usua
 - **Segredo nunca sai na saída**: `senha`, `senha_atual`, `senha_nova` e `token` viram `***` no formatador, inclusive no eco do `--dry-run`. A saída de um CLI de agente vai para transcrição e log. `senha_definida` continua visível, porque é um booleano derivado e é justamente a resposta que se procura.
 - **A recusa do servidor chega inteira**: `DELETE /usuarios/:uuid` quase sempre volta 400 dizendo para **desativar** em vez de excluir (a FK protege quem já trabalhou no sistema), e há a trava do último administrador ativo. As duas frases dizem o que fazer; trocar qualquer uma por "não foi possível excluir" seria substituir a instrução pelo código de status. O CLI mostra a mensagem literal e ainda oferece o comando de desativar.
 - **`administrador` e `ativo` reenviados intactos** no verbo `perfis`: são obrigatórios no `PUT`, e chutá-los mudaria o acesso da pessoa sem ninguém pedir. Se a listagem não responder, o comando **recusa agir** em vez de adivinhar.
-- **429**: o SCA limita 200 requisições por minuto. O CLI traduz numa mensagem que manda retomar do ponto de parada.
+- **429**: o SAP limita 200 requisições por minuto. O CLI traduz numa mensagem que manda retomar do ponto de parada.
 
 ## Divergências entre o contrato do servidor e o que o CLI precisaria
 

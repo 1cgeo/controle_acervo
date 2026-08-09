@@ -6,6 +6,13 @@ module.exports = {
   // verifyAdmin passa a valer so para o que e da plataforma (usuarios, views
   // materializadas, limpeza). O resto vai por verifyPerfil, com modulo.
   verifyLogin: require('./verify_login'),
+  // A MESMA pergunta do verifyLogin, mas aceitando o token na query string.
+  // EXCLUSIVA das rotas de TILE (MVT): o QGIS e o MapLibre pedem tile por uma
+  // URL que eles montam, sem cabecalho de autenticacao. Token em query string
+  // vaza para log de acesso, historico do navegador e Referer, entao ela nao se
+  // usa em mais nada -- e `__tests__/routes/login_tile_exclusivo.test.js` varre
+  // os `*_route.js` para provar isso.
+  verifyLoginTile: require('./verify_login_tile'),
   // Tem acesso ao sistema: administrador global ou qualquer perfil em qualquer
   // modulo. E o piso do que nao e de modulo nenhum (o PIT do ano), e o que
   // separa "esta logado" de "entrou no sistema".

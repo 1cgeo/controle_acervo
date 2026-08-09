@@ -797,7 +797,7 @@ async function renderAcessosTab(container) {
 
   container.appendChild(el('div', { className: 'dashboard-section' }, [
     el('div', { className: 'dashboard-section__header' }, [
-      el('h2', { className: 'dashboard-section__title', textContent: 'Acessos ao SCA' }),
+      el('h2', { className: 'dashboard-section__title', textContent: 'Acessos ao SAP' }),
       el('div', { className: 'dashboard-section__controls' }, seletor({
         rotulo: 'Período',
         aria: 'Selecionar período',

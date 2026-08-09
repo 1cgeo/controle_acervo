@@ -13,9 +13,10 @@
 //
 // O QUE ESTA VARREDURA NÃO É: uma proibição da PALAVRA. A aba META4_DETALHADA do
 // RTM tem quinze colunas fixas, e duas delas se chamam 'OMDS' e 'Qnt Fornecida'.
-// As duas continuam saindo -- a primeira como literal (a constante OMDS de
-// `relatorio_ctrl.js`, porque quem gera o relatório do 1º CGEO é o 1º CGEO), e a
-// segunda pelo fragmento QTD_EFETIVA. Por isso o que se proíbe é a REFERÊNCIA À
+// As duas continuam saindo -- a primeira como PARÂMETRO, com a sigla que
+// `dgeo.instituicao` diz ser a desta instalação (ver o bloco OMDS de
+// `relatorio_ctrl.js`; era literal até 2026-08-09), e a segunda pelo fragmento
+// QTD_EFETIVA. Por isso o que se proíbe é a REFERÊNCIA À
 // COLUNA (`p.omds`, `pp.quantidade_fornecida`, a chave do ColumnSet), e não o
 // nome.
 //

@@ -1,6 +1,7 @@
 import {
   apiGet, apiPost, apiPut, apiDelete, apiUpload, apiDownload,
 } from '@services/api-client.js';
+import { siglaInstituicao } from '@store/auth-store.js';
 
 /**
  * Servico do RPCMTec, o relatorio mensal da Divisao.
@@ -138,17 +139,36 @@ export const downloadAnexo = (anexoId, nome) =>
 // --- Anuario e RTM ----------------------------------------------------------
 
 /**
+ * A sigla desta instalacao reduzida ao que cabe em nome de arquivo, com o
+ * separador ja junto: '1º CGEO' vira '_1CGEO', e sem sigla nenhuma vira ''.
+ *
+ * O `º`, o espaco e o acento saem porque nome de arquivo atravessa anexo de
+ * e-mail, pasta compartilhada e a mao de quem digita: o que sobra e
+ * [A-Za-z0-9]. Sem sigla o nome fica sem o pedaco, e nao com um sublinhado solto
+ * (`Anuario_Estatistico__08_2026.ods`).
+ */
+function siglaEmNomeDeArquivo() {
+  const limpa = String(siglaInstituicao() || '').replace(/[^A-Za-z0-9]/g, '');
+  return limpa ? `_${limpa}` : '';
+}
+
+/**
  * Baixa o .ods do Anuario. O arquivo sai da planilha-semente da DSG com os
  * valores trocados, entao ele JA e o arquivo que sobe, sem reformatacao.
  *
- * O nome vem do servidor (Content-Disposition); o daqui e so a queda para o
- * caso de o cabecalho nao chegar.
+ * O NOME DE VERDADE VEM DO SERVIDOR, no `Content-Disposition`, e o `apiDownload`
+ * o honra. O daqui e QUEDA, para o caso de o cabecalho nao chegar, e ele NAO
+ * tenta reproduzir o de la (que leva tambem o nome do mes por extenso): duas
+ * montagens do mesmo nome divergem no primeiro dia em que uma muda, e foi por
+ * isso que o '1CGEO' escrito nas duas pontas virou um problema so quando a
+ * instituicao virou dado. A queda so precisa ser um nome sensato e sem
+ * ambiguidade entre meses.
  *
  * @param {{ano:number, mes:number}} params
  * @returns {Promise<void>}
  */
 export function downloadAnuarioOds({ ano, mes }) {
-  const nome = `Anuario_Estatistico_1CGEO_${String(mes).padStart(2, '0')}_${ano}.ods`;
+  const nome = `Anuario_Estatistico${siglaEmNomeDeArquivo()}_${String(mes).padStart(2, '0')}_${ano}.ods`;
   return apiDownload(`/rpcmtec/anuario/ods?ano=${ano}&mes=${mes}`, nome);
 }
 

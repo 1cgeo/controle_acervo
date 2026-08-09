@@ -49,7 +49,29 @@ const MODULOS = [
   // ELE E O PRIMEIRO A COBRIR `pit`, e por isso vale mais que os outros
   // tres. O CLAUDE.md avisa ha tempos que "em producao e em efetivo, ninguem
   // cobra por voce": esta linha e o comeco do fim daquele aviso.
-  { nome: 'campo', modulo: 'pit', piso: 16 }
+  { nome: 'campo', modulo: 'pit', piso: 16 },
+  // PRODUCAO entrou na 3.0.0, com o core que atravessou do `server/src/projeto/`
+  // do SAP 2.3.5. Sao 146 ROTAS e apenas 102 CHAMADAS de `verifyPerfil` no
+  // fonte, e a diferenca NAO e rota desprotegida: `producao/perfil_route.js`
+  // declara os doze grupos de perfil de configuracao por uma FABRICA
+  // (`crudDePerfil`), entao cinco chamadas literais cobrem 49 caminhos. Quem
+  // prova rota a rota naquele arquivo e
+  // `routes/producao/perfil.test.js`, que MONTA o router e varre o
+  // `router.stack`; aqui o que se guarda e que nenhuma chamada literal esqueceu
+  // o segundo argumento.
+  //
+  // O PISO E O NUMERO DE CHAMADAS, e nao o de rotas, porque e isto que a
+  // varredura conta. Subir e normal; cair quer dizer que uma guarda sumiu.
+  { nome: 'producao', piso: 102 },
+  // MICROCONTROLE entrou em 2026-08-09, no dia em que o schema atravessou, e a
+  // PASTA nao se chama como o MODULO: os arquivos estao em `src/microcontrole/`
+  // e a autorizacao cobra `producao`. Medir producao e assunto de quem responde
+  // pela producao, e um modulo proprio obrigaria a conceder perfil duas vezes
+  // para a mesma pessoa ver o que ela ja gerencia -- `dominio.modulo` continua
+  // com sete linhas. E o mesmo arranjo de `campo`, que cobra `pit`.
+  //
+  // SAO 11 ROTAS e 11 chamadas: aqui nao ha fabrica, cada uma esta escrita.
+  { nome: 'microcontrole', modulo: 'producao', piso: 11 }
 ]
 
 const arquivosDeRota = dir =>

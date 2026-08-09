@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Interface web unica do SCA: modulos acervo, mapoteca e orcamento",
+  "description": "Interface web unica do SAP: acervo, mapoteca, orcamento, equipamento, producao, PIT e efetivo",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

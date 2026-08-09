@@ -4,7 +4,7 @@
 // sag - CLI de LEITURA do SAG (Sistema de Apoio a Gestao), desenhado para AGENTES.
 //
 // O SAG e o espelho do SIAFI que a administracao do Exercito ja usa, e e onde o
-// chefe confere. Este CLI existe para que o modulo `orcamento` do SCA pare de
+// chefe confere. Este CLI existe para que o modulo `orcamento` do SAP pare de
 // ser alimentado a mao a partir de PDF: o dado nasce no SIAFI, e daqui sai
 // pronto para comparar e para lancar.
 //
@@ -15,7 +15,7 @@
 //   2. Saida compacta por padrao. --json existe para encadear, nao e o default.
 //   3. So leitura. O SAG e alimentado pelo SIAFI e pela SALC; escrever daqui
 //      criaria uma segunda origem para o mesmo fato. A escrita do nosso lado
-//      continua no orcamento_cli, contra o SCA.
+//      continua no orcamento_cli, contra o SAP.
 
 const argsLib = require('./lib/args')
 const { resolver } = require('./lib/config')
@@ -33,7 +33,7 @@ CONSULTA  (documentos: ${listarChaves().join(', ')})
   sag ne listar --ano 2026 --filtro ND=339015 --filtro ND=339030
   sag <doc> listar [--limite N] [--formato tsv|tabela|json] [--largura 60]
 
-CONFERENCIA COM O SCA (a razao de este CLI existir)
+CONFERENCIA COM O SAP (a razao de este CLI existir)
   sag conferir nc --ano 2026 --acao 20XE
   sag conferir ne --ano 2026 --acao 20XE --so-diferencas
   sag conferir nc --ano 2026 --acao 20XE --corpo    (imprime o JSON para o orcamento_cli)
@@ -46,7 +46,7 @@ SESSAO
 AMBIENTE  (catalogo em .env.example; nunca ponha senha na linha de comando)
   SAG_URL       URL do SAG
   SAG_USUARIO   CPF, 11 digitos       SAG_SENHA   senha de 6 digitos
-  SCA_URL       backend do SCA, so para o comando conferir
+  SCA_URL       backend do SAP, so para o comando conferir
   SCA_TOKEN     JWT pronto, ou o par SCA_USER e SCA_SENHA
 
 FLAGS GLOBAIS

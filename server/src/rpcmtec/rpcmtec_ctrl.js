@@ -43,6 +43,9 @@
 // DISSE.
 
 const { db } = require('../database')
+// A 2.7 é a única subseção que RECUSA sair errada, e por isso este arquivo tem
+// AppError: ver `areaDoCentro`, logo abaixo de `UNIVERSO_ASC`.
+const { AppError, httpCode } = require('../utils')
 // A soma dos documentos de recolhimento de uma NC, na FONTE UNICA. Ate a 1.39.0
 // isto era a coluna `nota_credito.valor_recolhido`, que a 1.40.0 apagou: a
 // coluna "Valor recolhido" da 4.1, da 4.2 e da 4.7 le a mesma expressao que a
@@ -50,6 +53,10 @@ const { db } = require('../database')
 const { recolhidoDaNc } = require('../orcamento/nota_credito/recolhido_sql')
 const acervoCtrl = require('../acervo/acervo_ctrl')
 const mapotecaCtrl = require('../mapoteca/mapoteca_ctrl')
+// DE QUEM É ESTA INSTALAÇÃO, no ponto único: `dgeo.instituicao` é de
+// PLATAFORMA, como o PIT, e o gerador a lê sem ciclo (o módulo `instituicao/`
+// não conhece o RPCMTec).
+const instituicaoCtrl = require('../instituicao/instituicao_ctrl')
 // O PIT é dado de PLATAFORMA, e não de módulo: o gerador o lê como lê o acervo e
 // a mapoteca. Sem ciclo, porque `pit/` não conhece o RPCMTec.
 const pitExecucaoCtrl = require('../pit/pit_execucao_ctrl')
@@ -94,8 +101,14 @@ const SITUACOES_ENTREGUE = [SITUACAO_PEDIDO.REMETIDO, SITUACAO_PEDIDO.CONCLUIDO]
 // com a correção do chefe da DGEO para a 1:100.000, que o RT registrava como
 // 250 e são 249.
 //
-// O numerador vem de `limites.area_suprimento` (ver `buscarEstadoAcervo`): os
-// dois TÊM de falar da mesma área, senão a fração não quer dizer nada.
+// O numerador vem de `limites.area_suprimento` (ver `areaDoCentro`): os dois
+// TÊM de falar da mesma área, senão a fração não quer dizer nada.
+//
+// PENDÊNCIA, aberta em 2026-08-09: o DENOMINADOR aqui continua sendo o do 1º
+// CGEO, enquanto o numerador já sai da instituição configurada. Numa instalação
+// de outro Centro os dois passam a falar de áreas diferentes, e a coluna "% da
+// ASC" mente. Dar universo próprio a cada Centro é dado NOVO (quantas folhas por
+// escala a ASC dele tem), e inventá-lo aqui seria pior que a pendência.
 const UNIVERSO_ASC = {
   '1:25.000': 3556,
   '1:50.000': 927,
@@ -157,7 +170,75 @@ const moeda = valor => (valor == null ? '-' : formatadorMoeda.format(Number(valo
 // `fonte: 'SAP'`, e não precisavam ser: as duas reportam a versão REGULAR que
 // ficou pronta no mês, e isso o acervo sabe sozinho. Ver as consultas logo
 // abaixo de `buscarEstadoAcervo`.
+
+// O NOME DA ÁREA DESTE CENTRO, e o único ponto do sistema que o resolve.
 //
+// ATÉ 2026-08-09 quem respondia era `limites.area_suprimento.e_1cgeo`, uma
+// coluna booleana chamada "é o 1º CGEO". O chefe a removeu naquela data: um
+// booleano com o nome de um Centro dentro trancava a instalação nele, e nenhum
+// outro conseguiria instalar o SAP sem editar DDL. Quem responde agora é
+// `dgeo.instituicao`, configurável por `PUT /api/instituicao`.
+//
+// A ARMADILHA QUE ISSO ABRE, e ela é real: o `cgeo` vem da fonte externa
+// `asc_insumos`, e a comparação é de TEXTO. Um acento a menos, um 'º' virando
+// 'o' ou um espaço sobrando fazem o filtro devolver ZERO linhas sem erro nenhum,
+// e a 2.7 sairia com cobertura zero num relatório que o chefe assina. O
+// comentário da coluna antiga avisava exatamente isso, e ele estava certo.
+//
+// POR ISSO ESTA FUNÇÃO FALHA. Área zero num documento assinado é pior do que
+// erro na tela: o erro alguém conserta, o zero alguém acredita. A mensagem diz o
+// nome procurado, os `cgeo` que existem de fato e onde configurar, que é o que
+// deixa a diferença VISÍVEL -- é entre '1º Centro de Geoinformação' e
+// '1o Centro de Geoinformacao' que ela costuma estar.
+//
+// E ELA DERRUBA O RELATÓRIO INTEIRO, de propósito. `controller.calcular` cruza
+// as vinte e uma subseções calculadas num `Promise.all`, e a regra do projeto é
+// que chamada opcional carregue sozinha para não derrubar a tela. Aqui a regra é
+// a INVERSA e a inversão é deliberada: um RPCMTec sem a 2.7 não sai, e um
+// RPCMTec com a 2.7 zerada sairia -- e é esse que não pode existir.
+//
+// A COMPARAÇÃO É EXATA, sem `unaccent` e sem `btrim(lower(...))`. As quatro
+// razões estão em `er/limites.sql`, ao lado da coluna. A que decide: normalizar
+// anula o `UNIQUE (cgeo)`, porque dois textos distintos viram um só depois de
+// normalizados, os dois casam, e a 2.7 conta a área em dobro sem dizer nada.
+//
+// A LEITURA DA INSTITUIÇÃO NÃO É MAIS DAQUI, desde 2026-08-09. Este arquivo
+// tinha o `SELECT nome FROM dgeo.instituicao WHERE id = 1` escrito à mão, e ele
+// seria o primeiro de seis iguais: o cabeçalho, a capa, o rodapé e a assinatura
+// do PDF, o nome do arquivo do Anuário, as duas frases da 1.1 e a coluna OMDS do
+// RTM precisam da mesma linha. Quem responde é `instituicao/instituicao_ctrl.js`,
+// o módulo dono da tabela, por `paraDocumento()`. Ver o cabeçalho de lá.
+const areaDoCentro = async () => {
+  const instituicao = await instituicaoCtrl.paraDocumento()
+
+  const area = await db.conn.oneOrNone(
+    'SELECT id FROM limites.area_suprimento WHERE cgeo = $<nome>',
+    { nome: instituicao.nome }
+  )
+
+  if (area) return instituicao.nome
+
+  // A LISTA DO QUE EXISTE é o que transforma "não achei" em "achei outro texto":
+  // entre aspas, um espaço sobrando ou um 'º' trocado por 'o' aparecem à vista.
+  const existentes = await db.conn.any(
+    'SELECT cgeo FROM limites.area_suprimento ORDER BY cgeo'
+  )
+  const lista = existentes.length > 0
+    ? existentes.map(l => `"${l.cgeo}"`).join(', ')
+    : 'nenhuma (a tabela está vazia, e a área precisa ser carregada)'
+
+  throw new AppError(
+    `A subseção 2.7 do RPCMTec não achou a Área Sob Coordenação de "${instituicao.nome}" em limites.area_suprimento, e por isso ela NÃO sai zerada: uma cobertura zero num relatório assinado seria pior que este erro. A comparação é exata, então um acento, um "º" escrito como "o" ou um espaço a mais já bastam. Áreas cadastradas: ${lista}. Acerte o nome em PUT /api/instituicao ou a carga de limites.area_suprimento, e gere de novo.`,
+    httpCode.InternalError
+  )
+}
+
+// EXPORTADA para o teste, e não porque alguém de fora a chame. Ela é o guarda
+// que impede a 2.7 de sair zerada, e provar isso pelo `calcular` obrigaria a
+// encenar as vinte e uma consultas do `Promise.all` só para chegar na primeira.
+// Ver `__tests__/unit/rpcmtec_area_do_centro.test.js`.
+controller.areaDoCentro = areaDoCentro
+
 // 2.7: folhas catalogadas DENTRO DA ASC, por escala x tipo de produto.
 //
 // O RECORTE PELA ASC é o que faz a coluna "% da ASC" dizer a verdade. Sem ele o
@@ -176,11 +257,16 @@ const moeda = valor => (valor == null ? '-' : formatadorMoeda.format(Number(valo
 //
 // A CONTAGEM DO MÊS usa o MESMO recorte: numa linha cujo total é da ASC, um "no
 // mês" que contasse folha de fora não fecharia com a coluna ao lado.
+//
+// DE QUEM É A ÁREA, desde 2026-08-09: de quem `dgeo.instituicao` diz que é. Ver
+// `areaDoCentro`, logo acima, e o porquê de ela FALHAR em vez de devolver zero.
 const buscarEstadoAcervo = async ({ ano, mes }) => {
+  const cgeo = await areaDoCentro()
+
   return db.conn.any(
     `
     WITH area AS (
-      SELECT geom FROM limites.area_suprimento WHERE e_1cgeo
+      SELECT geom FROM limites.area_suprimento WHERE cgeo = $<cgeo>
     )
     SELECT
       te.nome AS escala,
@@ -202,6 +288,7 @@ const buscarEstadoAcervo = async ({ ano, mes }) => {
     {
       ano,
       mes,
+      cgeo,
       versaoRegular: TIPO_VERSAO.REGULAR,
       escalas: acervoCtrl.SITUACAO_GERAL_ESCALAS.map(e => e.id),
       tipos: TIPOS_ESTADO_ACERVO.map(t => t.tipoId)

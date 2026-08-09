@@ -363,16 +363,22 @@ describe('Concessao de perfil pela API de usuarios', () => {
       .get('/api/usuarios/dominio/modulo')
       .set('Authorization', generateAdminToken())
     expect(modulos.status).toBe(200)
-    // SEIS: cinco desde a 1.33.0, mais `equipamento` na 1.46.0. A tela de
-    // usuarios monta uma coluna por linha deste catalogo, entao todo modulo novo
-    // aparece la sozinho.
+    // SETE: cinco desde a 1.33.0, `equipamento` na 1.46.0 e `producao` (o code
+    // 7, o core que veio do SAP 2.3.5) em 2026-08-09. A tela de usuarios monta
+    // uma coluna por linha deste catalogo, entao todo modulo novo aparece la
+    // sozinho.
+    //
+    // `producao` E O CODE 7, E NAO O 4. O code 4 se chamava 'producao' ate
+    // 2026-08-09 e devolveu o nome ao core; hoje ele e o 'pit', e os dois estao
+    // nesta lista, na ordem do `code`.
     expect(modulos.body.dados.map(m => m.nome_abrev)).toEqual([
       'acervo',
       'mapoteca',
       'orcamento',
       'pit',
       'efetivo',
-      'equipamento'
+      'equipamento',
+      'producao'
     ])
 
     const perfis = await request(app)

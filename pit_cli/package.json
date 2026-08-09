@@ -1,7 +1,7 @@
 {
   "name": "pit-cli",
   "version": "1.0.0",
-  "description": "Interface de linha de comando do PIT e do RPCMTec do SCA, desenhada para agentes (agent-first). Chamava-se producao_cli ate 2026-08-09, quando o modulo 4 devolveu o nome Producao ao core do SAP. Irma do acervo_cli, do mapoteca_cli, do orcamento_cli, do efetivo_cli, do equipamento_cli e do sag_cli.",
+  "description": "Interface de linha de comando do PIT e do RPCMTec do SAP, desenhada para agentes (agent-first). Chamava-se producao_cli ate 2026-08-09, quando o modulo 4 devolveu o nome Producao ao core de producao herdado do SAP 2.3.5. Irma do acervo_cli, do mapoteca_cli, do orcamento_cli, do efetivo_cli, do equipamento_cli e do sag_cli.",
   "type": "commonjs",
   "main": "pit.js",
   "bin": {
@@ -11,7 +11,7 @@
     "test": "node --test \"__tests__/*.test.js\""
   },
   "keywords": [
-    "Controle do Acervo",
+    "SAP",
     "PIT",
     "RPCMTec",
     "CLI",

@@ -124,15 +124,27 @@ describe('verifyPerfil: erro de programacao falha cedo', () => {
     expect(() => verifyPerfil('consulta', 'jabuticaba')).toThrow(/Módulo desconhecido/)
   })
 
-  test('os seis modulos da plataforma sao aceitos', () => {
+  // SAO SETE desde a 3.0.0: `producao` (o code 7 de dominio.modulo, criado em
+  // 2026-08-09 com o core que veio do SAP 2.3.5) ficou no DDL sem entrar no
+  // mapa enquanto o modulo nao tinha rota, e entrou quando `/api/producao`
+  // nasceu. NAO CONFUNDIR COM O CODE 4, que se chamou `producao` ate a mesma
+  // data e hoje e `pit`: o 4 e o PLANO, e o 7 e a producao cartografica.
+  test('os sete modulos da plataforma sao aceitos', () => {
     expect(() => verifyPerfil('consulta', 'acervo')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'mapoteca')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'orcamento')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'pit')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'efetivo')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'equipamento')).not.toThrow()
+    expect(() => verifyPerfil('consulta', 'producao')).not.toThrow()
     expect(verifyPerfil.MODULO).toEqual({
-      acervo: 1, mapoteca: 2, orcamento: 3, pit: 4, efetivo: 5, equipamento: 6
+      acervo: 1,
+      mapoteca: 2,
+      orcamento: 3,
+      pit: 4,
+      efetivo: 5,
+      equipamento: 6,
+      producao: 7
     })
   })
 })
@@ -147,7 +159,29 @@ describe('verifyPerfil: erro de programacao falha cedo', () => {
 //
 // Le o er/dominio.sql, que e a instalacao nova, e nao a migracao: as duas TEM de
 // convergir, e quem prova isso e o `migrations/ensaiar_migracao.cjs`.
+//
+// A COMPARACAO DEIXOU DE SER IGUALDADE EM 2026-08-09, e a assimetria e a regra:
+//
+//   MODULO sem DDL  quebra de verdade. A consulta do middleware gravaria um
+//                   `modulo_id` que a chave estrangeira de
+//                   `dgeo.usuario_perfil` recusa. Continua proibido, e e o que
+//                   a checagem de subconjunto abaixo cobra.
+//   DDL sem MODULO  e o estado NORMAL de um modulo que ja tem code mas ainda
+//                   nao tem rota. Foi o caso de `producao` (code 7) no dia em
+//                   que os dominios do SAP atravessaram: o DDL nasce primeiro
+//                   porque a chave estrangeira precisa do code existir antes da
+//                   primeira concessao de perfil.
+//
+// A folga NAO e livre: so os nomes de SEM_ROTA podem faltar no mapa. Modulo
+// novo no DDL que ninguem listou aqui derruba o teste, que e o alarme que a
+// igualdade dava.
 describe('MODULO espelha dominio.modulo', () => {
+  // VAZIA DESDE A 3.0.0, e a lista fica: `producao` saiu daqui quando
+  // `/api/producao` nasceu e o mapa `MODULO` o recebeu. A folga continua
+  // declarada porque o proximo modulo do DDL vai nascer sem rota do mesmo jeito,
+  // e sem ela a igualdade voltaria a reprovar o estado NORMAL.
+  const SEM_ROTA = []
+
   test('os mesmos nomes e os mesmos codigos, nos dois lados', () => {
     const fs = require('fs')
     const path = require('path')
@@ -167,9 +201,25 @@ describe('MODULO espelha dominio.modulo', () => {
       doDdl[linha[2]] = Number(linha[1])
     }
 
-    // A variancia primeiro: um bloco vazio satisfaria a comparacao abaixo sem
+    // A variancia primeiro: um bloco vazio satisfaria as comparacoes abaixo sem
     // provar nada.
     expect(Object.keys(doDdl).length).toBeGreaterThanOrEqual(5)
-    expect(verifyPerfil.MODULO).toEqual(doDdl)
+
+    // Todo modulo do mapa existe no DDL, com o MESMO code. E a direcao que
+    // quebra a autorizacao, e ela continua sendo igualdade.
+    const doMapa = verifyPerfil.MODULO
+    for (const [nome, code] of Object.entries(doMapa)) {
+      expect(doDdl).toHaveProperty(nome, code)
+    }
+
+    // E o que o DDL tem a mais so pode ser modulo ainda sem rota.
+    const soNoDdl = Object.keys(doDdl).filter(nome => !(nome in doMapa))
+    expect(soNoDdl.filter(nome => !SEM_ROTA.includes(nome))).toEqual([])
+  })
+
+  // Sem esta linha o teste acima aceitaria um mapa VAZIO: 'todo modulo do mapa
+  // esta no DDL' e verdade a toa quando nao ha modulo nenhum.
+  test('o mapa nao esta vazio', () => {
+    expect(Object.keys(verifyPerfil.MODULO).length).toBeGreaterThanOrEqual(5)
   })
 })

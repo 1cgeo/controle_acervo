@@ -123,7 +123,7 @@ export async function renderPerfil(container, _ctx) {
     label: 'Login',
     value: perfil.login || '',
     disabled: true,
-    helpText: 'Só o administrador troca o login. Ele é o seu nome de usuário no SCA.',
+    helpText: 'Só o administrador troca o login. Ele é o seu nome de usuário no SAP.',
   });
 
   const nomeField = createTextField({

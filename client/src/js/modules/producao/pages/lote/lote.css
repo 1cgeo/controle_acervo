@@ -1,0 +1,103 @@
+/* ---------------------------------------------------------------------------
+ * ACOMPANHAMENTO DO LOTE (#/producao/lote)
+ *
+ * Duas seções: as FASES do lote (contagem por versão) e as ETAPAS de uma
+ * subfase (contagem por atividade). Ver o cabeçalho de `index.js`.
+ *
+ * A BARRA NÃO TEM COR DE ESTADO. A paleta de estado desta casa é a de
+ * `.grade-pit__celula--*`, que compara o acumulado com o prometido; aqui não há
+ * promessa nenhuma contra a qual comparar.
+ * ------------------------------------------------------------------------- */
+
+.lote-acomp__secao { margin-top: var(--space-lg); }
+
+.lote-acomp__titulo {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+}
+
+.lote-acomp__legenda {
+  margin: 0 0 var(--space-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.lote-acomp__nota {
+  margin: 0 0 var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-left: 3px solid var(--color-info);
+  background: color-mix(in srgb, var(--color-info) 8%, transparent);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-sm);
+}
+
+.lote-acomp__area {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  overflow-x: auto;
+}
+
+.lote-acomp__vazio {
+  margin: 0;
+  padding: var(--space-lg);
+  color: var(--text-secondary);
+}
+
+.lote-acomp__tabela {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.lote-acomp__tabela th {
+  padding: var(--space-sm);
+  text-align: left;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.lote-acomp__tabela td {
+  padding: var(--space-sm);
+  border-bottom: 1px solid var(--border-light);
+  font-variant-numeric: tabular-nums;
+}
+
+.lote-acomp__tabela tbody tr:last-child td { border-bottom: none; }
+
+.lote-acomp__rotulo {
+  white-space: nowrap;
+  font-weight: var(--font-weight-medium);
+}
+
+/* A ORDEM DA FASE (ou da etapa) É INFORMAÇÃO, e não enfeite: ela é o caminho do
+ * trabalho. Fica apagada à esquerda do nome, para o nome continuar sendo o que
+ * se lê primeiro. */
+.lote-acomp__ordem {
+  display: inline-block;
+  min-width: 1.5em;
+  margin-right: var(--space-sm);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.lote-acomp__progresso { width: 160px; }
+
+.lote-acomp__barra {
+  height: 8px;
+  min-width: 120px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text-secondary) 18%, transparent);
+  overflow: hidden;
+}
+
+.lote-acomp__barra-preenchida {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+}

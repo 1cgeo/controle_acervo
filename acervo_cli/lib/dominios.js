@@ -14,12 +14,17 @@ const path = require('path')
 // vivo. Nao ha catalogo copiado aqui; os apelidos sao DERIVADOS do nome da
 // constante (ESCALA_50K -> "50k", CARTA_TOPOGRAFICA -> "carta-topografica").
 //
-// Limite honesto e declarado: o domain_constants.js diz de si mesmo que
-// tipo_produto e subtipo_produto sao SUBCONJUNTOS ("subconjuntos usados em
-// queries"), nao a tabela inteira. Por isso um nome que nao resolve aqui NAO
-// vira erro seco: manda o agente para `acervo dominio <tabela>`, que le a
-// tabela viva pela rota publica. Offline resolve o que da; a fonte completa e o
-// servidor.
+// Limite honesto e declarado: nem toda tabela de dominio esta INTEIRA no
+// domain_constants.js. Onde ela nao esta, um nome que nao resolve aqui NAO vira
+// erro seco: manda o agente para `acervo dominio <tabela>`, que le a tabela viva
+// pela rota publica. Offline resolve o que da; a fonte completa e o servidor.
+//
+// `subtipo_produto` DEIXOU DE SER SUBCONJUNTO em 2026-08-09: ele tinha 5 dos 30
+// codigos e passou a ter os 30, quando o core de producao precisou deles para
+// escolher template de metadado. `tipo_produto` continua parcial (5 de 13), e e
+// ele que sustenta o aviso agora. Conferir e comparar com `er/dominio.sql`, e
+// nao com a memoria: virar `completa: true` sem os codigos todos faria o CLI
+// afirmar que nao achou o que existe.
 
 const RAIZ_SERVER = path.join(__dirname, '..', '..', 'server', 'src')
 
@@ -32,7 +37,7 @@ function constantes () {
 const TABELAS = {
   tipo_escala: { grupo: 'TIPO_ESCALA', campo: 'tipo_escala_id', completa: true },
   tipo_produto: { grupo: 'TIPO_PRODUTO', campo: 'tipo_produto_id', completa: false },
-  subtipo_produto: { grupo: 'SUBTIPO_PRODUTO', campo: 'subtipo_produto_id', completa: false },
+  subtipo_produto: { grupo: 'SUBTIPO_PRODUTO', campo: 'subtipo_produto_id', completa: true },
   tipo_arquivo: { grupo: 'TIPO_ARQUIVO', campo: 'tipo_arquivo_id', completa: true },
   tipo_versao: { grupo: 'TIPO_VERSAO', campo: 'tipo_versao_id', completa: true },
   tipo_status_arquivo: { grupo: 'STATUS_ARQUIVO', campo: 'tipo_status_id', completa: true },

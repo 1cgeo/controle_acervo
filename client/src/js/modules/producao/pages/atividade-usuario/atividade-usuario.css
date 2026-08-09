@@ -1,0 +1,107 @@
+/*
+ * Atividades por usuário: o retrato de agora e a linha do tempo do ano.
+ *
+ * BEM e tokens de `design-tokens.css`. A faixa ocupada usa o verde de SUCESSO,
+ * que é o mesmo do chip "Em Atividade" da tabela de cima: as duas seções falam
+ * da mesma coisa, e cores diferentes fariam a pessoa procurar uma distinção que
+ * não existe.
+ */
+
+.atividade-usuario__secao {
+  margin-bottom: var(--space-xl);
+}
+
+.atividade-usuario__titulo {
+  margin: 0 0 var(--space-xs);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.atividade-usuario__nota,
+.atividade-usuario__contagem {
+  margin: 0 0 var(--space-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.atividade-usuario__vazio {
+  padding: var(--space-lg);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* --- A linha do tempo ------------------------------------------------------ */
+
+.linha-tempo {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  padding: var(--space-md);
+  overflow-x: auto;
+}
+
+/*
+ * A RÉGUA é posicionada em porcento, como as faixas, e por isso ela e as barras
+ * compartilham a mesma origem horizontal: a coluna do nome tem largura fixa, e a
+ * régua começa depois dela.
+ */
+.linha-tempo__regua {
+  position: relative;
+  height: 18px;
+  margin-left: 180px;
+  margin-right: 48px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.linha-tempo__marca {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.linha-tempo__pessoa {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 2px 0;
+}
+
+.linha-tempo__nome {
+  width: 180px;
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.linha-tempo__barra {
+  position: relative;
+  flex: 1;
+  height: 14px;
+  min-width: 200px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.linha-tempo__faixa {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--color-success-light);
+}
+
+.linha-tempo__dias {
+  width: 48px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}

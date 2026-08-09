@@ -1,7 +1,7 @@
 {
   "name": "equipamento-cli",
   "version": "1.0.0",
-  "description": "Interface de linha de comando do modulo equipamento do SCA, desenhada para agentes (agent-first). Irma do acervo_cli, do mapoteca_cli e do orcamento_cli.",
+  "description": "Interface de linha de comando do modulo equipamento do SAP, desenhada para agentes (agent-first). Irma do acervo_cli, do mapoteca_cli e do orcamento_cli.",
   "type": "commonjs",
   "main": "equipamento.js",
   "bin": {
@@ -11,7 +11,7 @@
     "test": "node --test \"__tests__/*.test.js\""
   },
   "keywords": [
-    "Controle do Acervo",
+    "SAP",
     "Equipamento",
     "CLI",
     "agent-first"

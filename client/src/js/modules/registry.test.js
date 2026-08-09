@@ -12,6 +12,8 @@ const CATALOGO = [
   { code: 3, nome: 'Orçamento', nome_abrev: 'orcamento' },
   // `dominio.modulo` code 6, semeado em er/dominio.sql:367.
   { code: 6, nome: 'Equipamento', nome_abrev: 'equipamento' },
+  // `dominio.modulo` code 7, o core de producao herdado do SAP 2.3.5, na 3.0.0.
+  { code: 7, nome: 'Produção', nome_abrev: 'producao' },
 ];
 
 function logar({ administrador = false, perfis = {} } = {}) {
@@ -21,13 +23,14 @@ function logar({ administrador = false, perfis = {} } = {}) {
 beforeEach(() => localStorage.clear());
 
 describe('registry: manifestos', () => {
-  test('os quatro modulos estao registrados, nesta ordem', () => {
+  test('os cinco modulos estao registrados, nesta ordem', () => {
     // A ORDEM E CONTEUDO, e nao arrumacao: quem tem perfil em mais de um modulo
-    // entra pelo PRIMEIRO da lista (`primeiroModuloAcessivel`). Equipamento e
-    // novo e entra por ULTIMO, para nao virar a porta de entrada de ninguem que
-    // ja trabalha aqui.
+    // entra pelo PRIMEIRO da lista (`primeiroModuloAcessivel`). Equipamento
+    // entrou por ULTIMO na 1.46.0 pela mesma razao que PRODUCAO entra por
+    // ultimo na 3.0.0: modulo novo nao vira a porta de entrada de quem ja
+    // trabalha aqui.
     expect(MODULOS.map(m => m.id))
-      .toEqual(['acervo', 'mapoteca', 'orcamento', 'equipamento']);
+      .toEqual(['acervo', 'mapoteca', 'orcamento', 'equipamento', 'producao']);
   });
 
   test('o id do modulo casa com o nome_abrev do catalogo do servidor', () => {
@@ -82,7 +85,7 @@ describe('registry: o que a pessoa ve', () => {
     // Lista FIXA de propósito: comparar com `modulosPortados()` seria comparar
     // a função com ela mesma, e um módulo que sumisse dos dois lados passaria.
     expect(modulosAcessiveis().map(m => m.id))
-      .toEqual(['acervo', 'mapoteca', 'orcamento', 'equipamento']);
+      .toEqual(['acervo', 'mapoteca', 'orcamento', 'equipamento', 'producao']);
   });
 });
 

@@ -1,0 +1,150 @@
+/* ---------------------------------------------------------------------------
+ * GRADE DE ACOMPANHAMENTO (#/producao/grade)
+ *
+ * A galeria de cartões da origem, com o lugar da malha marcado e vazio: o
+ * quadriculado mora no banco de produção, e este servidor não abre conexão para
+ * ele. Ver o cabeçalho de `index.js`.
+ *
+ * NENHUMA REGRA DE COR DE ESTADO AQUI. A convenção de cor desta casa é a de
+ * `.grade-pit__celula--*` (plataforma.css), e ela compara o acumulado com o
+ * prometido. Nesta tela não há prometido nenhum, então nada é pintado por
+ * estado -- só a moldura da malha, que é neutra.
+ * ------------------------------------------------------------------------- */
+
+.grade-prod__aviso {
+  border: 1px solid var(--color-warning);
+  border-left-width: 4px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.grade-prod__aviso-titulo {
+  margin: 0 0 var(--space-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.grade-prod__aviso-texto {
+  margin: 0 0 var(--space-xs);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.grade-prod__aviso-texto:last-child { margin-bottom: 0; }
+
+.grade-prod__resumo {
+  margin: 0 0 var(--space-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* Galeria que quebra linha, como na origem: o cartão tem largura fixa e a
+ * quantidade por linha é a que couber. */
+.grade-prod__galeria {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.grade-prod__vazio {
+  color: var(--text-secondary);
+  padding: var(--space-lg);
+}
+
+.grade-prod__card {
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-paper);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.grade-prod__cabecalho {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border-color);
+  text-align: center;
+}
+
+.grade-prod__projeto {
+  margin: 0;
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grade-prod__lote {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* O LUGAR DA MALHA. O hachurado diz "aqui falta uma coisa" sem dizer o que a
+ * coisa vale: é a mesma marca de `.grade-pit__celula--calculada`, que também
+ * significa "este quadro não é preenchido daqui". */
+.grade-prod__malha {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+  margin: var(--space-md);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-sm);
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 6px,
+    color-mix(in srgb, var(--text-secondary) 10%, transparent) 6px 8px
+  );
+}
+
+.grade-prod__malha-texto {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  background: var(--bg-paper);
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-sm);
+}
+
+.grade-prod__rodape {
+  padding: var(--space-sm) var(--space-md);
+  border-top: 1px solid var(--border-color);
+  text-align: center;
+}
+
+.grade-prod__operador {
+  margin: 0 0 2px;
+  font-weight: var(--font-weight-medium);
+}
+
+.grade-prod__linha {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grade-prod__inicio {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-sm);
+  margin: var(--space-xs) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.grade-prod__dias {
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}

@@ -311,7 +311,7 @@ export function abrirDeclaracaoDialog({ revisao, meta = null, onSaved = null } =
       el('p', {}, [
         publicada
           ? `O texto assinado é o rei. A revisão ${revisao.codigo} continua a mesma, `
-            + 'com a mesma data de vigência, e o SCA não emite revisão nova. Se foi a '
+            + 'com a mesma data de vigência, e o sistema não emite revisão nova. Se foi a '
             + 'DSG que mudou o plano, abra a revisão seguinte em vez de corrigir aqui.'
           : `A alteração fica no RASCUNHO: ela só passa a valer quando a revisão `
             + `${revisao.codigo} for publicada. Até lá, a tabela de metas continua `

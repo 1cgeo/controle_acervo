@@ -237,7 +237,7 @@ export async function renderAproveitamento(container, ctx) {
     if (ativoSemPassagem.length) {
       partes.push(bloco(
         'efetivo-divergencia--ativo-sem-passagem',
-        `Acessa o SCA e sem passagem em ${anoSelecionado}`,
+        `Acessa o SAP e sem passagem em ${anoSelecionado}`,
         ativoSemPassagem,
         'Estes ficam fora do mapa. Cadastre a passagem, ou desative o acesso de'
         + ' quem já saiu.'

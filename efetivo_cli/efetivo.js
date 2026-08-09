@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict'
 
-// efetivo - CLI de IDENTIDADE e EFETIVO do SCA, desenhado para AGENTES.
+// efetivo - CLI de IDENTIDADE e EFETIVO do SAP, desenhado para AGENTES.
 //
 // Irmao do acervo_cli, do mapoteca_cli e do orcamento_cli: mesmo servidor, mesmo
 // login, mesma sessao em cache. A diferenca e que os outros tres falam com um
@@ -30,7 +30,7 @@ const argsLib = require('./lib/args')
 const { resolver } = require('./lib/config')
 const { listarChaves } = require('./lib/recursos')
 
-const AJUDA = `efetivo - CLI de identidade e efetivo do SCA, para agentes
+const AJUDA = `efetivo - CLI de identidade e efetivo do SAP, para agentes
 
 CONTRATO (nao gasta rede, leia isto antes de montar um corpo)
   efetivo schema                      lista os recursos e suas operacoes
@@ -82,7 +82,7 @@ O PROPRIO  (nao pede perfil em Efetivo: basta ter acesso a ALGUM modulo)
   efetivo meu impedimento excluir --id 30 --confirmar 30
 
 SESSAO
-  efetivo status                      o SCA esta no ar? ha token em cache? sou admin?
+  efetivo status                      o SAP esta no ar? ha token em cache? sou admin?
   efetivo login                       autentica uma vez e guarda o token (~1h)
   efetivo logout                      descarta o token em cache
 

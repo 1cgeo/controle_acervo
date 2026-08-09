@@ -93,7 +93,8 @@ const guardaDoHistorico = (req, res, next) => {
     modulo === 'acervo' ||
     modulo === 'mapoteca' ||
     modulo === 'orcamento' ||
-    modulo === 'equipamento'
+    modulo === 'equipamento' ||
+    modulo === 'producao'
   ) {
     return verifyPerfil('consulta', modulo)(req, res, next)
   }

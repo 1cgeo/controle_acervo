@@ -52,6 +52,7 @@ const capacitacaoCtrl = require('./rpcmtec_capacitacao_ctrl')
 const rpcmtecPdf = require('./rpcmtec_pdf')
 const uploadAnexoEdicao = require('./anexo_edicao_upload')
 const rpcmtecSchema = require('./rpcmtec_schema')
+const instituicaoCtrl = require('../instituicao/instituicao_ctrl')
 const anuarioCtrl = require('../mapoteca/anuario_ctrl')
 const mapotecaRelatorioCtrl = require('../mapoteca/relatorio_ctrl')
 const { gerarAnuarioOds } = require('./anuario_ods')
@@ -100,6 +101,7 @@ router.get(
   schemaValidation({ query: rpcmtecSchema.gerarQuery }),
   asyncHandler(async (req, res, next) => {
     const { ano, mes } = req.query
+    const instituicao = await instituicaoCtrl.paraDocumento()
     const anuario = await anuarioCtrl.getAnuarioEstatistico({ ano, mes })
     const buffer = gerarAnuarioOds(
       anuario,
@@ -109,7 +111,19 @@ router.get(
 
     // O nome segue o dos arquivos que já subiram para a DSG
     // (Anuario_Estatistico_1CGEO_06_Junho_2026.ods): número E nome do mês.
-    const nome = `Anuario_Estatistico_1CGEO_${doisDigitos(mes)}_${anuarioCtrl.NOME_MES[mes - 1]}_${ano}.ods`
+    //
+    // A SIGLA VEM DE `dgeo.instituicao` desde 2026-08-09, e entra pelo SLUG. A
+    // sigla é '1º CGEO', com espaço e com o ordinal, e nome de arquivo não os
+    // aceita bem: o 'º' viaja mal por `Content-Disposition`, e o espaço parte o
+    // nome em dois na linha de comando de quem baixa. `sigla_slug` é a mesma
+    // ideia de `acervo.slug_nome()`, e o porquê da diferença está em
+    // `instituicao/instituicao_ctrl.js`. Para o 1º CGEO ele dá exatamente o
+    // '1CGEO' que a DSG já recebe -- o nome de hoje não muda.
+    //
+    // A LEITURA VEM ANTES da montagem da planilha, de propósito: se a
+    // instituição não responder, o pedido para sem ter gasto as consultas do
+    // Anuário.
+    const nome = `Anuario_Estatistico_${instituicao.sigla_slug}_${doisDigitos(mes)}_${anuarioCtrl.NOME_MES[mes - 1]}_${ano}.ods`
     res.setHeader('Content-Type', 'application/vnd.oasis.opendocument.spreadsheet')
     res.setHeader('Content-Disposition', `attachment; filename="${nome}"`)
     res.setHeader('Content-Length', String(buffer.length))
