@@ -41,7 +41,7 @@ node orcamento_cli/orcamento.js schema nc   # campos, tipos, regras da NC
 orcamento saldo                       # quanto falta empenhar e liquidar (total do PDR)
 orcamento saldo --nd 339040           # o mesmo, por natureza de despesa
 # O RPCMTec é gerado inteiro (acervo, mapoteca e orçamento), fora dos módulos,
-# por `acervo rpcmtec --ano 2026 --mes 7 --docx`.
+# por `acervo rpcmtec --ano 2026 --mes 7 --pdf`.
 
 # CRUD
 orcamento nc listar --ano 2026 --campos numero,cod_nd,valor_nc
@@ -74,6 +74,8 @@ O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do p
 ## Acesso
 
 O módulo não é admin-only. O acesso é por perfil no módulo `orcamento`: consulta lê, operador cria e atualiza, gerente deleta. O CRUD de domínio exige administrador, e o administrador passa em tudo. Só `GET /api` (health) e `POST /api/login` dispensam token.
+
+O recurso `meta` é a exceção, porque `/api/metas` não é rota do orçamento e sim de plataforma: **ler** exige `verifyAcesso` (perfil em algum módulo, e desde 2026-08-08 ter conta não basta) e **escrever** continua exigindo administrador.
 
 ## O que o CLI protege
 

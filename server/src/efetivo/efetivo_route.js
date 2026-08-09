@@ -332,10 +332,11 @@ router.delete(
 //   O `:id` DO PUT E DO DELETE NÃO AUTORIZA NADA SOZINHO. `PUT
 //   /efetivo/periodos/:id` autoriza pelo `:id` e só, e pode: para chegar lá é
 //   preciso ser gerente do Efetivo, cujo trabalho é mexer no registro alheio.
-//   Aqui a guarda só diz "esta pessoa entrou no sistema", então o controlador
-//   confere que a linha é DELA antes de tocá-la, e responde 404 -- não 403 --
-//   quando não for, para a resposta não confirmar a existência do registro de
-//   terceiro. Quem faz isso é `exigirDono`, dentro da mesma transação da escrita.
+//   Aqui a guarda só diz "esta pessoa tem perfil em algum módulo", então o
+//   controlador confere que a linha é DELA antes de tocá-la, e responde 404 --
+//   não 403 -- quando não for, para a resposta não confirmar a existência do
+//   registro de terceiro. Quem faz isso é `exigirDono`, dentro da mesma
+//   transação da escrita.
 //
 // SEM RECORTE DE ANO nas duas LISTAS, ao contrário das da Divisão: uma pessoa
 // tem poucas linhas, e recortá-las faria a passagem antiga sumir da própria ficha

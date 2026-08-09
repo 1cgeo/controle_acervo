@@ -19,7 +19,7 @@ const { montarContexto } = require('./contexto')
  * mesma pergunta seria dois lugares para a régua do gerente divergir.
  *
  * Não é `verifyPerfil` porque aquele lê UM módulo por vez, e o RPCMTec é a
- * prestação de contas da Divisão inteira: as 34 subseções falam dos cinco
+ * prestação de contas da Divisão inteira: as 33 subseções falam dos seis
  * módulos numa peça só, e o chefe assina uma. Não é `verifyLogin` porque aquele
  * lê `administrador` do TOKEN, que envelhece até o JWT_EXPIRACAO; aqui o perfil
  * sai do BANCO a cada requisição.

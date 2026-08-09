@@ -902,8 +902,9 @@ async function renderAcessosTab(container) {
  * AS DUAS ABAS TEM DONOS DIFERENTES, e por isso a segunda so aparece para o
  * administrador global:
  *
- *   Efetivo  gerente do modulo EFETIVO. Tudo o que ela le sai de `/efetivo/*`,
- *            que cobra `verifyPerfil('gerente', 'efetivo')`.
+ *   Efetivo  consulta no modulo EFETIVO, desde a regua de 2026-08-08. Tudo o
+ *            que ela le sai de `/efetivo/*`, cujos GET cobram
+ *            `verifyPerfil('consulta', 'efetivo')`; escrever ali e do gerente.
  *   Acessos  administrador global. `/acessos/*` e `verifyAdmin`, e quem entrou
  *            no sistema nao e dado do efetivo.
  *

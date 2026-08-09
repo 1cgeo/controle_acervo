@@ -41,7 +41,7 @@ import { renderPlotterDetails } from './pages/plotters/details.js';
 // `perfil: 'consulta'` (nivel MINIMO, hierarquico). A lista nao hierarquica
 // ['consulta','gerente'] existia porque a tela era CADASTRO, e o operador nao a
 // via; com a tela unica do livro, o operador e justamente quem mais a usa: e ele
-// que consome, transfere e conta a prateleira. A regua da casa passou a valer
+// que da entrada, transfere e consome. A regua da casa passou a valer
 // aqui inteira -- consulta LE, operador LANCA, gerente responde pela area.
 //
 // O gerente aparece em todas as listas: ele executa e gerencia. O administrador

@@ -114,10 +114,10 @@ FLAGS GLOBAIS
   --sem-verificacao   em pedido cadastrar: pula a releitura de conferencia
 
 O acesso e por PERFIL no modulo mapoteca: consulta le, operador imprime e faz
-tudo de material (lanca movimento, cadastra e conta), gerente cadastra pedido,
-cliente, item e anexo. O administrador passa em tudo. Publicos, sem login: /api
-(health), /api/login e a consulta por localizador. Os GET de dominio exigem
-perfil de consulta.`
+tudo de material (lanca movimento no livro e cadastra o insumo), gerente cadastra
+pedido, cliente, item e anexo. O administrador passa em tudo. Publicos, sem
+login: /api (health), /api/login e a consulta por localizador. Os GET de dominio
+exigem perfil de consulta.`
 
 const ROTEADOR = {
   schema: './comandos/schema',

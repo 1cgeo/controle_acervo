@@ -299,7 +299,7 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/metas/execucao',
         corpo: 'salvarExecucao',
-        acesso: 'producao_operador',
+        acesso: 'pit_operador',
         envelope: 'registro',
         nota: 'UMA rota cria, altera e APAGA a célula (meta, mês). Omitir um ' +
           'campo é NÃO MEXER; mandar nulo é APAGAR; e a célula sem nenhum dos ' +
@@ -309,7 +309,7 @@ const RECURSOS = {
         metodo: 'DELETE',
         caminho: '/metas/execucao/:id',
         params: 'idParams',
-        acesso: 'producao_operador',
+        acesso: 'pit_operador',
         envelope: 'mensagem',
         confirmar: {
           param: 'id',
@@ -534,7 +534,7 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/metas/extra',
         corpo: 'criarDemandaExtra',
-        acesso: 'producao_operador',
+        acesso: 'pit_operador',
         envelope: 'registro'
       },
       atualizar: {
@@ -542,14 +542,14 @@ const RECURSOS = {
         caminho: '/metas/extra/:id',
         params: 'idParams',
         corpo: 'atualizarDemandaExtra',
-        acesso: 'producao_operador',
+        acesso: 'pit_operador',
         envelope: 'registro'
       },
       excluir: {
         metodo: 'DELETE',
         caminho: '/metas/extra/:id',
         params: 'idParams',
-        acesso: 'producao_operador',
+        acesso: 'pit_operador',
         envelope: 'mensagem',
         confirmar: {
           param: 'id',
@@ -784,7 +784,7 @@ const RECURSOS = {
     nome: 'capacitação MINISTRADA (subseção 2.6), do módulo Produção',
     schema: carregar('rpcmtec/rpcmtec_schema'),
     validacao: VALIDACAO.STRIP,
-    operacoes: capacitacaoDoTipo('ministrada', 'producao_operador', [
+    operacoes: capacitacaoDoTipo('ministrada', 'pit_operador', [
       'id', 'ano', 'nome', 'situacao', 'instituicoes', 'local_realizacao',
       'data_inicio', 'data_fim', 'efetivo_capacitado', 'meta_pit_item',
       'militares'

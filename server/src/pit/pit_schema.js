@@ -210,7 +210,7 @@ models.metaIdParams = Joi.object().keys({
 // ERAM QUATRO CAMPOS até a 1.44.0. `data_conclusao` e `observacao` saíram do
 // banco e daqui junto: nulas em 109 de 109 linhas da produção, sem um único
 // evento de auditoria. Como este Joi é o contrato VIVO que os CLIs leem, tirá-las
-// aqui é o que faz o `producao_cli` parar de oferecê-las.
+// aqui é o que faz o `pit_cli` parar de oferecê-las.
 models.salvarExecucao = Joi.object().keys({
   meta_id: Joi.number().integer().strict().required(),
   mes: Joi.number().integer().strict().min(1).max(12).required(),

@@ -112,7 +112,7 @@ describe('a poda do dominio de material', () => {
     expect(ocorrencias(/\btransferirEstoque\b/)).toEqual([]);
   });
 
-  // `/consumo_material` virou UM dos quatro tipos de `/movimento_material`.
+  // `/consumo_material` virou UM dos tres tipos de `/movimento_material`.
   // `/consumo_mensal` continua vivo, e o nome dele contem o do morto: por isso a
   // borda `\b` no fim.
   test('nenhum fonte chama /consumo_material', () => {

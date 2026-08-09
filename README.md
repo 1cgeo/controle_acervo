@@ -13,10 +13,10 @@ A **autenticação é do próprio SCA**: ele guarda o hash bcrypt em `dgeo.usuar
 | Componente | Diretório | Tecnologia | Descrição |
 |---|---|---|---|
 | **Server** | `server/` | Node.js / Express 5 | API REST com PostgreSQL/PostGIS |
-| **Interface web** | `client/` | Vanilla JS / Vite 6 | SPA única, com os três módulos |
+| **Interface web** | `client/` | Vanilla JS / Vite 6 | SPA única, com os quatro módulos de tela e as páginas de plataforma |
 | **Plugin QGIS do Acervo** | `ferramentas_acervo/` | Python / PyQt (Qt6) | Catalogação, carga e diagnóstico |
 | **Plugin QGIS da Mapoteca** | `ferramentas_mapoteca/` | Python / PyQt (Qt6) | Pedidos ativos, download de PDF e quantitativo impresso |
-| **CLIs de agente** | `acervo_cli/`, `mapoteca_cli/`, `orcamento_cli/`, `producao_cli/`, `efetivo_cli/` | Node (dependência zero) | Um por módulo, mais os dois de plataforma |
+| **CLIs de agente** | `acervo_cli/`, `mapoteca_cli/`, `orcamento_cli/`, `equipamento_cli/`, `pit_cli/`, `efetivo_cli/`, `sag_cli/` | Node (dependência zero) | Quatro de módulo, dois de plataforma e o `sag_cli`, que só LÊ o SAG |
 
 Os CLIs são irmãos do client web, não scripts auxiliares: o client serve humanos e o CLI serve agentes, sobre a mesma API. Eles leem o contrato do Joi vivo em tempo de execução, e por isso nunca ficam desatualizados em silêncio.
 
@@ -93,15 +93,16 @@ Arquivo `server/config.env`, gerado pelo `npm run config`. O catálogo comentado
 
 Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
 
-**Todo endpoint de MÓDULO exige perfil naquele módulo**, por `verifyPerfil(minimo, modulo)`, inclusive os de domínio. São **seis**: acervo, mapoteca, orçamento, **produção** e **efetivo** desde a 1.33.0, e **equipamento** desde a 1.46.0. Os dois últimos nasceram para haver como dar menos que a flag global no trabalho de produção e de pessoal, e guardam rotas que são de PLATAFORMA no endereço (`/api/metas/execucao`, `/api/metas/extra`, `/api/rpcmtec/capacitacao/*`, `/api/efetivo/*`). Antes deles a única guarda disponível ali era `verifyAdmin`, e por isso 5 das 7 contas que trabalhavam no sistema eram administradoras (medido em 2026-08-06). As outras guardas de plataforma continuam: `verifyAdmin` (usuários, edição do RPCMTec, views materializadas, limpeza de download, meta e revisão do PIT), `verifyGerente` (a grade de execução do PIT), `verifyAcesso` (leitura de meta e de Extra-PIT: exige perfil em ALGUM módulo, sem exigir um módulo específico) e `verifyLogin` (o próprio cadastro e a própria senha). A diferença entre as duas últimas é a conta recém-criada, que ainda não recebeu perfil nenhum: ela alcança a própria página e nada mais. Sem autenticação nenhuma ficam `/api/integracao/*`, a consulta de pedido por localizador e `/logs`, as três por decisão registrada em `docs/decisoes.md`.
+**Todo endpoint de MÓDULO exige perfil naquele módulo**, por `verifyPerfil(minimo, modulo)`, inclusive os de domínio. São **seis** linhas em `dominio.modulo`: acervo, mapoteca, orçamento, **pit** e **efetivo** desde a 1.33.0, e **equipamento** desde a 1.46.0. O code 4 chamava-se `producao` até 2026-08-09. O `pit` e o `efetivo` nasceram para haver como dar menos que a flag global no trabalho de produção e de pessoal, e guardam rotas que são de PLATAFORMA no endereço (`/api/metas/execucao`, `/api/metas/extra`, `/api/campo/*`, `/api/rpcmtec/capacitacao/*`, `/api/efetivo/*`). Antes deles a única guarda disponível ali era `verifyAdmin`, e por isso 5 das 7 contas que trabalhavam no sistema eram administradoras (medido em 2026-08-06). As outras guardas de plataforma continuam: `verifyAdmin` (usuários, meta e revisão do PIT, criar, fechar e reabrir a edição do RPCMTec, o anexo assinado, views materializadas e limpeza de download), `verifyGerente` (gerente de QUALQUER módulo ou administrador: a LEITURA inteira do RPCMTec, mais o Anuário e o RTM), `verifyGerente` mais `verifyModuloSubsecao()` (escrever UMA subseção do RPCMTec, e só as do módulo em que a pessoa é gerente), `verifyAcesso` (leitura de meta, de revisão e de Extra-PIT: exige perfil em ALGUM módulo, sem exigir um módulo específico) e `verifyLogin` (o próprio cadastro e a própria senha). A diferença entre as duas últimas é a conta recém-criada, que ainda não recebeu perfil nenhum: ela alcança a própria página e nada mais. Sem autenticação nenhuma ficam `/api/integracao/*`, a consulta de pedido por localizador (`GET /api/mapoteca/pedido/localizador/:localizador`) e `/logs`, as três por decisão registrada em `docs/decisoes.md`.
 
 | Prefixo | Módulo | Descrição |
 |---|---|---|
 | `/api/login` | plataforma | Autenticação local por bcrypt (JWT, `JWT_EXPIRACAO`, default 8h). Devolve `perfis` e `modulos`, e grava `dgeo.login` |
 | `/api/usuarios` | plataforma | Cadastro de usuários, senha e concessão de perfil por módulo (admin). `/usuarios/perfil` é o próprio cadastro e a própria senha, e exige só login: é a única rota que a conta sem perfil nenhum alcança |
 | `/api/acessos` | plataforma | Histórico de acesso: quem entrou hoje, logins por dia, mês, usuário e cliente (admin) |
-| `/api/metas` | plataforma | Metas do PIT (o plano anual da Divisão), a execução mensal delas (`/execucao`), as revisões (`/revisoes`) e as demandas Extra-PIT (`/extra`). Ler a meta exige só login; ler a GRADE de execução exige gerente de algum módulo ou administrador; LANÇAR a execução e cadastrar Extra-PIT exige operador em **produção**; alterar a META e a REVISÃO exige administrador, porque mudar o PIT é ato da DSG |
-| `/api/rpcmtec` | plataforma | A edição mensal do RPCMTec, o documento e o PDF assinado, o Anuário Estatístico e o RTM/META4 (ODS): tudo admin, porque cruza os três módulos e traz valor de crédito. A **capacitação** é a exceção, e são DUAS rotas: `/capacitacao/ministrada` (operador em **produção**, subseção 2.6) e `/capacitacao/recebida` (operador em **efetivo**, 6.2). O `tipo_id` não vai no corpo: quem o fixa é a rota |
+| `/api/auditoria` | plataforma | Rastreabilidade: a varredura de eventos (`/`), as opções de filtro (`/filtros`) e o histórico de UMA ficha (`/:modulo/:entidade/:id`). A guarda é por CAMINHO: quem vê o registro vê o histórico dele (consulta naquele módulo), e `plataforma` é a exceção de administrador. NÃO confundir com `/api/acervo/auditoria`, que roda os invariantes do acervo |
+| `/api/metas` | plataforma | Metas do PIT (o plano anual da Divisão), a execução mensal delas (`/execucao`), os anos do plano (`/exercicios`), as revisões com anexo (`/revisoes`) e as demandas Extra-PIT (`/extra`). Ler a meta, a revisão e o Extra-PIT exige perfil em ALGUM módulo (`verifyAcesso`); ler a GRADE de execução exige **consulta em pit** desde 2026-08-08, e era gerente de qualquer módulo; LANÇAR a execução e cadastrar Extra-PIT exige **operador em pit**; alterar a META e a REVISÃO exige administrador, porque mudar o PIT é ato da DSG |
+| `/api/rpcmtec` | plataforma | A edição mensal do RPCMTec, o documento e o PDF assinado, o Anuário Estatístico e o RTM/META4 (ODS). A guarda tem TRÊS níveis desde 2026-08-08: LER é `verifyGerente` (administrador ou gerente de qualquer módulo), ESCREVER uma subseção é `verifyGerente` mais `verifyModuloSubsecao()` (só as subseções do módulo em que a pessoa é gerente, pelo mapa de `rpcmtec_estrutura.js`), e criar, fechar, reabrir ou mexer no anexo assinado é `verifyAdmin`. A **capacitação** é a exceção, e são DUAS rotas: `/capacitacao/ministrada` (operador em **pit**, subseção 2.6) e `/capacitacao/recebida` (operador em **efetivo**, 6.2). O `tipo_id` não vai no corpo: quem o fixa é a rota |
 | `/api/efetivo` | plataforma | Passagem de cada pessoa pela DGEO, impedimentos e o aproveitamento agregado por semana, mês e ano. Módulo **efetivo**, inclusive na leitura: **consulta** lê a tela inteira, **gerente** escreve o dado dos outros (2026-08-08). O PRÓPRIO aproveitamento tem porta separada (`/meu_aproveitamento`, `/meu_periodo` e `/meu_impedimento`), sob `verifyAcesso`: o dono sai do token, e o `:id` alheio responde 404. `/meu_aproveitamento?ano=` é a grade do ano de UMA pessoa, pelas mesmas consultas do mapa da Divisão |
 | `/api/acervo` | acervo | Operações do acervo, downloads, visões materializadas |
 | `/api/arquivo` | acervo | Upload (do plugin e do navegador), download e catalogação de arquivos |
@@ -111,6 +112,7 @@ Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
 | `/api/ponto_controle` | acervo | Pontos de controle geodésico |
 | `/api/gerencia` | acervo | Domínios, arquivos excluídos, inconsistências |
 | `/api/dashboard` | acervo | Analytics do acervo |
+| `/api/limites` | acervo | Contorno de estado ou município (schema `limites`), para a tela destacar o lugar filtrado. Rota própria porque é dado de REFERÊNCIA, e cobra consulta no **acervo**, o mesmo das duas telas que a usam |
 | `/api/mapoteca` | mapoteca | Clientes, pedidos, plotters, relatórios CSV e impressão. O material tem o `movimento_material` (o LIVRO) como única porta de escrita, e o `estoque_material` é só leitura: ler é de **consulta**, lançar é de **operador** |
 | `/api/mapoteca/dashboard` | mapoteca | Analytics da mapoteca |
 | `/api/orcamento/dominio` | orcamento | ND, PI, UG, tipo de licitação, classificação de NC, tipo de item de DFD, grau de prioridade |
@@ -118,6 +120,7 @@ Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
 | `/api/orcamento/dfd` | orcamento | DFD e itens (o PCA do ano é o conjunto de DFDs do ano) |
 | `/api/orcamento/pdr` | orcamento | Itens do PDR do ano |
 | `/api/orcamento/notas_credito` | orcamento | Notas de crédito (NC) |
+| `/api/orcamento/recolhimentos` | orcamento | Recolhimento de crédito: um DOCUMENTO do SIAFI por linha, apontando a NC que ele abate. Rota própria, e não sub-rota da NC, porque o fechamento do ano pergunta pelo ANO inteiro. Até a 1.39.0 isto era a coluna `nota_credito.valor_recolhido` |
 | `/api/orcamento/notas_empenho` | orcamento | Notas de empenho (NE) |
 | `/api/orcamento/liquidacoes` | orcamento | Liquidações de NE |
 | `/api/orcamento/recebimentos` | orcamento | Recebimento de material por NE |
@@ -126,7 +129,7 @@ Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar.
 | `/api/orcamento/dashboard` | orcamento | Execução por ND para as abas do painel (números por PDR/Extra-PDR, com linha de total) |
 | `/api/orcamento/arquivo` | orcamento | Anexos de NC, DFD e PDR (bytes em `orcamento.arquivo.conteudo`) |
 | `/api/equipamento` | equipamento | O material permanente da Divisão (Classe VI e IX): o bem, os tipos, a indisponibilidade, o afastamento, a manutenção, a transferência e o painel. A **situação do bem não é campo**: ela vem de `equipamento.situacao_em(dia)` e sai resolvida na leitura. Ler é de **consulta**, lançar evento é de **operador**, e cadastrar bem ou transferência é de **gerente**. `/relatorio/dmt_ods` responde binário, e é a única rota do módulo que não sai por `sendJsonAndLog` |
-| `/api/campo` | **pit** | A atividade que a Divisão executa FORA dela: reambulação, voo de drone, ponto de controle, modelo 3D e panorâmica 360. É a fonte da subseção 2.5 do RPCMTec, que era DIGITADA da tela do SAP até 2026-08-08. Prefixo próprio, mas **não é módulo**: `dominio.modulo` continua com seis linhas, e a guarda cobra `pit` -- campo é o trabalho que o PIT promete. Ler a lista, o mapa, as fotos e os trajetos é de **consulta**; cadastrar, corrigir, subir foto e importar trajeto é de **operador**; **apagar o campo é de gerente**, porque o CASCADE leva as fotos e os trajetos junto. `/imagem/:id/arquivo` responde binário, e é a única rota que não sai por `sendJsonAndLog` |
+| `/api/campo` | **pit** | A atividade que a Divisão executa FORA dela: reambulação, voo de drone, ponto de controle, modelo 3D e panorâmica 360. É a fonte da subseção 2.5 do RPCMTec, que era DIGITADA da tela do SAP até 2026-08-08. Prefixo próprio, mas **não é módulo**: `dominio.modulo` continua com seis linhas, e a guarda cobra `pit` -- campo é o trabalho que o PIT promete. Ler a lista, o mapa, as fotos e os trajetos é de **consulta**; cadastrar, corrigir, subir foto e importar trajeto é de **operador**; **apagar o campo é de gerente**, porque o CASCADE leva as fotos e os trajetos junto. `/imagem/:imagemId/arquivo` responde binário, e é a única rota que não sai por `sendJsonAndLog` |
 | `/api/integracao` | público | Somente leitura, para o vault da DGEO. Sem autenticação (intranet). O `POST /acervo/situacao_geral` é POST pelo tamanho da geometria no corpo, e não por mutar estado |
 
 O acervo também se **escreve pela interface web**: produto, versão e relacionamento. A geometria do
@@ -146,7 +149,9 @@ arquivo grande. Ver `docs/decisoes.md`.
 
 ### Segurança
 
-Helmet (CSP desabilitado para servir o SPA e o Swagger UI), limite de 3.000 requisições por 60 segundos por IP (desligado sob `NODE_ENV=test`), proteção contra HTTP Parameter Pollution, CORS habilitado, cache desabilitado, JWT com a expiração de `JWT_EXPIRACAO` (default 8h) e o perfil relido do banco a cada requisição.
+Helmet (CSP desabilitado para servir o SPA e o Swagger UI), limite de 3.000 requisições por 60 segundos por IP (desligado sob `NODE_ENV=test`), CORS habilitado, cache desabilitado, JWT com a expiração de `JWT_EXPIRACAO` (default 8h) e o perfil relido do banco a cada requisição.
+
+**SEM `hpp`** (proteção contra poluição de parâmetro), e a ausência é deliberada: sob Express 5 ele não faz nada, porque `req.query` virou getter sem cache e o objeto que ele reescreve morre ali; e se voltasse a funcionar quebraria a busca do acervo, cujos filtros de domínio aceitam o mesmo código repetido na URL de propósito. A proteção de verdade é o schema de query no Joi de toda rota. Prova em `server/src/__tests__/unit/server/hpp_removido.test.js`; ver o cabeçalho de `server/src/server/app.js`.
 
 ### Tarefas de manutenção
 
@@ -195,13 +200,16 @@ server/src/
 ├── acervo/ arquivo/ produto/ projeto/ volume/ ponto_controle/ dashboard/ gerencia/
 ├── usuario/              # Usuários, senha e perfis (plataforma)
 ├── acessos/              # Histórico de login (plataforma)
-├── pit/                  # Metas do PIT, execução mensal e Extra-PIT (plataforma)
+├── auditoria/            # Rastreabilidade: varredura e histórico de ficha (plataforma)
+├── pit/                  # Metas do PIT, execução mensal, revisões e Extra-PIT (plataforma)
 ├── efetivo/              # Passagem pela DGEO, impedimentos e aproveitamento (plataforma)
-├── rpcmtec/              # RPCMTec inteiro, Anuário e capacitação (plataforma)
+├── rpcmtec/              # RPCMTec inteiro, Anuário, RTM e capacitação (plataforma)
 ├── mapoteca/             # CRUD da mapoteca, dashboard, relatórios CSV, impressão
+├── equipamento/          # Material permanente da Divisão e o Relatório DMT
+├── campo/                # Atividade de campo (prefixo próprio, guarda do módulo pit)
 ├── limites/              # Limite político-administrativo (referência)
 ├── integracao/           # Rotas públicas para o vault da DGEO
-├── orcamento/            # Módulo orçamento (9 features + utils próprio, 12 routers)
+├── orcamento/            # Módulo orçamento (9 features + utils próprio, 13 routers)
 └── utils/                # Utilitários compartilhados
 ```
 
@@ -211,22 +219,27 @@ Cada feature segue o padrão de 4 arquivos (`index.js`, `*_ctrl.js`, `*_route.js
 
 ## Interface web
 
-Uma SPA só, em `client/`, servida na raiz pelo Express. Trocar de módulo é trocar de rota (`#/acervo/...`, `#/mapoteca/...`, `#/orcamento/...`), sem recarregar e sem novo login. O seletor mostra só os módulos em que a pessoa tem perfil; quem é administrador global vê todos.
+Uma SPA só, em `client/`, servida na raiz pelo Express. Trocar de módulo é trocar de rota (`#/acervo/...`, `#/mapoteca/...`, `#/orcamento/...`, `#/equipamento/...`), sem recarregar e sem novo login. O seletor mostra só os módulos em que a pessoa tem perfil; quem é administrador global vê todos. As telas do PIT e do efetivo são páginas de PLATAFORMA, fora dos manifestos de módulo (`#/metas`, `#/execucao_pit`, `#/revisoes_pit`, `#/extra_pit`, `#/campo`, `#/aproveitamento`, `#/rpcmtec`, `#/capacitacao_ministrada`, `#/capacitacao_recebida`, `#/rastreabilidade`, `#/usuarios`, `#/acessos`, `#/perfil`).
 
 ```
 client/src/js/
 ├── index.js          # Tema, roteador, layout, rotas de plataforma
 ├── router.js         # Roteador hash com guardas
 ├── store/            # auth-store: sessão única, prefixo @sca-*
-├── services/         # api-client, cache, plataforma-service, rpcmtec-service
-├── utils/            # dom, formatação, tema, toast
-├── components/       # layout, data-table, modal, form-fields, charts, mapa, tabs, wizard
-├── pages/            # login, usuarios, rpcmtec, 404, não autorizado
+├── services/         # api-client, cache, plataforma-service, rpcmtec-service,
+│                     # campo-service, rastreabilidade-service
+├── utils/            # dom, formatação, tema, toast, localizador, reconciliar
+├── components/       # layout, data-table, modal, form-fields, charts, mapa, tabs,
+│                     # wizard, paginação, histórico, filtros, export-bar
+├── pages/            # login, usuarios, acessos, perfil, rpcmtec, capacitacao,
+│                     # metas, execucao-pit, revisoes-pit, extra-pit, campo,
+│                     # aproveitamento, rastreabilidade, 404, não autorizado
 └── modules/
     ├── registry.js   # O CONTRATO: como registrar página, pedir dado e declarar perfil
     ├── acervo/       # Dashboard, busca, pontos de controle, cadastro de produto e versão
     ├── mapoteca/     # Clientes, pedidos, material e o livro de movimentos, plotters, relatórios
-    └── orcamento/    # DFD, PDR, metas, NC, NE, licitações, RPNP, configuração
+    ├── orcamento/    # DFD, PDR, metas, NC, NE, licitações, RPNP, configuração
+    └── equipamento/  # Bens, tipos, indisponibilidade, afastamento, manutenção, transferência
 ```
 
 Para acrescentar página, leia `client/src/js/modules/registry.js`: um manifesto por módulo declara menu, rotas e perfil mínimo, e o roteador não precisa ser tocado.
@@ -249,23 +262,23 @@ Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e 
 |---|---|
 | `acervo` | projeto, lote, produto, versao, arquivo, download, miniatura, sessões de upload |
 | `ponto_controle` | pontos de controle geodésico e seus arquivos |
-| `mapoteca` | cliente, pedido, produto_pedido, impressao_item, plotter, tipo_material, `movimento_material` (o LIVRO: Entrada, Transferência e Consumo -- são TRÊS, e o code 4 da Contagem foi extinto na 1.48.0) e `estoque_material` (o saldo, DERIVADO do livro por gatilho e sem porta própria de escrita desde a 1.41.0) |
-| `orcamento` | 11 tabelas: dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, liquidacao, recebimento_material, rpnp, arquivo. Não há `configuracao`: ela foi podada na 1.34.0 |
+| `mapoteca` | cliente, pedido, produto_pedido, impressao_item, anexo_pedido, etiqueta_envio, plotter, manutencao_plotter, tipo_material, `movimento_material` (o LIVRO: Entrada, Transferência e Consumo -- são TRÊS, e o code 4 da Contagem foi extinto na 1.48.0) e `estoque_material` (o saldo, DERIVADO do livro por gatilho e sem porta própria de escrita desde a 1.41.0) |
+| `orcamento` | 12 tabelas: dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, nota_credito_recolhimento, liquidacao, recebimento_material, rpnp, arquivo. Não há `configuracao`: ela foi podada na 1.34.0 |
 | `equipamento` | O material permanente: `equipamento` (o bem), `tipo_equipamento` (CADASTRO, não domínio: tipo novo entra pela tela), `indisponibilidade` e `afastamento` (INTERVALOS, com `EXCLUDE USING gist` como `dgeo.efetivo_periodo`), `manutencao`, `transferencia` e cinco tabelas de domínio. Não há coluna de situação: quem a responde é a função `situacao_em(dia)`, que recebe o dia e não olha para hoje |
-| `campo` | A atividade de campo: `campo` (com `geom` MULTIPOLYGON **NOT NULL** e `ano` apontando `pit.exercicio`), as junções `campo_categoria`, `campo_militar` (para `dgeo.usuario`) e `campo_versao` (para `acervo.versao`, **opcional**), `imagem` (foto e vídeo em `bytea`), `track` e `track_ponto`, mais duas tabelas de domínio. A LINHA do trajeto não se guarda: ela é a view `track_linha`, costurada dos pontos na leitura |
-| `pit` | `pit` (o ANO do plano, chamada `exercicio` até 2026-08-09), `meta` e `meta_item` (o que cada uma promete), `revisao` e `meta_item_revisao` (o que mudou e quando), `execucao` (o planejado e o realizado de cada mês) e `demanda_extra` (o Extra-PIT). Dado de referência, fora dos módulos. **`pit.pit` é o ANO; `macrocontrole.pit` do SAP é a META**, e corresponde ao `pit.meta` daqui |
-| `rpcmtec` | `edicao` (o metadado da edição mensal), `capacitacao` e `capacitacao_militar` (a ENTRADA digitada das subseções 2.6 e 6.2, com quem da Divisão participou ligado ao cadastro). As tabelas CALCULADAS do relatório continuam sendo consultas, nunca gravadas |
-| `auditoria` | `evento`: o rastro de quem mudou o quê, nos três módulos e na plataforma. Único schema sem UPDATE e sem DELETE para a aplicação |
-| `limites` | Limite político-administrativo e área de suprimento |
-| `dominio` | Tabelas de domínio dos três módulos, mais `tipo_perfil` e `modulo` |
-| `dgeo` | `usuario` e `usuario_perfil`, mais `efetivo_periodo` e `impedimento` (a passagem de cada pessoa pela DGEO e o que a tirou do trabalho, por intervalo) |
+| `campo` | A atividade de campo: `campo` (com `geom` MULTIPOLYGON **NOT NULL** e `ano` apontando `pit.pit`), as junções `campo_categoria`, `campo_militar` (para `dgeo.usuario`) e `campo_versao` (para `acervo.versao`, **opcional**), `imagem` (foto e vídeo em `bytea`), `track` e `track_ponto`, mais duas tabelas de domínio (`situacao` e `categoria`). A LINHA do trajeto não se guarda: ela é a view `track_linha`, costurada dos pontos na leitura |
+| `pit` | `pit` (o ANO do plano, chamada `exercicio` até 2026-08-09), `meta` e `meta_item` (o que cada uma promete), `revisao`, `meta_item_revisao`, `tipo_anexo_revisao` e `anexo_revisao` (o que mudou, quando, e o documento assinado), `execucao` (o planejado e o realizado de cada mês) e `demanda_extra` (o Extra-PIT), mais a view `meta_vigente` e a função `meta_em(...)`. Dado de referência, fora dos módulos. **`pit.pit` é o ANO; `macrocontrole.pit` do SAP é a META**, e corresponde ao `pit.meta` daqui |
+| `rpcmtec` | `edicao` (o metadado da edição mensal), `subsecao` e `subsecao_revisao` (o texto de cada subseção e o que o gerente do módulo alterou nela), `anexo_edicao`, mais `capacitacao` e `capacitacao_militar` (a ENTRADA digitada das subseções 2.6 e 6.2, com quem da Divisão participou ligado ao cadastro). São **33 subseções** no gerador (`rpcmtec_estrutura.js`), e as CALCULADAS continuam saindo de consulta, nunca de linha gravada |
+| `auditoria` | `evento`: o rastro de quem mudou o quê, nos módulos e na plataforma. Único schema sem UPDATE e sem DELETE para a aplicação |
+| `limites` | `estado`, `municipio` e `area_suprimento` |
+| `dominio` | Tabelas de domínio dos módulos, mais `tipo_perfil` e `modulo` (seis linhas) |
+| `dgeo` | `usuario`, `usuario_perfil` e `login` (o histórico de acesso, com a coluna `cliente`), mais `efetivo_periodo` e `impedimento` (a passagem de cada pessoa pela DGEO e o que a tirou do trabalho, por intervalo) |
 | `public` | Versão do banco e estilos de camada do QGIS |
 
 ### Instalação nova
 
 Arquivos em `er/`, nesta ordem: `versao`, `dominio`, `dgeo`, `auditoria`, `limites`, `pit`, `acervo`, `ponto_controle`, `acompanhamento`, `mapoteca`, `orcamento`, `equipamento`, `campo`, `rpcmtec`, `permissao` e, opcional, `permissao_readonly`.
 
-A ordem tem razões: `limites` vem antes de `acervo`, que não o referencia mas o consulta, e é o primeiro arquivo com geometria (declara o PostGIS); `pit` vem antes de mapoteca e orçamento, que a referenciam, e depois de `dominio`, de onde saiu `situacao_extra_pit`; `equipamento` vem depois de `dgeo`, de onde sai a extensão `btree_gist` que o `EXCLUDE` das tabelas de intervalo exige, e não referencia módulo nenhum; `campo` vem depois de `pit` (o ano aponta `pit.exercicio`) e de `acervo` (o vínculo opcional aponta `acervo.versao`), e antes de `rpcmtec`, que o lê para calcular a subseção 2.5; `rpcmtec` é o último dos schemas porque referencia `dgeo` e `dominio`.
+A ordem tem razões: `limites` vem antes de `acervo`, que não o referencia mas o consulta, e é o primeiro arquivo com geometria (declara o PostGIS); `pit` vem antes de mapoteca e orçamento, que a referenciam, e depois de `dominio`, de onde saiu `situacao_extra_pit`; `equipamento` vem depois de `dgeo`, de onde sai a extensão `btree_gist` que o `EXCLUDE` das tabelas de intervalo exige, e não referencia módulo nenhum; `campo` vem depois de `pit` (o ano aponta `pit.pit`) e de `acervo` (o vínculo opcional aponta `acervo.versao`), e antes de `rpcmtec`, que o lê para calcular a subseção 2.5; `rpcmtec` é o último dos schemas porque referencia `dgeo` e `dominio`.
 
 `create_config.js` e o `globalSetup` do Jest seguem a mesma ordem. Ao acrescentar arquivo em `er/`, atualize os dois. O `globalSetup` LÊ a ordem do `create_config.js` em vez de copiá-la, porque a cópia apodrece.
 
@@ -326,24 +339,28 @@ Ele exige o perfil **operador no módulo mapoteca**, e todas as rotas que usa s�
 
 ## CLIs de agente
 
-Um por módulo, mais dois de PLATAFORMA: o `producao_cli` (PIT e RPCMTec) e o `efetivo_cli` (identidade e efetivo). Todos com dependência zero (sem `node_modules` próprio, para rodar num clone recém-baixado) e contrato lido do Joi vivo do servidor.
+São **sete**: quatro de MÓDULO (`acervo_cli`, `mapoteca_cli`, `orcamento_cli`, `equipamento_cli`), dois de PLATAFORMA (o `pit_cli`, do PIT e do RPCMTec, e o `efetivo_cli`, de identidade e efetivo) e o `sag_cli`, que é o único que não fala com o SCA. Todos com dependência zero (sem `node_modules` próprio, para rodar num clone recém-baixado) e contrato lido do Joi vivo do servidor.
 
 ```bash
-node acervo_cli/acervo.js --help
-node mapoteca_cli/mapoteca.js --help
-node orcamento_cli/orcamento.js --help
-node efetivo_cli/efetivo.js --help
-node producao_cli/producao.js --help
+node acervo_cli/acervo.js --ajuda
+node mapoteca_cli/mapoteca.js --ajuda
+node orcamento_cli/orcamento.js --ajuda
+node equipamento_cli/equipamento.js --ajuda
+node efetivo_cli/efetivo.js --ajuda
+node pit_cli/pit.js --ajuda
+node sag_cli/sag.js --ajuda
 node orcamento_cli/orcamento.js schema nc             # contrato formatado, do Joi vivo
 ```
 
-Todos compartilham o cache de sessão em `~/.sca`: um login serve todos. Nunca copie contrato para dentro de um CLI: acrescente a entrada em `lib/recursos.js` e o contrato aparece sozinho.
+Os seis do SCA compartilham o cache de sessão em `~/.sca`: um login serve todos. Nunca copie contrato para dentro de um CLI: acrescente a entrada em `lib/recursos.js` e o contrato aparece sozinho.
+
+O `sag_cli` é o **irmão de fora**: ele só LÊ o SAG (o espelho do SIAFI), para conferir contra ele o que o módulo orçamento guarda, e não escreve em lado nenhum. Sessão em `~/.sag`, e não em `~/.sca`, porque o cookie é de outro sistema.
 
 ```bash
-npm run test-cli      # os cinco (node:test, sem dependência)
+npm run test-cli      # node:test, sem dependência
 ```
 
-Eles usam `node:test` e `assert`, e não Jest: dependência zero vale para o teste também.
+Eles usam `node:test` e `assert`, e não Jest: dependência zero vale para o teste também. O script `test-cli` do `package.json` da raiz lista **cinco** dos sete; o `equipamento_cli` e o `sag_cli` têm `__tests__` próprio e ainda rodam por `node --test equipamento_cli/__tests__/*.test.js` (e o equivalente do `sag_cli`).
 
 ---
 
@@ -351,10 +368,14 @@ Eles usam `node:test` e `assert`, e não Jest: dependência zero vale para o tes
 
 | Script | O que faz |
 |---|---|
-| `scripts/fumaca.py` | Fumaça pós-deploy: os três módulos de ponta a ponta, só leitura, sai com 1 se algo falha |
+| `scripts/fumaca.py` | Fumaça pós-deploy, só leitura, sai com 1 se algo falha. Seis seções: plataforma, acervo, mapoteca, orçamento, RPCMTec e as colisões de nome resolvidas pelo prefixo. Ela ainda NÃO cobre `equipamento`, `campo` nem `efetivo` |
 | `scripts/check_vazamento.py` | Guard de pre-commit: barra segredo, IP interno e caminho de máquina neste repositório PÚBLICO |
 | `scripts/gerar_miniaturas.cjs` | Carga em lote das miniaturas do acervo já existente |
 | `scripts/copiar_usuarios_auth.js` | Copia, uma vez, os hashes de senha do banco do Auth Server para o do SCA |
+| `scripts/carregar_campo_sap.py` | Gera o SQL de carga do schema `campo` a partir do `controle_campo` do SAP |
+| `scripts/carregar_equipamento_dmt.py` | Gera o SQL de carga do módulo `equipamento` a partir do Relatório DMT (.ods) |
+
+Os dois últimos GERAM SQL para um caminho **fora** do repositório, escolhido em `--saida`, e recusam apontar para dentro dele: o repositório é PÚBLICO e a carga traz nome de militar, número de patrimônio e coordenada. O arquivo versionado carrega REGRA, nunca DADO.
 
 O detalhe de cada um está em [`scripts/README.md`](scripts/README.md). Os testes
 do que roda sem banco (argumentos, plano, relatório):

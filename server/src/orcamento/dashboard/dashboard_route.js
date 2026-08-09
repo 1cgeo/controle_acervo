@@ -3,7 +3,8 @@
 // Painel do orçamento. Perfil de CONSULTA no módulo orçamento, e não
 // administrador: é a tela de acompanhamento de quem trabalha com o crédito.
 // Foi o motivo de esta consulta não ter ido junto com o RPCMTec para
-// /api/rpcmtec, que é admin-only (ver orcamento/dashboard/dashboard_ctrl.js).
+// /api/rpcmtec, cuja leitura é `verifyGerente` (era `verifyAdmin` até
+// 2026-08-08). Ver orcamento/dashboard/dashboard_ctrl.js.
 
 const express = require('express')
 

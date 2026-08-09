@@ -9,7 +9,7 @@
 //
 // A FONTE E `server/src/utils/domain_constants.js`. Mudar um codigo la sem mudar
 // aqui nao quebra o boot nem o teste do servidor: quebra a tela, calada. Por isso
-// os quatro tipos e as quatro localizacoes ficam juntos, num arquivo so.
+// os tres tipos e as quatro localizacoes ficam juntos, num arquivo so.
 
 // SAO TRES, e o code 4 NAO EXISTE mais em lugar nenhum -- nem aqui, nem no
 // banco. Ele foi a Contagem, extinta em 2026-08-08, e a linha do dominio saiu

@@ -517,9 +517,9 @@ router.get(
 );
 
 // Auditoria dos invariantes lógicos do acervo (as regras que o schema não
-// consegue exprimir). Leitura pura, em transação READ ONLY, mas exige admin:
-// a saída expõe o formato do acervo inteiro e serve de mapa para quem for
-// escrever nele.
+// consegue exprimir). Leitura pura, em transação READ ONLY, mas exige GERENTE
+// do acervo: a saída expõe o formato do acervo inteiro e serve de mapa para quem
+// for escrever nele.
 //
 // Nasceu como script no vault do Chefe da DGEO, que abria conexão direta ao
 // banco de produção com um usuário read-only. Trazer para cá tira a credencial

@@ -59,7 +59,8 @@ export function openCampoDialog({
   const isEdit = Boolean(campo);
 
   // O polígono em voo. Nasce com o que já estava gravado (edição) ou nulo
-  // (cadastro), e só muda quando alguém confirma o desenho.
+  // (cadastro), e só muda quando um GeoJSON importado passa pelo `lerGeojson`:
+  // arquivo recusado não mexe nele. O desenho no mapa saiu em 2026-08-09.
   let area = campo?.geometria || null;
 
   const nomeField = createTextField({

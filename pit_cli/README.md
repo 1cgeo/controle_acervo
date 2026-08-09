@@ -1,11 +1,11 @@
-# producao_cli
+# pit_cli
 
 Interface de linha de comando do **PIT** e do **RPCMTec** do SCA, desenhada para **agentes**.
 
 Irmão do `acervo_cli`, do `mapoteca_cli`, do `orcamento_cli` e do `efetivo_cli`: mesmo servidor, mesmo login, mesma sessão em cache. Os três primeiros falam com um **módulo**; este fala com a **plataforma**. O plano anual da Divisão e o relatório mensal dela não pertencem a acervo, mapoteca nem orçamento: os três alimentam os dois.
 
 ```
-node producao_cli/producao.js --ajuda
+node pit_cli/pit.js --ajuda
 ```
 
 O **efetivo** (passagens pela DGEO, impedimentos e o mapa de aproveitamento) não está aqui: use o `efetivo_cli`.
@@ -96,7 +96,7 @@ O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do p
 
 O módulo de permissão chama-se **`pit`** (code 4). Ele se chamava `producao` até
 2026-08-09, e o nome foi devolvido ao core de produção do SAP, que vai entrar
-como módulo próprio. O **diretório** deste CLI ainda se chama `producao_cli`.
+como módulo próprio. O **diretório** deste CLI ainda se chama `pit_cli`.
 
 A linha entre as duas últimas é a decisão que importa: a **meta** é o que a DSG prometeu, e o que está no sistema é transcrição de documento assinado; a **execução** é o que a Divisão entregou.
 
@@ -118,7 +118,7 @@ A linha entre as duas últimas é a decisão que importa: a **meta** é o que a 
 ## Testes
 
 ```bash
-node --test producao_cli/__tests__/*.test.js
+node --test pit_cli/__tests__/*.test.js
 ```
 
 Rodam com o `node:test` embutido, sem instalar nada. Os testes de schema rodam **contra os schemas reais do `server/`**, não contra mocks: o valor do CLI é não ter cópia do contrato, e testar com schema falso testaria justamente a cópia. Em troca, eles quebram quando o contrato do PIT ou do RPCMTec muda, que é exatamente o alarme que se quer ter.
@@ -132,7 +132,7 @@ Nenhuma. Só o Node e o `server/`, de onde vem o Joi através dos próprios arqu
 ## Estrutura
 
 ```
-producao.js         roteador e mapa de ajuda
+pit.js         roteador e mapa de ajuda
 lib/args.js         parser de argumentos próprio
 lib/config.js       ambiente, cliente do auth, caminho da sessão
 lib/http.js         requisição, envelope, cache de token, multipart, download

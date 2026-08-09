@@ -1456,7 +1456,7 @@ controller.prepareDownloadImpressao = async (pedidoId, usuarioUuid) => {
 
 /**
  * Registra sessões de impressão (uma por item, com a quantidade impressa).
- * Qualquer usuário logado pode registrar. É log operacional, e não gestão de
+ * Quem registra é o OPERADOR da mapoteca. É log operacional, e não gestão de
  * catálogo. O total impresso por item é a soma dos registros.
  */
 controller.registrarImpressao = async (registros, usuarioUuid, contexto) => {
@@ -1628,7 +1628,7 @@ controller.getImpressoesItem = async (produtoPedidoId) => {
   });
 };
 
-// Remove registros de impressão (correções, somente admin)
+// Remove registros de impressão (correções, GERENTE da mapoteca)
 controller.deleteImpressoes = async (impressaoIds, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     // A linha inteira, mais o pedido dono: e o dados_antes da auditoria, e

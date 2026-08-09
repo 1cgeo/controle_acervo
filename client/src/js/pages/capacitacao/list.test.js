@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { flush } from '@/__tests__/helpers/flush.js';
 
-// Capacitação, em DUAS telas: a MINISTRADA em Produção (subseção 2.6 do
+// Capacitação, em DUAS telas: a MINISTRADA no PIT (subseção 2.6 do
 // RPCMTec) e a RECEBIDA em Efetivo (6.2).
 //
 // O que estes casos FIXAM: cada tela pede ao servidor SÓ o seu tipo, e a coluna

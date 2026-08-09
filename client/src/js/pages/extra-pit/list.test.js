@@ -5,7 +5,8 @@ import { flush } from '@/__tests__/helpers/flush.js';
 //
 // O que estes casos FIXAM: a lista e do ANO (a autorizacao atravessa o ano e
 // muda de situacao), a situacao chega TRADUZIDA do servidor, e escrever e do
-// administrador global -- quem so tem perfil de modulo le e nao edita.
+// OPERADOR NO PIT (o administrador global passa por cima) -- quem so tem perfil
+// em outro modulo le e nao edita, e e essa a persona dos casos abaixo.
 vi.mock('@services/plataforma-service.js', async () => {
   const real = await vi.importActual('@services/plataforma-service.js');
   return {

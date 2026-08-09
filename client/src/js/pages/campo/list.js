@@ -41,7 +41,7 @@ const VAZIO = 'Nenhuma atividade de campo para estes filtros';
  * O MAPA SÓ CARREGA QUANDO A ABA ABRE. O MapLibre passa de meio megabyte, e a
  * maioria das visitas fica na tabela.
  *
- * A GUARDA DA TELA É `consulta` EM PRODUÇÃO, e o que ela decide é só a PORTA. O
+ * A GUARDA DA TELA É `consulta` NO PIT, e o que ela decide é só a PORTA. O
  * que barra escrita é o `verifyPerfil` no servidor, que lê o perfil do BANCO a
  * cada requisição. Os `podeEscrever`/`podeApagar` abaixo são ERGONOMIA: eles
  * escondem botões que responderiam 403.

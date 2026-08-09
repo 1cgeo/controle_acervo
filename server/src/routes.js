@@ -87,8 +87,11 @@ router.use("/metas", pitRoute);
 // Aproveitamento do efetivo: quem esteve na Divisão, quando, e o que o impediu.
 // Rota de PLATAFORMA pela mesma razão das metas, e sob `/efetivo` em vez de
 // `/rpcmtec` porque "quem esteve na Divisão" não existe por causa do relatório:
-// o relatório é um leitor. Toda ela é `verifyAdmin`, inclusive a leitura, porque
-// a tela mostra licença de saúde e função acumulada, nominalmente.
+// o relatório é um leitor. Ela era `verifyAdmin` inteira, inclusive a leitura,
+// porque a tela mostra licença de saúde e função acumulada, nominalmente; desde
+// a 1.33.0 ela cobra o módulo EFETIVO (`consulta` lê, `gerente` lança pelos
+// outros), e as rotas do PRÓPRIO aproveitamento saem por `verifyAcesso`. Ver o
+// cabeçalho de `efetivo/efetivo_route.js`.
 router.use("/efetivo", efetivoRoute);
 
 router.use("/volumes", volumeRoute);

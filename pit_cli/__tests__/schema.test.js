@@ -291,8 +291,8 @@ test('a guarda declarada bate com a do fonte nas rotas que destoam', () => {
   assert.strictEqual(RECURSOS.meta.operacoes.listar.acesso, 'login')
   assert.strictEqual(RECURSOS.meta.operacoes.criar.acesso, 'admin')
   assert.strictEqual(RECURSOS.execucao.operacoes.grade.acesso, 'gerente')
-  assert.strictEqual(RECURSOS.execucao.operacoes.lancar.acesso, 'producao_operador')
-  assert.strictEqual(RECURSOS.extra.operacoes.criar.acesso, 'producao_operador')
+  assert.strictEqual(RECURSOS.execucao.operacoes.lancar.acesso, 'pit_operador')
+  assert.strictEqual(RECURSOS.extra.operacoes.criar.acesso, 'pit_operador')
   for (const op of Object.values(RECURSOS.edicao.operacoes)) {
     assert.strictEqual(op.acesso, 'admin', 'a EDICAO do RPCMTec e do administrador')
   }
@@ -314,7 +314,7 @@ test('as duas capacitacoes sao recursos distintos, com guardas distintas', () =>
   assert.deepStrictEqual(Object.keys(r.operacoes).sort(), [...SEIS].sort())
 
   for (const op of Object.values(m.operacoes)) {
-    assert.strictEqual(op.acesso, 'producao_operador')
+    assert.strictEqual(op.acesso, 'pit_operador')
     assert.ok(op.caminho.startsWith('/rpcmtec/capacitacao/ministrada'), op.caminho)
   }
   for (const op of Object.values(r.operacoes)) {

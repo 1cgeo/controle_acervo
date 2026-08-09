@@ -3,7 +3,7 @@
 // Testes com node:test (embutido no Node), nao jest: o CLI nao instala
 // node_modules proprio, e depender do jest do server/ para testar o CLI criaria
 // um acoplamento que a dependencia zero existe para evitar.
-//   Rodar: node --test producao_cli/__tests__/*.test.js
+//   Rodar: node --test pit_cli/__tests__/*.test.js
 
 const { test } = require('node:test')
 const assert = require('node:assert')

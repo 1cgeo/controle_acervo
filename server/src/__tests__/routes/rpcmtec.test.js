@@ -287,7 +287,7 @@ describe('RPCMTec: a estrutura do documento', () => {
 // Cada uma imprimia um número que o banco não afirma:
 //
 //   D3  a 2.1 comparava o realizado contra a promessa do ANO e nada mais. O
-//       `resumoDoAno` já calculava `planejado_ate` -- o `producao_cli` o
+//       `resumoDoAno` já calculava `planejado_ate` -- o `pit_cli` o
 //       imprimia --, e `montarEstadoPit` o descartava. Em agosto, uma meta em
 //       dia aparecia atrasada.
 //

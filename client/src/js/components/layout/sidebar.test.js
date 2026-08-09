@@ -282,9 +282,10 @@ describe('sidebar: Efetivo e uma seção de sistema, como os modulos', () => {
 // ano" é a primeira tela dela, e não um item solto de plataforma, porque as
 // quatro se leem JUNTAS.
 //
-// O RÓTULO é "PIT" e o MÓDULO de permissão continua 'pit': o módulo é
-// `dominio.modulo` code 4 e se chama Produção no banco. Os casos abaixo asserem
-// os dois lados de propósito, para o rótulo não arrastar o módulo junto.
+// O RÓTULO é "PIT" e o MÓDULO de permissão é 'pit': o módulo é `dominio.modulo`
+// code 4, que se chamava 'producao' até 2026-08-09 e hoje se chama PIT no banco
+// também. Os casos abaixo asserem os dois lados de propósito, para o rótulo não
+// arrastar o módulo junto.
 describe('sidebar: a seção PIT reúne o plano anual e o que acontece com ele', () => {
   test('as quatro telas estão na seção, e o cabeçalho leva às metas', () => {
     logar({ administrador: true });
@@ -310,8 +311,8 @@ describe('sidebar: a seção PIT reúne o plano anual e o que acontece com ele',
   // A seção NÃO se restringe, e DUAS das quatro telas sim. A diferença não é
   // descuido: as metas e o Extra-PIT são `acessoLoader`, porque cadastrar NC,
   // item de PDR ou pedido de impressão obriga a escolher a meta que financia ou
-  // cumpre, e quem trabalha na mapoteca precisa ler o plano sem ter perfil em
-  // Produção. A execução e a capacitação ministrada são do MÓDULO. Oferecê-las a
+  // cumpre, e quem trabalha na mapoteca precisa ler o plano sem ter perfil no
+  // PIT. A execução e a capacitação ministrada são do MÓDULO. Oferecê-las a
   // quem levaria 403 é o desencontro que o `podeAbrirRota` existe para evitar do
   // lado dos módulos.
   test('quem nao tem perfil em Producao ve o plano, e nao ve a execução nem a capacitação', () => {
@@ -327,7 +328,7 @@ describe('sidebar: a seção PIT reúne o plano anual e o que acontece com ele',
   });
 
   // A EXECUÇÃO deixou de ser "administrador ou gerente de qualquer módulo" e
-  // passou a ser do MÓDULO Produção, na consulta. Sem este caso, a mudança
+  // passou a ser do MÓDULO PIT, na consulta. Sem este caso, a mudança
   // poderia ter apenas escondido a grade de todo mundo e o caso acima
   // continuaria verde.
   test('consulta em Producao ve a execução e a capacitação ministrada', () => {
@@ -348,7 +349,7 @@ describe('sidebar: a seção PIT reúne o plano anual e o que acontece com ele',
   });
 
   // O GERENTE de outro módulo perdeu a grade: ela seguia `ehGerenteDeAlgumModulo`
-  // e agora segue o módulo Produção. Quem responde pela mapoteca não lê mais a
+  // e agora segue o módulo PIT. Quem responde pela mapoteca não lê mais a
   // execução do PIT, e a rota diz o mesmo.
   test('gerente de outro modulo nao ve mais a execução do PIT', () => {
     logar({ perfis: { mapoteca: 3 } });
@@ -692,8 +693,8 @@ describe('sidebar: quem ainda nao tem acesso a nada', () => {
     expect(ids(sidebar)).toEqual([]);
   });
 
-  // Um perfil qualquer, em qualquer modulo, ja devolve Produção: o PIT do ano e
-  // o plano da Divisao inteira, e nao pede perfil no modulo Produção.
+  // Um perfil qualquer, em qualquer modulo, ja devolve a seção: o PIT do ano e
+  // o plano da Divisao inteira, e nao pede perfil no modulo 'pit'.
   test('com qualquer perfil, a seção de Produção volta', () => {
     logar({ perfis: { mapoteca: 1 } });
     const { sidebar } = createSidebar({ modulo: null });

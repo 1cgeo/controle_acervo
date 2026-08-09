@@ -6,7 +6,7 @@
 // níveis, porque as três coisas que se fazem aqui são diferentes:
 //
 //   LER              `verifyGerente`  administrador global OU gerente de
-//                    QUALQUER módulo. O relatório inteiro: as 34 subseções, o
+//                    QUALQUER módulo. O relatório inteiro: as 33 subseções, o
 //                    documento, o PDF, os anexos e as duas planilhas que sobem
 //                    para a DSG no mesmo envio (Anuário e RTM).
 //
@@ -307,12 +307,13 @@ const rotasDeCapacitacao = (caminho, tipoId, leitura, escrita) => {
   )
 }
 
-// MINISTRADA é serviço que a Divisão PRESTA, e alimenta a 2.6: é trabalho de
-// produção, e o módulo é Produção.
+// MINISTRADA é serviço que a Divisão PRESTA, e alimenta a 2.6: é trabalho que o
+// plano promete, e o módulo é o PIT (o code 4, que se chamou `producao` até
+// 2026-08-09).
 //
 // A LEITURA DESCEU PARA CONSULTA em 2026-08-08, e a escrita ficou onde estava. O
 // curso que a Divisão deu não é segredo dentro dela, e exigir o nível de quem
-// LANÇA para quem só CONFERE fechava a tela da 2.6 para o resto de Produção.
+// LANÇA para quem só CONFERE fechava a tela da 2.6 para o resto do PIT.
 rotasDeCapacitacao(
   'ministrada',
   TIPO_CAPACITACAO.MINISTRADA,

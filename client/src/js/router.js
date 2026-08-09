@@ -182,14 +182,14 @@ class Router {
 /**
  * Rota de entrada: o primeiro modulo acessivel. Sem sessao vai para o login.
  *
- * PRODUCAO E EFETIVO NAO SAO MODULOS DO REGISTRY, e por isso precisam de resposta
+ * PIT E EFETIVO NAO SAO MODULOS DO REGISTRY, e por isso precisam de resposta
  * propria aqui. Eles existem em `dominio.modulo` desde a 1.33.0 e guardam rotas
  * do servidor, mas as telas deles sao de PLATAFORMA (#/metas, #/aproveitamento),
- * sem manifesto e sem prefixo. Sem este trecho, quem tivesse perfil SO em
- * Producao ou SO em Efetivo entraria no sistema e cairia em /unauthorized, com o
- * perfil novo funcionando em toda rota menos na porta de entrada.
+ * sem manifesto e sem prefixo. Sem este trecho, quem tivesse perfil SO no PIT
+ * ou SO em Efetivo entraria no sistema e cairia em /unauthorized, com o perfil
+ * novo funcionando em toda rota menos na porta de entrada.
  *
- * A ORDEM segue a da sidebar: Producao antes de Efetivo.
+ * A ORDEM segue a da sidebar: PIT antes de Efetivo.
  *
  * SEM NADA DISSO, A ENTRADA E '#/perfil', e nao mais '/unauthorized'. Quem ainda
  * nao recebeu perfil nenhum tem UMA tela que e dela -- o proprio cadastro, a
@@ -202,8 +202,8 @@ export function rotaRaiz() {
   if (!isAuthenticated()) return '/login';
   const modulo = primeiroModuloAcessivel();
   if (modulo) return rotaInicial(modulo);
-  // '/metas' abre para qualquer pessoa logada, entao qualquer nivel em Producao
-  // basta para entrar por ela.
+  // '/metas' abre para quem tem perfil em algum modulo, entao qualquer nivel no
+  // PIT basta para entrar por ela.
   if (temPerfil('consulta', 'pit')) return '/metas';
   // Em Efetivo, QUALQUER NIVEL entra pelo dashboard. Ele e a tela de leitura da
   // secao, e '#/acessos' cobra so consulta desde que a regua nova valeu.
@@ -264,9 +264,10 @@ export function acessoLoader() {
 /**
  * Guard: administrador global OU gerente de qualquer modulo.
  *
- * Guarda as duas telas que fazem a MESMA pergunta: a execucao do PIT e a
- * rastreabilidade. Nenhuma cabe no `adminLoader` nem no `authLoader`: elas sao
- * do administrador (que ve tudo) e do gerente (que ve o modulo dele).
+ * Guarda a rastreabilidade e o RPCMTec (a lista e a edicao de um mes). Nenhuma
+ * cabe no `adminLoader` nem no `authLoader`: elas sao do administrador (que ve
+ * tudo) e do gerente (que ve o modulo dele). A execucao do PIT SAIU daqui na
+ * regua de 2026-08-08, e virou `perfilLoader('pit', 'consulta')`.
  *
  * O recorte de verdade e do servidor (`verify_gerente.js` e
  * `verifyRastreabilidade`), que le o perfil do BANCO a cada requisicao. Aqui e

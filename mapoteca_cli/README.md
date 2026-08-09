@@ -57,7 +57,7 @@ mapoteca imprimir --item 881 --qtd 5      # registra a impressão de um item
 mapoteca painel --ano 2026                # resumo do ano
 mapoteca relatorio detalhado --ano 2026 --csv
 mapoteca relatorio impressao --ano 2026 --ods   # a aba META4_DETALHADA
-mapoteca anuario --ano 2026 --mes 7 --ods       # Anuário Estatístico (exige admin)
+mapoteca anuario --ano 2026 --mes 7 --ods       # Anuário Estatístico (exige gerente)
 
 # material: o LIVRO escreve, o saldo só se lê
 mapoteca movimento listar --tipo_movimento_id 3 --data_inicio 2026-07-01
@@ -150,7 +150,9 @@ Nunca ponha senha na linha de comando. Catálogo das chaves no `env-guia.md` do 
 
 O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar a instância local com a de produção; e no diretório do SCA, não da mapoteca, porque o token vale para a API inteira. `--sem-cache` desliga.
 
-O acesso é por **perfil** no módulo `mapoteca`: consulta lê (inclusive o livro de material), operador imprime e faz tudo de material (lança movimento, cadastra e conta), gerente cadastra pedido, cliente, item e anexo. O administrador passa em tudo. Públicos, sem login: `/api` (health), `/api/login` e a consulta por localizador. Os GET de domínio exigem perfil de consulta.
+O acesso é por **perfil** no módulo `mapoteca`: consulta lê (inclusive o livro de material), operador imprime e faz tudo de material (lança movimento no livro e cadastra o insumo), gerente cadastra pedido, cliente, item e anexo. O administrador passa em tudo. Públicos, sem login: `/api` (health), `/api/login` e a consulta por localizador. Os GET de domínio exigem perfil de consulta.
+
+O `anuario` é a exceção: a rota dele mora em `/api/rpcmtec/anuario`, que é de **plataforma**, e desde 2026-08-08 ela é `verifyGerente` (administrador global **ou gerente de qualquer módulo**). Perfil na mapoteca, sozinho, não a abre.
 
 ## Testes
 

@@ -23,7 +23,9 @@ const SITUACOES = [
 ];
 
 /**
- * Criar ou editar uma demanda Extra-PIT. Só o administrador global chega aqui.
+ * Criar ou editar uma demanda Extra-PIT. Chega aqui quem tem operador no PIT
+ * (`temPerfil('operador', 'pit')`, em list.js), e o administrador global por
+ * cima. O servidor cobra o mesmo em POST, PUT e DELETE /metas/extra.
  *
  * @param {Object} options
  * @param {Object|null} [options.demanda] - demanda existente (null cria nova)

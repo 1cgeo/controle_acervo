@@ -408,9 +408,9 @@ controller.listarMilitares = async () => {
  * autorizam pelo `:id` sozinho, e podem: quem chega lá já é gerente do Efetivo,
  * e o trabalho dele é justamente mexer no registro dos outros. As rotas do
  * PRÓPRIO (`/efetivo/meu_periodo`) passam por `verifyAcesso`, que só pergunta se
- * a pessoa entrou no sistema: ali o `:id` é a ÚNICA coisa que endereça a linha, e
- * sem esta conferência qualquer pessoa logada editaria a passagem de qualquer
- * outra trocando um número na URL.
+ * a pessoa tem perfil em ALGUM módulo: ali o `:id` é a ÚNICA coisa que endereça a
+ * linha, e sem esta conferência qualquer pessoa com acesso ao sistema editaria a
+ * passagem de qualquer outra trocando um número na URL.
  *
  * 404, E NÃO 403, e a diferença não é cosmética: o 403 confirmaria que a linha
  * existe. A mensagem é a MESMA de `auditoriaCtrl.lerAntes`, de propósito -- id

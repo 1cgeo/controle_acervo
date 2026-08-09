@@ -115,8 +115,12 @@ const RECURSOS = {
 
   // Meta do PIT: recurso de PLATAFORMA. Mora em /metas (sem o prefixo do
   // modulo) e le o schema de server/src/pit/, porque o PIT e o plano anual da
-  // Divisao e os tres modulos o consomem. Ler pede so login; escrever pede
-  // administrador.
+  // Divisao e todos os modulos o consomem.
+  //
+  // LER pede `verifyAcesso`, e nao `verifyLogin`: ter conta nao e ter acesso, e
+  // quem nao tem perfil em modulo NENHUM alcanca so a propria pagina. A troca e
+  // de 2026-08-08. ESCREVER (criar, editar, apagar meta e mexer nas revisoes)
+  // continua do ADMINISTRADOR.
   meta: {
     nome: 'meta do PIT',
     caminho: '/metas',

@@ -11,7 +11,7 @@ const { asyncHandler, httpCode, AppError } = require('../utils')
 const schemaValidation = require('../utils/schema_validation_estrito')
 
 // SEM `verifyGerente` desde 2026-08-08: a grade da execução era a última rota do
-// sistema a usá-lo, e ela passou a cobrar consulta no módulo PRODUÇÃO. O
+// sistema a usá-lo, e ela passou a cobrar consulta no módulo PIT. O
 // middleware continua em `login/`, sem chamador.
 const { verifyAcesso, verifyAdmin, verifyPerfil } = require('../login')
 
@@ -68,7 +68,7 @@ router.get(
 // ANTES de '/:id', como '/anos': o Express casa na ordem de declaração, e
 // 'execucao' cairia na rota do id e reprovaria na validação de parâmetro.
 //
-// LER é da CONSULTA EM PRODUÇÃO desde 2026-08-08, e era `verifyGerente`
+// LER é da CONSULTA NO PIT desde 2026-08-08, e era `verifyGerente`
 // (gerente de QUALQUER módulo, ou o administrador global). Duas coisas estavam
 // erradas no desenho antigo, e a régua nova conserta as duas:
 //
@@ -78,11 +78,11 @@ router.get(
 //   lança, gerente responde pela área.
 //
 //   O MÓDULO. O `verifyGerente` aceitava o gerente de QUALQUER módulo, inclusive
-//   quem nunca tocou em produção, e ao mesmo tempo recusava o operador de
-//   Produção. O compartimento certo para a grade do PIT é PRODUÇÃO, que é o
-//   módulo que a escreve.
+//   quem nunca tocou no plano, e ao mesmo tempo recusava o operador do PIT. O
+//   compartimento certo para a grade do PIT é o módulo PIT (o code 4, que se
+//   chamou `producao` até 2026-08-09), que é o módulo que a escreve.
 //
-// ESCREVER é do OPERADOR DE PRODUÇÃO desde a 1.33.0, e era do administrador
+// ESCREVER é do OPERADOR DO PIT desde a 1.33.0, e era do administrador
 // global. Lançar quanto uma meta entregou em março é o trabalho de quem toca a
 // produção, e exigir para isso a mesma flag que libera o orçamento e o cadastro
 // de usuários é o que fez 5 das 7 contas que trabalham no sistema virarem
@@ -190,7 +190,7 @@ router.delete(
 // Demanda Extra-PIT (subseção 3.3 do RPCMTec)
 //
 // LER é de quem tem acesso ao sistema (`verifyAcesso`, perfil em qualquer
-// módulo). ESCREVER é do OPERADOR DE PRODUÇÃO desde a
+// módulo). ESCREVER é do OPERADOR DO PIT desde a
 // 1.33.0, e era do administrador global: o Extra-PIT é a exceção AUTORIZADA ao
 // plano, e quem a cadastra é quem toca a produção.
 //
@@ -298,12 +298,12 @@ router.delete(
 // `.required()`): ligar uma folha por lá obriga a ler a versão, devolver tudo de
 // volta e torcer para nada se perder no caminho. Estas rotas mexem em UM campo.
 //
-// LER é de qualquer pessoa logada, como o resto da 3.3. ESCREVER é do operador
-// de PRODUÇÃO, igual às outras escritas da demanda Extra-PIT.
+// LER é de quem tem acesso ao sistema (`verifyAcesso`), como o resto da 3.3.
+// ESCREVER é do operador do PIT, igual às outras escritas da demanda Extra-PIT.
 //
 // A 1.33.0 deixou estas duas com o administrador global, pelo argumento de que
 // elas gravam `acervo.versao.demanda_extra_id` e quem manda no acervo é o módulo
-// acervo. O argumento cai diante do que ele produzia: o operador de Produção
+// acervo. O argumento cai diante do que ele produzia: o operador do PIT
 // cadastrava a demanda e parava ali, sem poder dizer QUAIS folhas a cumprem. Uma
 // demanda Extra-PIT sem folha ligada não conta nada na grade do PIT, então a
 // permissão entregava metade de uma tarefa.
@@ -388,8 +388,8 @@ router.delete(
 //
 // ELA NÃO ESTAVA NA LISTA de rotas a mudar, e mudou assim mesmo, porque deixar o
 // `verifyGerente` aqui não seria "mais rígido": ele aceita o gerente de QUALQUER
-// módulo, inclusive quem não tem uma linha em Produção. Com a grade cobrando
-// consulta em PRODUÇÃO, o gerente da mapoteca perderia `/execucao` e continuaria
+// módulo, inclusive quem não tem uma linha no PIT. Com a grade cobrando
+// consulta no PIT, o gerente da mapoteca perderia `/execucao` e continuaria
 // lendo o mesmo dado por este endereço. A régua nova é por COMPARTIMENTO, e não
 // só por nível, e um endereço fora dela reabre o compartimento.
 router.get(

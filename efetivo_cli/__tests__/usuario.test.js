@@ -374,12 +374,12 @@ test('criar avisa que sem `perfis` a pessoa entra e nao ve nada', async () => {
   assert.ok(!r.texto.includes('segredo123'))
 })
 
-test('editar avisa que ativo=false corta o login nos tres modulos', async () => {
+test('editar avisa que ativo=false corta o login em todos os modulos', async () => {
   const r = await rodar([
     'usuario', 'editar', '--uuid', U1,
     '--data', '{"administrador": false, "ativo": false}', '--dry-run'
   ])
-  assert.ok(r.avisos.some(a => a.includes('TRES modulos')))
+  assert.ok(r.avisos.some(a => a.includes('TODOS os modulos')))
   assert.ok(r.texto.includes(`PUT /api/usuarios/${U1}`))
 })
 

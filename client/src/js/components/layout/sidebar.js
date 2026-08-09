@@ -167,7 +167,7 @@ const SISTEMA_EFETIVO = {
  *
  * A SEÇÃO NÃO leva `admin: true`, e não é esquecimento. As METAS e o EXTRA-PIT
  * são `acessoLoader`: quem tem acesso ao sistema LÊ o plano anual sem ter perfil
- * no módulo Produção, porque cadastrar NC, item de PDR ou pedido de impressão
+ * no módulo PIT, porque cadastrar NC, item de PDR ou pedido de impressão
  * obriga a escolher a meta que financia ou cumpre. As outras duas telas levam
  * `visivel` no ITEM, cada uma repetindo o que a rota cobra em `index.js` --
  * oferecer tela a quem levaria 403 é o desencontro que `podeAbrirRota` existe
@@ -179,14 +179,16 @@ const SISTEMA_EFETIVO = {
  */
 const SISTEMA_PRODUCAO = {
   id: 'pit-area',
-  // SÓ O RÓTULO é "PIT". O `id`, a home '/metas' e o módulo de permissão
-  // 'pit' NÃO acompanham, e não é descuido: 'pit' é `dominio.modulo`
-  // code 4, continua se chamando Produção no banco, e é o nome que o servidor
-  // cobra em `verifyPerfil(..., 'pit')`. O rótulo fala do CONTEÚDO das
-  // telas, que é o PIT do ano; o módulo fala de QUEM pode escrever nelas.
-  // "Corrigir" a simetria trocando o id quebra a chave do item ativo
-  // (`activeIdFromPath`), trocando a home quebra link guardado, e trocando o
-  // módulo quebra a autorização.
+  // O RÓTULO, O `id` E O MÓDULO DIZEM A MESMA PALAVRA desde 2026-08-09: o code
+  // 4 de `dominio.modulo` chamava-se 'Produção'/'producao' até ali, e virou
+  // 'PIT'/'pit' para devolver o nome ao core de produção do SAP, que vai entrar
+  // como Produção. 'pit' é o nome que o servidor cobra em
+  // `verifyPerfil(..., 'pit')`.
+  //
+  // A HOME '/metas' É A ÚNICA QUE NÃO ACOMPANHOU, e não é descuido: é o endereço
+  // que a grade de execução e a rastreabilidade apontam, e renomear URL quebra
+  // link guardado. Trocar o `id` quebra a chave do item ativo
+  // (`activeIdFromPath`), e trocar o módulo quebra a autorização.
   label: 'PIT',
   icon: ICONS.layers,
   visivel: () => temAlgumAcesso(),
@@ -204,12 +206,12 @@ const SISTEMA_PRODUCAO = {
     // de execucao e a rastreabilidade apontam, e renomear so por simetria
     // quebraria link guardado sem ganho nenhum.
     { id: 'metas', label: 'PIT do ano', icon: ICONS.category, path: '/metas' },
-    // A execução do PIT é do MÓDULO PRODUÇÃO, e não de qualquer pessoa logada
+    // A execução do PIT é do MÓDULO PIT, e não de quem tem acesso ao sistema
     // como as metas ao lado. O recorte deixou de ser "administrador ou gerente
-    // de qualquer módulo" e passou a ser consulta em Produção, que é quem
-    // escreve a grade: a rota virou `perfilLoader('pit', 'consulta')`. Ler
-    // a grade não move nada; escrever continua sendo do administrador, e quem
-    // barra é o servidor.
+    // de qualquer módulo" e passou a ser consulta no PIT, que é quem LÊ a
+    // grade: a rota virou `perfilLoader('pit', 'consulta')`. Ler a grade não
+    // move nada; LANÇAR a célula é do operador no PIT, e quem barra é o
+    // servidor.
     {
       id: 'execucao_pit',
       label: 'Execução do PIT',
@@ -224,7 +226,7 @@ const SISTEMA_PRODUCAO = {
     // Mora aqui, e não num módulo próprio: campo é o trabalho que o PIT
     // promete, `dominio.modulo` continua com seis linhas, e o `ano` do campo
     // aponta `pit.pit`. Um módulo novo obrigaria a conceder perfil de
-    // novo a quem já responde pela Produção, só para ver o que ela prometeu.
+    // novo a quem já responde pelo PIT, só para ver o que ele prometeu.
     //
     // CONSULTA, como a execução e a capacitação ao lado: abrir a lista e o mapa
     // é LER. O operador é quem LANÇA, e o gerente é o único que APAGA -- o
@@ -238,7 +240,7 @@ const SISTEMA_PRODUCAO = {
     },
     // A capacitação MINISTRADA é serviço que a Divisão presta, e por isso mora
     // aqui. `visivel`, e não `admin: true`: ela é rota própria, guardada pelo
-    // módulo Produção.
+    // módulo PIT.
     //
     // CONSULTA, e não mais operador, como a recebida do lado do Efetivo: abrir
     // a lista é LER, e o operador continua sendo o único que LANÇA.

@@ -12,7 +12,7 @@
 // pelo caminho da recebida recebe 404, e não a linha do outro tipo.
 //
 // POR QUE ISSO É GUARDA, e não organização. A permissão passou a ser POR TIPO
-// (ministrada é do operador de Produção, recebida é do operador de Efetivo), e a
+// (ministrada é do operador do PIT, recebida é do operador de Efetivo), e a
 // guarda da rota não enxerga o corpo da requisição. Sem o recorte aqui, o
 // operador de Efetivo apagaria uma capacitação MINISTRADA mandando o id dela
 // para `DELETE /capacitacao/recebida/:id`: a guarda o aprovaria, porque a rota é

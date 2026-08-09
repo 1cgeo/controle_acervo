@@ -90,11 +90,12 @@ c, b = chamar('/api/login', 'POST', {'usuario': USUARIO, 'senha': SENHA, 'client
 dados = b.get('dados') or {}
 tok = dados.get('token')
 modulos = [m['nome_abrev'] for m in (dados.get('modulos') or [])]
-# O catalogo CRESCE: nasceu com tres modulos e em 2026-08 ja tinha cinco
-# (entraram producao e efetivo). Comparar com a lista exata reprovava a cada
-# modulo novo, com o login perfeito. O piso sao os tres modulos de autorizacao
-# do banco (dominio.modulo), que e o que a plataforma promete; o resto e
-# crescimento.
+# O catalogo CRESCE: nasceu com tres modulos, chegou a cinco na 1.33.0 (entraram
+# producao e efetivo) e a SEIS na 1.46.0 (equipamento). O de code 4 passou a se
+# chamar `pit` em 2026-08-09. Comparar com a lista exata reprovava a cada modulo
+# novo, com o login perfeito. O piso sao os tres modulos que a plataforma
+# prometia desde o inicio; o resto e crescimento, e cresce de novo quando o core
+# do SAP entrar.
 NUCLEO = {'acervo', 'mapoteca', 'orcamento'}
 checa('login devolve token e o catalogo de modulos',
       c == 201 and bool(tok) and NUCLEO.issubset(set(modulos)),

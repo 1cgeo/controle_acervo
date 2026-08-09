@@ -409,8 +409,8 @@ controller.getStockByLocation = async () => {
 // terminando hoje). A tela de consumo (#/mapoteca/consumo) já é por ano, então
 // os dois passam a contar a mesma coisa.
 //
-// A FONTE é o LIVRO, filtrado no tipo Consumo, desde 2026-08-08. Entrada,
-// Transferência e Contagem moram na mesma tabela e não gastam nada: sem o
+// A FONTE é o LIVRO, filtrado no tipo Consumo, desde 2026-08-08. Entrada e
+// Transferência moram na mesma tabela e não gastam nada: sem o
 // filtro, o painel somaria a reposição junto com o gasto e o gráfico subiria
 // justamente no mês em que o material chegou.
 controller.getMaterialConsumptionTrends = async (ano) => {

@@ -552,10 +552,13 @@ CREATE TABLE mapoteca.movimento_material (
     --                  consumir de "Saldo no empenho" seria gastar, no papel, o
     --                  que ainda está com o fornecedor.
     --
-    -- O `ELSE FALSE` É QUEM RECUSA O CODE 4, e por isso ele não é sobra de
-    -- escrita: a linha da Contagem continua no domínio para a auditoria antiga
-    -- se traduzir, então a FK a aceitaria. É este CHECK, e só ele no banco, que
-    -- impede um movimento novo de nascer com o tipo extinto.
+    -- O `ELSE FALSE` RECUSA O CODE 4, e ele não é sobra de escrita.
+    --
+    -- A frase aqui dizia que "a linha da Contagem continua no domínio, então a
+    -- FK a aceitaria". Isso valeu por algumas horas, na 1.45.0. Em 2026-08-08 a
+    -- linha SAIU do domínio (1.48.0), e desde então a FK também a recusa: hoje
+    -- são DUAS trancas, e não uma. O CHECK continua sendo a que se lê no erro,
+    -- porque ele é avaliado durante o INSERT e o gatilho da FK só depois.
     --
     -- O nome e o mesmo da migracao, senao instalacao nova divergiria da migrada.
     CONSTRAINT movimento_material_forma CHECK (

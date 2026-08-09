@@ -11,7 +11,7 @@
 //   2. A TRAVA DA REMOCAO. Quando a importacao removeria um repositorio que ja
 //      tem Resumo escrito, a rota responde 409 e NAO GRAVA NADA. So com
 //      `confirmar_remocao` ela passa. A trava mora aqui, e nao na tela, porque
-//      ela vale tambem para o `producao_cli`;
+//      ela vale tambem para o `pit_cli`;
 //   3. O CSV RUIM NAO ENCOSTA NO BANCO. A recusa vem antes da transacao;
 //   4. A EDICAO FECHADA recusa, como toda escrita desta feature;
 //   5. O RASTRO. O evento leva a linha ANTERIOR inteira, que e o unico lugar

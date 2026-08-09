@@ -505,7 +505,7 @@ describe('PIT do ano: quem não é administrador', () => {
     getAlteracoesRevisao.mockResolvedValue([]);
   });
 
-  // LER é de qualquer pessoa logada; ESCREVER é do administrador global, e o
+  // LER é de quem tem perfil em algum módulo; ESCREVER é do administrador, e o
   // servidor cobra. Oferecer o botão a quem vai levar 403 troca uma tela por um
   // erro.
   test('lê o PIT inteiro e não recebe botão de escrita nenhum', async () => {

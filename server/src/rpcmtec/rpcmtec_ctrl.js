@@ -11,14 +11,15 @@
 // que título, cabeçalho e ordem, é o que `rpcmtec_estrutura.js` diz; quem junta
 // o calculado com o que o gestor digitou é `rpcmtec_edicao_ctrl.js`.
 //
-// AS VINTE QUE SAEM DAQUI estão declaradas em `NUMEROS_CALCULADOS`, com a fonte
-// de cada uma ao lado. Das treze restantes, doze são digitadas na própria tela e
-// uma é texto fixo (a 1.1).
+// AS VINTE E UMA QUE SAEM DAQUI estão declaradas em `NUMEROS_CALCULADOS`, com a
+// fonte de cada uma ao lado. Das doze restantes, onze são digitadas na própria
+// tela e uma é texto fixo (a 1.1).
 //
 // A 2.2 e a 2.4 entraram em 2026-08-05: elas reportam a produção do mês, que o
-// acervo sabe contar, e estavam digitadas com fonte 'SAP' sem precisar. A 2.3
-// (lote) e a 2.5 (campo) continuam digitadas, e a diferença é real: aquelas duas
-// são do SAP e não têm entidade no SCA que as prove.
+// acervo sabe contar, e estavam digitadas com fonte 'SAP' sem precisar. A 2.5
+// (campo) entrou em 2026-08-08, com o schema `campo`. A 2.3 (lote) continua
+// digitada, e a diferença é real: ela é do SAP e não tem entidade no SCA que a
+// prove.
 //
 // A 7.1 entrou em 2026-08-08, quando o módulo `equipamento` deu cadastro ao que
 // ela sempre descreveu. Enquanto foi digitada, a lista de equipamento parado era
@@ -222,8 +223,10 @@ const buscarEstadoAcervo = async ({ ano, mes }) => {
 // definição não tem arquivo; contá-lo pintaria de pronta uma folha que ninguém
 // baixa. A versão Planejada, pela mesma razão, também fica de fora.
 //
-// A 2.3 e a 2.5 CONTINUAM DIGITADAS, e a diferença é real: lote e atividade de
-// campo são do SAP e não têm entidade no SCA que as prove.
+// A 2.3 CONTINUA DIGITADA, e a diferença é real: o lote é do SAP e não tem
+// entidade no SCA que o prove. A 2.5 tinha o mesmo argumento até 2026-08-08,
+// quando o schema `campo` deu ao SCA a entidade que faltava, e ela virou
+// calculada.
 
 // 2.2: quantos produtos de cada tipo ficaram prontos no mês e no ano.
 const buscarTotaisProducao = async ({ ano, mes }) => {
@@ -1142,7 +1145,7 @@ const formatPrazo = valor => {
  * numérica. Ela existe para qualificar o número na TELA.
  *
  * "PLANO ATÉ O MÊS" É A COLUNA NOVA, de 2026-08-08, e o número dela já vinha
- * pronto: `resumoDoAno` calcula `planejado_ate` desde sempre, o `producao_cli` o
+ * pronto: `resumoDoAno` calcula `planejado_ate` desde sempre, o `pit_cli` o
  * imprimia, e aqui ele era descartado. Ele é o acumulado de janeiro até o mês da
  * edição, o MESMO recorte de `realizado` -- é por isso que a coluna encosta em
  * "Prontos", e não fica no fim da tabela.

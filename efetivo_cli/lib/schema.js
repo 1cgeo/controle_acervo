@@ -310,10 +310,22 @@ function blocoCampos (schemaJoi, titulo, avisarStrip) {
 
 const ACESSO = {
   publico: 'publico (sem login)',
+  // `login` e `acesso` NAO sao a mesma coisa desde 2026-08-08. `verifyLogin`
+  // pede so um token valido, e e o que guarda a propria conta em /usuarios; o
+  // `verifyAcesso` pede perfil em ALGUM modulo, porque ter conta nao e ter
+  // acesso, e quem nao tem linha em dgeo.usuario_perfil alcanca so a propria
+  // pagina.
   login: 'exige login (qualquer pessoa autenticada)',
+  acesso: 'exige perfil em ALGUM modulo (ter conta nao basta)',
   admin: 'exige ADMINISTRADOR',
   // O modulo EFETIVO, criado na 1.33.0 para haver como dar menos que a flag
-  // global. O administrador continua passando nos dois niveis.
+  // global. O administrador continua passando nos tres niveis.
+  //
+  // A REGUA MUDOU EM 2026-08-08 e deslocou as rotas nos DOIS sentidos: a
+  // LEITURA desceu para consulta (ninguem conseguia OLHAR o aproveitamento sem
+  // poder escreve-lo) e a ESCRITA subiu para gerente (lancar a passagem e o
+  // impedimento DOS OUTROS e ato de quem responde pelo efetivo).
+  efetivo_consulta: 'exige CONSULTA no modulo Efetivo, ou administrador',
   efetivo_operador: 'exige OPERADOR no modulo Efetivo, ou administrador',
   efetivo_gerente: 'exige GERENTE no modulo Efetivo, ou administrador'
 }

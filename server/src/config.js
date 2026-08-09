@@ -207,7 +207,17 @@ dotenv.config({
 //
 // O contrário quebra igual: um servidor 1.49.0 contra um banco 1.50.0 procura
 // `pit.exercicio`, que já não existe.
-const VERSION = '1.38.0'
+// `VERSION` é a versão do SERVIÇO, e sai em `version` de TODA resposta da API e
+// na linha de boot. Ela ficou parada em 1.38.0 enquanto o banco chegou a 1.50.0,
+// e a defasagem só apareceu porque alguém foi ler a constante: nada a ligava a
+// nada, e por isso ninguém a bumpava.
+//
+// A REGRA, desde 2026-08-09: ela nunca fica ABAIXO da versão que `er/versao.sql`
+// carimba numa instalação nova. Não precisa ser IGUAL -- um release sem migração
+// move o serviço e não move o banco --, e é por isso que a regra é `>=` e não
+// `===`. Quem a faz cumprir é `__tests__/unit/versao_do_servico.test.js`, e não
+// a boa memória de quem commita.
+const VERSION = '1.50.0'
 const MIN_DATABASE_VERSION = '1.50.0'
 
 const configSchema = Joi.object().keys({

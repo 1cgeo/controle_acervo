@@ -34,7 +34,7 @@ DIA A DIA
   orcamento saldo --nd 339040           o mesmo, de uma natureza de despesa
   orcamento saldo --extra               a faixa Extra-PDR
   (o RPCMTec e gerado inteiro, fora dos modulos, por:
-   acervo rpcmtec --ano N --mes M --docx)
+   acervo rpcmtec --ano N --mes M --pdf)
 
 RECURSOS  (${listarChaves().join(', ')})
   orcamento <recurso> listar [--ano 2026] [--campos a,b] [--formato tsv|tabela|json]
@@ -74,7 +74,9 @@ As rotas do modulo ficam sob /api/orcamento/. As excecoes sao /api/login e
 /api/metas (as metas do PIT), que sao de plataforma e nao levam prefixo.
 Para cadastrar usuario, senha e perfil, o CLI e o efetivo_cli (/api/usuarios).
 Leitura exige perfil de consulta no modulo orcamento. Criar e atualizar exigem
-operador. Deletar exige gerente. O administrador passa em tudo.`
+operador. Deletar exige gerente. O administrador passa em tudo.
+Em /api/metas a regua e outra, porque a rota nao e do orcamento: ler pede perfil
+em ALGUM modulo (verifyAcesso) e escrever pede administrador.`
 
 const ROTEADOR = {
   schema: './comandos/schema',

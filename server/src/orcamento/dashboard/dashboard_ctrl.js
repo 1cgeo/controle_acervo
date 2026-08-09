@@ -6,7 +6,8 @@
 // POR QUE ELA NÃO MORA NO RPCMTec. São DUAS telas com necessidades diferentes:
 //
 //   o RPCMTec  quer a visão do PDR, em texto já formatado, sem linha de total
-//              (o modelo da Divisão não tem uma), e é lido por quem administra
+//              (o modelo da Divisão não tem uma), e é lido por quem é GERENTE de
+//              algum módulo (`verifyGerente`, desde 2026-08-08; era `verifyAdmin`)
 //   o dashboard  quer NÚMEROS, quebrados em PDR e Extra-PDR lado a lado, COM
 //              linha de TOTAL para os cards, e é lido por quem tem perfil de
 //              consulta no orçamento
@@ -14,7 +15,7 @@
 // São perguntas distintas, com público distinto. Servir as duas do mesmo
 // endpoint obrigaria a mais fraca das duas guardas a valer para as duas: ou o
 // RPCMTec ficaria aberto a quem só consulta o orçamento, ou o dashboard passaria
-// a exigir administrador. Por isso o RPCMTec tem a versão dele em
+// a exigir gerente. Por isso o RPCMTec tem a versão dele em
 // `rpcmtec/rpcmtec_ctrl.js` e esta ficou aqui, no módulo dono do dado.
 //
 // O recorte é sempre CUMULATIVO no ano até o mês de corte: a pergunta do painel

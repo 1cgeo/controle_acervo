@@ -69,7 +69,8 @@ export const alterarMinhaSenha = (body) => apiPut('/usuarios/perfil/senha', body
 
 // ---- Metas do PIT ----
 // Rota de plataforma, e nao do orcamento: o PIT e o plano anual da Divisao, e os
-// tres modulos o consomem. LER e de qualquer pessoa logada; ESCREVER e do
+// tres modulos o consomem. LER e de quem tem perfil em ALGUM modulo
+// (`verifyAcesso`, e `acessoLoader` na rota do client); ESCREVER e do
 // administrador global (o backend cobra, o cliente so evita oferecer o botao).
 export const getMetasPit = (ano) => apiGet(ano ? `/metas?ano=${ano}` : '/metas');
 export const getAnosMetaPit = () => apiGet('/metas/anos');
@@ -288,7 +289,7 @@ export const deleteMeuImpedimento = (id) => apiDelete(`/efetivo/meu_impedimento/
 //
 // A MINISTRADA (2.6) e a RECEBIDA (6.2) eram a MESMA rota, com o tipo num filtro
 // e num campo do corpo. Desde a 1.33.0 o tipo e o CAMINHO, porque a permissao e
-// por tipo: a ministrada e do operador de PRODUCAO (servico que a Divisao
+// por tipo: a ministrada e do operador do PIT (servico que a Divisao
 // presta), a recebida e do operador de EFETIVO (gente nossa em curso). A guarda
 // da rota nao enxerga o corpo, entao um POST so nao tinha como ser guardado.
 //

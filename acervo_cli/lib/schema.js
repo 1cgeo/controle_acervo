@@ -330,16 +330,24 @@ function blocoCampos (schemaJoi, titulo, avisarStrip) {
   return linhas
 }
 
-// O nivel vem do guard da rota no server/ (verifyPerfil no modulo acervo, ou
-// verifyAdmin). Os perfis sao hierarquicos: gerente alcanca o que operador
-// alcanca, e operador o que consulta alcanca. O administrador e global e passa
-// em qualquer um.
+// O nivel vem do guard da rota no server/ (verifyPerfil no modulo acervo,
+// verifyGerente ou verifyAdmin). Os perfis sao hierarquicos: gerente alcanca o
+// que operador alcanca, e operador o que consulta alcanca. O administrador e
+// global e passa em qualquer um.
+//
+// `gerente_qualquer` NAO E O MESMO que `gerente`, e a distincao e do RPCMTec: o
+// `verifyGerente` do server/ aceita gerente de QUALQUER modulo, e nao gerente do
+// acervo. Traduzi-lo como `gerente` faria o contrato afirmar que a leitura do
+// relatorio pede perfil no acervo, o que fecharia a porta, no papel, para o
+// gerente da mapoteca -- que e justamente quem confere a secao dele antes da
+// assinatura.
 const ACESSO = {
   publico: 'publico (sem login)',
   login: 'exige login',
   consulta: 'exige perfil CONSULTA no modulo acervo',
   operador: 'exige perfil OPERADOR no modulo acervo',
   gerente: 'exige perfil GERENTE no modulo acervo',
+  gerente_qualquer: 'exige GERENTE de QUALQUER modulo (ou administrador)',
   admin: 'exige ADMINISTRADOR'
 }
 

@@ -45,7 +45,7 @@ const VAZIO = 'Nenhum registro para estes filtros';
 /**
  * Capacitação, em DUAS telas.
  *
- * MINISTRADA fica em Produção: é serviço que a Divisão presta, e alimenta a
+ * MINISTRADA fica no PIT: é serviço que a Divisão presta, e alimenta a
  * subseção 2.6. RECEBIDA fica em Efetivo: é gente nossa em curso, e alimenta a
  * 6.2. As duas partiam de uma tela só, com um filtro de tipo, e isso obrigava
  * quem cadastra a escolher de que lado está antes de saber o que ia digitar.
@@ -55,7 +55,7 @@ const VAZIO = 'Nenhum registro para estes filtros';
  *
  * AS ROTAS, ESSAS, SÃO DUAS, desde a 1.33.0, e por isso cada tela recebe as
  * FUNÇÕES DE SERVIÇO dela em vez de passar um filtro de tipo. A permissão é por
- * tipo (ministrada é do operador de Produção, recebida é do de Efetivo), e a
+ * tipo (ministrada é do operador do PIT, recebida é do de Efetivo), e a
  * guarda do servidor não enxerga um filtro na query.
  *
  * @param {number} tipoId - MINISTRADA ou RECEBIDA, para o formulário
@@ -394,8 +394,8 @@ function criarTela(tipoId, textos) {
 }
 
 /**
- * Capacitação MINISTRADA (#/capacitacao_ministrada), em Produção. Subseção 2.6.
- * Rotas de `/rpcmtec/capacitacao/ministrada`, do módulo PRODUÇÃO.
+ * Capacitação MINISTRADA (#/capacitacao_ministrada), no PIT. Subseção 2.6.
+ * Rotas de `/rpcmtec/capacitacao/ministrada`, do módulo PIT.
  */
 export const renderCapacitacaoMinistrada = criarTela(MINISTRADA, {
   titulo: 'Capacitação ministrada',

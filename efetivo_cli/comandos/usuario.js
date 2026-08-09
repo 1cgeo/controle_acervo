@@ -1,7 +1,7 @@
 'use strict'
 
 // Gestao de identidade. E o comando de maior raio de explosao do SCA: o que se
-// faz aqui vale nos TRES modulos de uma vez, e o servidor le o banco a cada
+// faz aqui vale em TODOS os modulos de uma vez, e o servidor le o banco a cada
 // requisicao (verifyPerfil), entao desativar alguem tem efeito no mesmo segundo.
 //
 // Por isso ele tem um guardrail que os CLIs irmaos nao precisam ter: as
@@ -449,8 +449,8 @@ async function executar (args, cfg, injetadas) {
 
       if (corpo.ativo === false) {
         avisos.push(
-          'ativo=false corta o login desta pessoa nos TRES modulos, no mesmo segundo ' +
-          '(o verifyPerfil le o banco a cada requisicao). Nada avisa a pessoa.'
+          'ativo=false corta o login desta pessoa em TODOS os modulos, no mesmo ' +
+          'segundo (o verifyPerfil le o banco a cada requisicao). Nada avisa a pessoa.'
         )
       }
 
@@ -490,7 +490,7 @@ async function executar (args, cfg, injetadas) {
 
       const desativados = corpo.usuarios.filter(u => u.ativo === false).length
       if (desativados) {
-        linhas.push('', `${desativados} delas ficam INATIVAS: o login cai nos tres modulos, na hora.`)
+        linhas.push('', `${desativados} delas ficam INATIVAS: o login cai em todos os modulos, na hora.`)
       }
       if (pessoas.desconhecidos.length && !pessoas.indisponivel) {
         const n = pessoas.desconhecidos.length

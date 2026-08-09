@@ -7,7 +7,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 //    botao nas 18 subsecoes digitadas ofereceria despejar tabela de commits na
 //    9.3, que fala de recursos humanos;
 //  - a tela manda o texto CRU. Quem le o CSV e o servidor, porque a regra que
-//    decide o que se apaga vale tambem para o `producao_cli`;
+//    decide o que se apaga vale tambem para o `pit_cli`;
 //  - o 409 e RECUSA QUE SE CONFIRMA, e nao erro. Ele acontece quando a
 //    importacao removeria um repositorio que ja tem Resumo escrito, e a segunda
 //    chamada so sai depois de a pessoa ler a lista e confirmar;
@@ -169,7 +169,7 @@ describe('a barra de importação aparece SÓ na 5.1', () => {
 describe('colar o CSV', () => {
   test('manda o texto CRU, sem interpretar nada, e sem confirmar remoção', () => {
     // A tela não conta vírgula nem procura cabeçalho: quem lê o CSV é o
-    // servidor, porque a regra vale também para o `producao_cli`.
+    // servidor, porque a regra vale também para o `pit_cli`.
     abrirEditorSubsecao({ edicaoId: 7, subsecao: subsecao51() });
 
     return colar().then(() => {

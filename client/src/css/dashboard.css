@@ -63,9 +63,10 @@
 
 /* A BARRA DE ABAS DO DASHBOARD GRUDA NO TOPO ao rolar.
  *
- * A aba Distribuição tem seis gráficos e a Plano do Ano tem quatro tabelas: ao
- * chegar no fim, o título e as abas já tinham saído da tela, e trocar de aba
- * exigia rolar tudo de volta. Só o dashboard leva isto, e não o `.tabs` inteiro:
+ * A aba Distribuição tem seis gráficos, e a Plano do Ano tinha quatro tabelas
+ * até sair em 2026-08-07: ao chegar no fim, o título e as abas já tinham saído
+ * da tela, e trocar de aba exigia rolar tudo de volta. Só o dashboard leva
+ * isto, e não o `.tabs` inteiro:
  * dentro de um modal ou de uma sub-aba, `sticky` grudaria no lugar errado.
  *
  * O fundo é opaco de propósito: sem ele o conteúdo passa por baixo e se lê

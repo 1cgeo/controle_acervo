@@ -69,7 +69,7 @@ Cada verbo colapsa um encadeamento que hoje se repete no dia a dia da DGEO (as s
 | `cobertura` | "já temos essa carta?". Uma chamada pública, mas a resposta é uma FeatureCollection por escala com os anos de edição em arrays: raciocinar folha a folha sobre isso custa a janela inteira. Aqui sai uma linha por folha, com o ano mais recente e o veredito, e **a folha que o acervo nem conhece vira aviso** em vez de sumir da lista. |
 | `produto` | "que edições tem essa folha?" e "qual é o arquivo mais recente do MI X?". Faz `busca` → `produto/detalhado` → (com `--caminho`) `volumes` e recorta. Termo ambíguo devolve os candidatos em vez de escolher o primeiro: a mesma folha costuma ter carta topográfica, ortoimagem e a versão militar. |
 | `editar` | o read-modify-write de um `PUT` de objeto inteiro. Ver abaixo. |
-| `finalizados` / `rpcmtec` | o fechamento do mês. O primeiro é público (não gasta login); o segundo acha a **edição mensal** daquele ano/mês e pede o documento dela ao servidor, que já sabe montar o relatório inteiro (acervo, mapoteca e orçamento), em JSON, em PDF (`--pdf`) ou, com `--anuario`, o ODS do Anuário Estatístico. O CLI não remonta tabela nenhuma. |
+| `finalizados` / `rpcmtec` | o fechamento do mês. O primeiro é público (não gasta login); o segundo acha a **edição mensal** daquele ano/mês e pede o documento dela ao servidor, que já sabe montar o relatório inteiro (os 33 blocos, repartidos entre acervo, mapoteca, orçamento, PIT, efetivo e equipamento), em JSON, em PDF (`--pdf`) ou, com `--anuario`, o ODS do Anuário Estatístico. O CLI não remonta tabela nenhuma. |
 | `dominio` | o dicionário dos ids. O acervo é todo dirigido por id numérico, e trocar 50k (code 2) por 250k (code 4) de cabeça já custou uma auditoria rodada na escala errada. |
 
 Ficaram **fora** de propósito: a carga em si (o `prepare-upload` não transfere byte, e a cópia acontece fora da API), a mapoteca (é do `mapoteca_cli`), e qualquer verbo que precisasse de regra de negócio nova.
@@ -110,6 +110,8 @@ Nunca ponha senha na linha de comando. Catálogo das chaves no `env-guia.md` do 
 O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do próprio JWT. Um arquivo por servidor, para não misturar a instância local com a de produção. `--sem-cache` desliga.
 
 Acesso: sem login são apenas `/api` (health) e `/api/integracao/*`. Todo o resto exige **perfil no módulo acervo**, inclusive os GET de `/api/gerencia/dominio/*`: consulta lê, operador cataloga, gerente exclui. O administrador é global e passa em tudo. O cliente de auth padrão é `sca_web`; a lista de clientes aceitos é lida do `login_schema.js` do `server/`, não copiada.
+
+A exceção é o recurso `rpcmtec`, que é rota de **plataforma** e não do acervo. Desde 2026-08-08 ele tem dois níveis: **ler** o relatório (listar, documento, conferir, PDF, anexos e o Anuário) é `verifyGerente`, ou seja, administrador global **ou gerente de qualquer módulo**, porque o RPCMTec é a prestação de contas da Divisão inteira e são os gerentes que a conferem antes de o chefe assinar; **assinar** (abrir o mês, editar assinante e data, fechar, reabrir e mexer no anexo assinado) continua do administrador. Escrever uma subseção é recortado pelo módulo dela (`verifyGerente` + `verifyModuloSubsecao()`) e por isso não entra nesta registry.
 
 ## Testes
 

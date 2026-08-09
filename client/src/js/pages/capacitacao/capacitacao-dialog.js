@@ -23,7 +23,7 @@ export const MINISTRADA = 1;
 export const RECEBIDA = 2;
 
 // A ROTA DE CADA TIPO. Desde a 1.33.0 a capacitação são duas rotas, com guardas
-// diferentes: a ministrada é do operador de Produção, a recebida é do de
+// diferentes: a ministrada é do operador do PIT, a recebida é do de
 // Efetivo. O tipo deixou de ser um campo do corpo e virou o caminho, e quem o
 // fixa é o servidor.
 const SERVICOS = {

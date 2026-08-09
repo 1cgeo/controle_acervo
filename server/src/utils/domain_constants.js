@@ -204,10 +204,13 @@ const LOCALIZACOES_NA_CASA = [
 // ACABA. Não há ajuste de saldo, e a ausência é a regra: o saldo tem de estar
 // certo por estes três, e lançamento errado se conserta editando a linha errada.
 //
-// O CODE 4 NÃO ENTRA AQUI, e continua no banco. Ele foi a Contagem, extinta em
-// 2026-08-08, e a linha do domínio sobrevive só para a auditoria antiga se
-// traduzir. Ressuscitá-lo neste mapa daria ao Joi um valor que o CHECK do banco
-// recusa, e a recusa chegaria como 500 em vez de 400.
+// O CODE 4 NÃO EXISTE, nem aqui nem no banco. Ele foi a Contagem, extinta em
+// 2026-08-08, e a linha do domínio caiu junto na 1.48.0
+// (`migrations/2026-08-08_apagar_a_contagem_do_dominio.sql`): sobreviveu por
+// algumas horas para a auditoria antiga se traduzir, e a medição do mesmo dia
+// mostrou que não havia auditoria antiga nenhuma. Ressuscitá-lo neste mapa daria
+// ao Joi um valor que o `ELSE FALSE` do CHECK `movimento_material_forma` e a
+// chave estrangeira recusam, e a recusa chegaria como 500 em vez de 400.
 const TIPO_MOVIMENTO_MATERIAL = {
   ENTRADA: 1,
   TRANSFERENCIA: 2,

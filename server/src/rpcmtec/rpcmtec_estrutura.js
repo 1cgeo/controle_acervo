@@ -39,7 +39,7 @@ const ORIGEM = {
 //
 // O CRITÉRIO É A ORIGEM DO DADO, e não o número da seção. Por isso a 2.2, a 2.4
 // e a 2.7 são do ACERVO embora morem na seção do PIT (o que elas contam sai de
-// `acervo.versao` e de `acervo.produto`), e a 3.3 é de PRODUÇÃO embora more na
+// `acervo.versao` e de `acervo.produto`), e a 3.3 é do PIT embora more na
 // seção da Mapoteca (o Extra-PIT é `pit.demanda_extra`). Recortar por seção
 // entregaria o Extra-PIT a quem atende balcão e o estado do acervo a quem não
 // cataloga nada.
@@ -125,7 +125,7 @@ const SECOES = [
         //
         // O NÚMERO JÁ EXISTIA E SE PERDIA. `resumoDoAno` calcula `planejado_ate`
         // com o comentário "é o que separa 'entregou 30 de 252' de 'entregou 30
-        // onde o plano pedia 30'", o `producao_cli` o imprimia, e o documento
+        // onde o plano pedia 30'", o `pit_cli` o imprimia, e o documento
         // que o chefe assina, não. Sem ele a 2.1 só sabe comparar o mês contra a
         // promessa do ANO, e em agosto toda meta parece atrasada.
         //

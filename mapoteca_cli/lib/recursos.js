@@ -157,7 +157,10 @@ const RECURSOS = {
   },
 
   movimento: {
-    nome: 'movimento de material (o LIVRO: entrada, transferencia, consumo, contagem)',
+    // SAO TRES, e o code 4 nao existe: ele foi a Contagem, extinta em
+    // 2026-08-08 e apagada do dominio na 1.48.0. Anunciar um quarto tipo aqui
+    // faria o agente montar um corpo que o CHECK do banco recusa.
+    nome: 'movimento de material (o LIVRO: 1 entrada, 2 transferencia, 3 consumo)',
     caminho: '/mapoteca/movimento_material',
     schema: modulo(
       'movimentoMaterial', 'movimentoMaterialAtualizacao',

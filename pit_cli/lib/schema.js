@@ -295,7 +295,7 @@ const ACESSO = {
   admin: 'exige ADMINISTRADOR global',
   // Módulos criados na 1.33.0, para haver como dar menos que a flag global.
   // O administrador global continua passando nos dois.
-  producao_operador: 'exige OPERADOR no módulo Produção, ou administrador',
+  pit_operador: 'exige OPERADOR no módulo Produção, ou administrador',
   efetivo_operador: 'exige OPERADOR no módulo Efetivo, ou administrador'
 }
 

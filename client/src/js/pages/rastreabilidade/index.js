@@ -135,8 +135,8 @@ const CAPACITACAO_RECEBIDA = 2;
  * De qual das DUAS telas de capacitação este evento é.
  *
  * A tabela `rpcmtec.capacitacao` é UMA, e as telas são duas:
- * a ministrada em Produção, a recebida em Efetivo. O destino fixo mandava toda
- * capacitação recebida para a tela de Produção, onde ela não está.
+ * a ministrada no PIT, a recebida em Efetivo. O destino fixo mandava toda
+ * capacitação recebida para a tela do PIT, onde ela não está.
  *
  * O tipo sai do PRÓPRIO evento (`dados_depois`, ou `dados_antes` na exclusão),
  * que carrega a linha inteira. O evento da LISTA DE MILITARES

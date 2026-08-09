@@ -9,7 +9,9 @@
  * entre `acervo`, `orcamento` e `ponto_controle`.
  *
  *   'mapoteca.produto_pedido': {
- *     modulo: 'mapoteca',        // OBRIGATORIO. acervo | mapoteca | orcamento | plataforma
+ *     modulo: 'mapoteca',        // OBRIGATORIO. Um de `MODULOS_VALIDOS`, abaixo:
+ *                                // acervo | mapoteca | orcamento | equipamento |
+ *                                // plataforma
  *     entidade: 'pedido',        // OBRIGATORIO. O AGREGADO DONO, nao a tabela.
  *
  *     // `entidade` tambem aceita FUNCAO da linha, para a tabela cujo dono nao e

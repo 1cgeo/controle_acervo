@@ -33,7 +33,8 @@ import { apiGet, apiGetPaginado } from './api-client.js';
  * rastreabilidade mistura os três módulos numa página só. Ver
  * server/src/auditoria/renderizar.js.
  *
- * @param {string} modulo - acervo, mapoteca, orcamento ou plataforma
+ * @param {string} modulo - acervo, mapoteca, orcamento, equipamento ou
+ *   plataforma (ver `guardaDoHistorico`, em auditoria_route.js)
  * @param {string} entidade - o agregado ('pedido', 'produto', 'usuario')
  * @param {string|number} id
  * @returns {Promise<Array>}

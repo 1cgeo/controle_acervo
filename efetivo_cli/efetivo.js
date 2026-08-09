@@ -5,11 +5,13 @@
 //
 // Irmao do acervo_cli, do mapoteca_cli e do orcamento_cli: mesmo servidor, mesmo
 // login, mesma sessao em cache. A diferenca e que os outros tres falam com um
-// MODULO, e este fala com a PLATAFORMA. Duas perguntas, a mesma guarda
-// (verifyAdmin) e o mesmo dono do dado, que e a pessoa:
+// MODULO, e este fala com a PLATAFORMA. Duas perguntas e o mesmo dono do dado,
+// que e a pessoa:
 //   quem e, e o que pode  ->  usuario, perfil por modulo, senha, acesso
 //   quem esteve na Divisao ->  passagem (periodo) e impedimento
-// Nenhuma das duas pertence a acervo, mapoteca nem orcamento.
+// Nenhuma das duas pertence a modulo nenhum, mas a GUARDA delas deixou de ser a
+// mesma na 1.33.0: /usuarios e /acessos continuam verifyAdmin, e /efetivo passou
+// ao modulo Efetivo (code 5).
 //
 // Cinco principios, e o codigo os segue:
 //   1. Nada de contrato copiado. Campos, tipos e filtros saem do Joi vivo do
@@ -54,9 +56,9 @@ O PROPRIO CADASTRO  (basta estar logado)
 ACESSOS  (exigem ADMINISTRADOR)
   efetivo acessos resumo
   efetivo acessos logados
-  efetivo acessos logins dia|mes|usuarios|clientes [--total N] [--max N]
+  efetivo acessos logins dia|usuarios [--total N] [--max N]
 
-EFETIVO  (exigem ADMINISTRADOR, inclusive a leitura: e dado de pessoal)
+EFETIVO  (modulo Efetivo: LER pede consulta, ESCREVER pede gerente)
   efetivo mapa --ano 2026            o mapa por semana, mais o fechamento do ano
   efetivo mes --ano 2026 --mes 7     o aproveitamento do mes (a 6.1 do RPCMTec)
   efetivo periodos [--ano 2026]      as passagens pela DGEO
@@ -94,10 +96,12 @@ CODIGO DE SAIDA
   1 erro, recusa de guardrail ou recusa do servidor
 
 Recursos do contrato: ${listarChaves().join(', ')}.
-/api/usuarios, /api/acessos e /api/efetivo sao rotas de PLATAFORMA: sem prefixo
-de modulo e guardadas por verifyAdmin. Nao existe "administrador de modulo", e o
-administrador e global. NAO ha comando de aplicacao: a lista de clientes de auth
-e fechada e vive no .valid() de login/login_schema.js.`
+/api/usuarios, /api/acessos e /api/efetivo sao rotas de PLATAFORMA, sem prefixo
+de modulo. As duas primeiras sao verifyAdmin; /api/efetivo e do modulo Efetivo
+(code 5) desde a 1.33.0, com LER em consulta e ESCREVER em gerente desde
+2026-08-08. Nao existe "administrador de modulo", e o administrador e global e
+passa em tudo. NAO ha comando de aplicacao: a lista de clientes de auth e
+fechada e vive no .valid() de login/login_schema.js.`
 
 const ROTEADOR = {
   schema: './comandos/schema',

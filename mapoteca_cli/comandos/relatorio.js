@@ -196,7 +196,12 @@ async function relatorio (args, cfg) {
 //
 // A rota mora sob /api/rpcmtec, e nao sob /api/mapoteca: o Anuario e o RPCMTec
 // sobem no mesmo envio mensal. O DADO e da mapoteca (o `anuario_ctrl` fica la),
-// e por isso o verbo vive neste CLI. Ela exige ADMINISTRADOR.
+// e por isso o verbo vive neste CLI.
+//
+// A GUARDA E `verifyGerente`, e nao verifyAdmin: mudou em 2026-08-08, junto com
+// o resto da LEITURA do RPCMTec. Vale administrador global OU gerente de
+// QUALQUER modulo, e nao perfil na mapoteca -- o operador que lanca a impressao
+// nao baixa esta planilha.
 const CAMINHO_ANUARIO = '/rpcmtec/anuario'
 
 async function anuario (args, cfg) {

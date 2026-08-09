@@ -108,7 +108,7 @@ async function executar (args, cfg) {
   if (comando === 'secao3') {
     throw new Error(
       'O comando `secao3` nao existe mais: o RPCMTec e gerado inteiro num lugar ' +
-      'so, fora dos modulos. Use: acervo rpcmtec --ano N --mes M --docx'
+      'so, fora dos modulos. Use: acervo rpcmtec --ano N --mes M --pdf'
     )
   }
   throw new Error(

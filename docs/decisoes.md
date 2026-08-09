@@ -390,13 +390,17 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   apareceria em quatro métodos e a quinta rota de subseção nasceria sem ela. Ela não mora em `login/`
   porque `login/` não sabe -- e não deve saber -- que "3.3" é uma subseção.
   **Onde o recorte rende mais é na marca de CONFERÊNCIA**, que vale para as três origens e alcança os
-  33 blocos, e não só os 12 digitados: cada gerente carimba o que é da área dele, e o administrador
+  33 blocos, e não só os 11 digitados: cada gerente carimba o que é da área dele, e o administrador
   deixa de ser o único par de olhos antes da assinatura.
 - **A CAPACITAÇÃO virou DUAS rotas, `/capacitacao/ministrada` e `/capacitacao/recebida`** (1.33.0),
-  e é a única parte de `/api/rpcmtec` que não é `verifyAdmin`. Ela mora ali por endereço, e não por
+  e é a única parte de `/api/rpcmtec` guardada por MÓDULO. Ela mora ali por endereço, e não por
   natureza: capacitação é CADASTRO, e não relatório. A ministrada (2.6) é serviço que a Divisão presta
-  e pede operador em **produção**; a recebida (6.2) é gente nossa em curso e pede operador em
+  e pede operador no **PIT**; a recebida (6.2) é gente nossa em curso e pede operador em
   **efetivo**.
+  A frase aqui dizia "a única parte que não é `verifyAdmin`" e envelheceu em 2026-08-08, quando a
+  LEITURA do relatório desceu para `verifyGerente` e a escrita de subseção passou a exigir o gerente
+  DO MÓDULO dela. Hoje o `verifyAdmin` de `/api/rpcmtec` cobre 7 rotas: criar, alterar, apagar,
+  fechar e reabrir a edição, e acrescentar ou remover anexo.
   A separação é a única forma possível: a permissão é por TIPO, e a guarda de rota não enxerga o corpo
   nem a query. `POST /capacitacao` criava qualquer uma das duas, porque `tipo_id` vinha no corpo.
   Agora o tipo é o CAMINHO, e quem o fixa é o servidor. É a mesma forma do par
@@ -421,7 +425,7 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **A 5.1 IMPORTA o CSV do github_dashboard, e a leitura do CSV é do SERVIDOR.** A rota é
   `POST /rpcmtec/:id/subsecao/5.1/importar`, com o número no CAMINHO: o formato é o do painel do
   GitHub, e o painel só alimenta a 5.1. Ler o CSV é regra de DADO, e é ela que decide o que se apaga.
-  Posta no cliente, ela não valeria para o `producao_cli`, e a segunda implementação divergiria da
+  Posta no cliente, ela não valeria para o `pit_cli`, e a segunda implementação divergiria da
   primeira. Não houve migração: a 5.1 grava em `rpcmtec.subsecao.linhas`, que é JSONB.
 - **O CSV tem três colunas e a tabela tem quatro. A importação NUNCA toca o `Resumo`.** Ela casa as
   linhas pelo nome do repositório, sem caixa, e o Resumo vem do que já está gravado. Reimportar no fim
@@ -1002,7 +1006,7 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   subtipo.
 - **Feature que sai do servidor sai do registry do CLI no MESMO commit.** O CLI lê o contrato do Joi
   vivo, mas a lista de recursos é declarada, e declaração não some sozinha. Dois casos ficaram para
-  trás e só apareceram quando alguém rodou `npm run test-cli`: o `producao_cli` anunciava as quatro
+  trás e só apareceram quando alguém rodou `npm run test-cli`: o `pit_cli` anunciava as quatro
   rotas do de-para de mídia, apagadas na 1.29.0, e o `orcamento_cli` anunciava o CRUD do singleton de
   `orcamento.configuracao`, podado na 1.34.0. O segundo era pior que uma rota morta: o `require` do
   schema inexistente derrubava o `orcamento schema` de TODOS os recursos, e não só o dele.

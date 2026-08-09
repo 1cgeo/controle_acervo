@@ -27,8 +27,9 @@ const PERFIL = {
 // aproveitamento so tinham `verifyAdmin`, e por isso 5 das 7 contas que
 // trabalhavam no sistema eram administradoras (medido em 2026-08-06).
 //
-// PRODUCAO cobre a execucao do PIT, o Extra-PIT e a capacitacao MINISTRADA (2.6
-// do RPCMTec). EFETIVO cobre a passagem pela DGEO, o impedimento e a capacitacao
+// PIT (o code 4, que se chamou `producao` ate 2026-08-09) cobre a execucao do
+// plano, o Extra-PIT, as atividades de CAMPO (2.5) e a capacitacao MINISTRADA
+// (2.6 do RPCMTec). EFETIVO cobre a passagem pela DGEO, o impedimento e a capacitacao
 // RECEBIDA (6.2). As METAS do PIT ficaram de fora, e nao por esquecimento:
 // altera-las e ato da DSG, e o que esta no sistema e transcricao de documento
 // assinado.

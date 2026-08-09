@@ -111,8 +111,9 @@ dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 pit, 5 efetivo, 6 
 - **NÃO EXISTE movimento de AJUSTE de saldo, e a ausência é a regra.** O code 4 era a Contagem,
   extinta em 2026-08-08: o saldo tem de estar certo pelos três acima, e lançamento errado se conserta
   EDITANDO ou apagando a linha errada, porque o gatilho desfaz o efeito dela. **São TRÊS codes, e o 4
-  não existe nem no domínio** desde a 1.48.0. Quem recusa lançá-lo é o `ELSE FALSE` do CHECK
-  `movimento_material_forma`, mais o Joi. Ressuscitar o tipo é decisão, e decisão se registra em
+  não existe nem no domínio** desde a 1.48.0. Recusam-no TRÊS: o Joi, o `ELSE FALSE` do CHECK
+  `movimento_material_forma` e a chave estrangeira. Quem aparece no erro é o CHECK, porque ele é
+  avaliado durante o INSERT e o gatilho da FK só depois. Ressuscitar o tipo é decisão, e decisão se registra em
   `docs/decisoes.md`.
 - **No orçamento não existe "exercício", "PCA" nem cabeçalho de "PDR":** tudo se amarra ao **ano**
   (coluna `ano SMALLINT`, sem FK).

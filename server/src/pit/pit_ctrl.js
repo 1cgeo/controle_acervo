@@ -51,7 +51,7 @@
 // unidade, origem), que é classificação nossa e revisão nenhuma menciona. A tela
 // não a oferece mais como botão próprio: a identidade se corrige no mesmo
 // formulário da declaração, dentro da revisão. A rota fica de pé para o
-// producao_cli, que a mapeia como `meta atualizar`.
+// pit_cli, que a mapeia como `meta atualizar`.
 
 const { db } = require('../database')
 

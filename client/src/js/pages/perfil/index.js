@@ -1,6 +1,6 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { showSuccess, showError } from '@utils/toast.js';
-import { meusAcessos } from '@store/auth-store.js';
+import { meusAcessos, getCatalogoModulos } from '@store/auth-store.js';
 import {
   createTextField,
   createSelectField,
@@ -75,6 +75,20 @@ import {
  * @param {{params:Object, query:URLSearchParams}} _ctx
  * @returns {Function} cleanup
  */
+/**
+ * " (Acervo, Mapoteca, ...)" a partir do catálogo, ou '' quando ele faltar.
+ *
+ * Devolve a lista JÁ com os parênteses e o espaço na frente, para a frase
+ * fechar certo nos dois casos.
+ */
+function modulosParaPedir() {
+  const nomes = getCatalogoModulos()
+    .map(m => m.nome)
+    .filter(Boolean);
+  if (!nomes.length) return '';
+  return ` (${nomes.join(', ')})`;
+}
+
 export async function renderPerfil(container, _ctx) {
   let disposed = false;
 
@@ -285,13 +299,23 @@ export async function renderPerfil(container, _ctx) {
       // dar faria a pessoa percorrer o caminho errado antes de chegar ao certo.
       el('p', {
         className: 'perfil__sem-acesso-texto',
-        // Os cinco nomes seguem `dominio.modulo.nome`, que é o que a tela de
-        // concessão mostra ao administrador: a pessoa pede pelo nome que ele vê.
-        // Note que o menu chama a seção de Produção de "PIT", e aqui não: o
-        // módulo continua sendo Produção, porque guarda também a capacitação
-        // ministrada.
-        textContent: 'Peça ao administrador do sistema o acesso ao módulo de interesse '
-          + '(Acervo, Mapoteca, Orçamento, Produção ou Efetivo). '
+        // A lista segue `dominio.modulo.nome`, que é o que a tela de concessão
+        // mostra ao administrador: a pessoa pede pelo nome que ele vê.
+        //
+        // A LISTA SAI DO CATÁLOGO, e não de uma frase escrita à mão.
+        //
+        // Ela era digitada e apodreceu duas vezes em dois dias: dizia "Produção"
+        // depois de o code 4 virar PIT (2026-08-09), e não citava Equipamento,
+        // que nasceu em 2026-08-08. Numa tela que existe SÓ para dizer o que
+        // pedir, isso mandava a pessoa pedir por um nome que o administrador não
+        // vê, e escondia um módulo que existe.
+        //
+        // `getCatalogoModulos` traz `dominio.modulo` INTEIRA, e não os módulos
+        // de quem está logado: o `lerModulos` do login não filtra por perfil, e
+        // é por isso que a lista funciona justamente para quem não tem nenhum.
+        // Catálogo ausente cai na frase genérica, em vez de mentir.
+        textContent: 'Peça ao administrador do sistema o acesso ao módulo de interesse'
+          + `${modulosParaPedir()}. `
           + 'Enquanto isso, esta página é sua: você pode corrigir seus dados e trocar sua senha.',
       }),
     ]);

@@ -2,11 +2,15 @@
 
 // O que o GESTOR digita no RPCMTec.
 //
-// Catorze dos 33 blocos do documento o SCA não sabe calcular, e eles são
-// preenchidos aqui, e não no Word. Onze vêm de outro
-// sistema ou de fora (2.2 a 2.5 do SAP, 5.1 do painel do GitHub, 8.3 do
-// doc_dgeo) e quatro não têm cadastro em lugar nenhum (5.2, 7.1, 8.1 a 8.5,
-// 9.1 a 9.3).
+// Onze dos 33 blocos do documento o SCA não sabe calcular, e eles são
+// preenchidos aqui, e não no Word. Três vêm de outro sistema ou de fora (2.3 do
+// SAP, 5.1 do painel do GitHub, 8.3 do doc_dgeo) e oito não têm cadastro em
+// lugar nenhum (5.2, 8.1, 8.2, 8.4, 8.5, 9.1 a 9.3).
+//
+// A LISTA ENCOLHE quando o SCA ganha a entidade que faltava: a 2.2 e a 2.4
+// saíram daqui em 2026-08-05 (acervo), e a 2.5 e a 7.1 em 2026-08-08 (o schema
+// `campo` e o módulo `equipamento`). Quem manda é a `origem` de cada bloco em
+// `rpcmtec_estrutura.js`, e não esta contagem.
 //
 // AS COLUNAS NÃO SE INVENTAM. O gestor preenche LINHAS numa grade de cabeçalho
 // fixo, medido no documento da Divisão. Deixá-lo desenhar a tabela produziria
@@ -181,7 +185,7 @@ controller.gravar = async (edicaoId, numero, dados, usuarioUuid, contexto) => {
  * POR QUE NO SERVIDOR, e não na tela que oferece o botão. Ler o CSV é REGRA DE
  * DADO, e ela decide o que se apaga: casar linha por repositório e preservar o
  * Resumo é o que separa "atualizar os commits" de "destruir o texto que alguém
- * escreveu". Posta só no cliente, a regra não valeria para o `producao_cli`, que
+ * escreveu". Posta só no cliente, a regra não valeria para o `pit_cli`, que
  * é por onde um agente com o CSV na mão faria a mesma coisa, e a segunda
  * implementação divergiria da primeira na primeira correção aplicada a uma só.
  * Aqui a leitura, o cruzamento e a gravação cabem numa transação: ninguém lê o

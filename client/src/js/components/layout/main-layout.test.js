@@ -51,7 +51,7 @@ describe('createMainLayout', () => {
     expect(ctrl.layout.querySelector('.navbar__modulo')).toBeNull();
     expect(ctrl.layout.querySelector('.navbar select')).toBeNull();
     // A troca de modulo mora na sidebar, uma seção por modulo. São SEIS
-    // seções: os quatro módulos, mais Produção e Efetivo, que se desenham como
+    // seções: os quatro módulos, mais PIT e Efetivo, que se desenham como
     // sistema sem ser módulo (ver sidebar.js).
     expect(ctrl.layout.querySelectorAll('.sidebar__module-header').length).toBe(6);
   });
@@ -70,11 +70,14 @@ describe('createMainLayout', () => {
       'Acervo', 'Mapoteca', 'Orçamento', 'Equipamento',
     ]);
     // "PIT" e "Efetivo" são a exceção, e são declarados na tela porque NÃO são
-    // módulos: não estão em `dominio.modulo` e não entram no registry.
+    // módulos DO REGISTRY: eles existem em `dominio.modulo` (codes 4 e 5) e
+    // guardam rotas do servidor, mas não têm manifesto nem prefixo de rota, e
+    // por isso não passam por `nomeModulo`.
     //
-    // O rótulo "PIT" não é o nome do módulo: o módulo de permissão da seção é
-    // 'pit', `dominio.modulo` code 4, e continua se chamando Produção no
-    // banco. Só o menu fala do conteúdo das telas.
+    // O rótulo "PIT" bate com o nome do módulo desde 2026-08-09: o módulo de
+    // permissão da seção é 'pit', `dominio.modulo` code 4, que se chamava
+    // 'Produção'/'producao' até ali. O rótulo daqui continua sendo declarado na
+    // tela, e não lido do catálogo, porque a seção não está no registry.
     expect(rotulos.slice(4)).toEqual(['PIT', 'Efetivo']);
   });
 

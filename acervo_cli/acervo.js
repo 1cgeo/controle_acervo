@@ -40,7 +40,7 @@ DIA A DIA
                                    PostGIS; --limiar e a fracao da folha
                                    coberta). GeoJSON; para GPKG/shapefile,
                                    ogr2ogr -f GeoJSON antes
-  acervo auditar                   os invariantes logicos do acervo (admin)
+  acervo auditar                   os invariantes logicos do acervo (gerente)
   acervo auditar --severidade DEFECT   so o que TEM de dar zero
   acervo auditar --check 2a --amostra 50   as linhas de um invariante
   acervo produto 2965-2            as versoes/edicoes da folha
@@ -99,7 +99,9 @@ CODIGO DE SAIDA
 
 Sem login so /api (health) e /api/integracao/*. Todo o resto exige perfil no
 modulo acervo, inclusive os GET de dominio: consulta le, operador cataloga,
-gerente exclui. O administrador passa em tudo.`
+gerente exclui. O administrador passa em tudo. A excecao e o recurso rpcmtec,
+que nao e do acervo: LER pede gerente de QUALQUER modulo, e abrir, fechar ou
+reabrir a edicao do mes pede administrador.`
 
 const ROTEADOR = {
   schema: './comandos/schema',

@@ -62,8 +62,9 @@ nada, e outras que parecem pendentes já aplicadas e superadas por migrações p
 
 ## Smoke tests
 
-**Depois de todo deploy, rode a fumaça inteira.** Ela exercita os três módulos de ponta a ponta, só
-com leitura, e sai com código 1 se algo falhar (serve de portão num script de deploy):
+**Depois de todo deploy, rode a fumaça inteira.** Ela exercita a plataforma, o acervo, a mapoteca, o
+orçamento e o RPCMTec de ponta a ponta, só com leitura, e sai com código 1 se algo falhar (serve de
+portão num script de deploy). `equipamento`, `campo` e `efetivo` ainda estão FORA dela:
 
 ```bash
 SCA_URL=http://localhost:3015 SCA_USER=<login> SCA_SENHA=<senha> python scripts/fumaca.py
@@ -118,7 +119,9 @@ caminho de máquina e segredo com valor neste repositório, que é PÚBLICO.
   corpo do `POST /api/login`, o problema está no banco, não na tela.
 - **Rota do orçamento devolve 403 para quem tem perfil** -> a rota pode ter ficado sem o segundo
   argumento do `verifyPerfil`, e estar cobrando perfil no acervo. O teste
-  `routes/orcamento/modulo_em_toda_rota.test.js` barra isso.
+  `server/src/__tests__/routes/modulo_em_toda_rota.test.js` barra isso. Ele varre quatro pastas de
+  rota (`orcamento`, `mapoteca`, `equipamento` e `campo`, esta cobrando o módulo `pit`), com piso de
+  contagem em cada uma: em `efetivo`, em `pit/` e no acervo, ninguém cobra por você.
 - **`confirm-upload` responde "Arquivo não encontrado" para todo arquivo, em servidor Linux** -> a
   coluna `acervo.volume_armazenamento.volume` guarda caminho UNC do Windows. Em Linux a contrabarra é
   caractere comum de nome, e o `path.join` junta com barra normal, produzindo caminho relativo

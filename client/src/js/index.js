@@ -145,10 +145,11 @@ router.add('/revisoes_pit', withLayout(renderPitAno), {
 
 // Execucao do PIT: a grade do ano, com o planejado e o realizado de cada mes.
 //
-// CONSULTA EM PRODUCAO, e nao mais `gerenteLoader`: a execucao do plano anual e
-// a tela de LEITURA da area de Producao, e pela regua nova quem tem consulta no
-// modulo le as telas do modulo. Ler a grade nao move nada; escrever continua
-// sendo do administrador, e quem barra e o servidor.
+// CONSULTA NO PIT, e nao mais `gerenteLoader`: a execucao do plano anual e a
+// tela de LEITURA da area do PIT, e pela regua nova quem tem consulta no modulo
+// le as telas do modulo. Ler a grade nao move nada; LANCAR a celula e do
+// operador (`verifyPerfil('operador', 'pit')` em POST e DELETE
+// /metas/execucao), e quem barra e o servidor.
 router.add('/execucao_pit', withLayout(renderExecucaoPit), {
   guard: perfilLoader('pit', 'consulta'),
 });
@@ -159,7 +160,7 @@ router.add('/execucao_pit', withLayout(renderExecucaoPit), {
 // para `perfilLoader('pit', ...)` quando o resto da regua mudou, e e
 // deliberado: cadastrar NC, item de PDR ou pedido de impressao obriga a escolher
 // a meta que financia ou cumpre, entao quem trabalha na mapoteca ou no orcamento
-// precisa ler o plano do ano sem ter perfil em Producao.
+// precisa ler o plano do ano sem ter perfil no PIT.
 router.add('/extra_pit', withLayout(renderExtraPitList), { guard: acessoLoader });
 
 // Aproveitamento do efetivo (6.1): o cadastro de quem esteve na Divisao e do que
@@ -184,7 +185,7 @@ router.add('/aproveitamento', withLayout(renderAproveitamento), {
 
 // A capacitacao e DUAS telas, em dois lugares do menu, e agora tambem DUAS
 // ROTAS no servidor, com guardas diferentes. A MINISTRADA e servico que a
-// Divisao presta, e fica em Producao; a RECEBIDA e gente nossa em curso, e fica
+// Divisao presta, e fica no PIT; a RECEBIDA e gente nossa em curso, e fica
 // em Efetivo. A tabela do banco continua UMA: o que muda entre as duas sao tres
 // colunas.
 //
@@ -208,11 +209,10 @@ router.add('/capacitacao_recebida', withLayout(renderCapacitacaoRecebida), {
 // '/extra_pit': campo NAO tem linha em `dominio.modulo`, e a autorizacao dele
 // cobra `pit`, o modulo que ja existia.
 //
-// CONSULTA em Producao, e nao `acessoLoader` como '/metas' e '/extra_pit'.
+// CONSULTA no PIT, e nao `acessoLoader` como '/metas' e '/extra_pit'.
 // Aqueles dois sao lidos por quem trabalha na mapoteca e no orcamento, porque
 // cadastrar NC ou pedido obriga a escolher a meta que financia; campo nao
-// atravessa modulo nenhum, e ler onde a Divisao esteve e tela da area de
-// Producao.
+// atravessa modulo nenhum, e ler onde a Divisao esteve e tela da area do PIT.
 //
 // DUAS ROTAS PARA A MESMA TELA. A segunda existe porque a rastreabilidade linka
 // a FICHA de um campo (#/campo/12), e o mapa de entidades do client declara

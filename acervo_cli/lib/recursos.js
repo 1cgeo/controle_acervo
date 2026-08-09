@@ -732,12 +732,24 @@ const RECURSOS = {
 
   // -------------------------------------------------------------------------
   // O RPCMTec e o relatorio mensal da DIVISAO, e nao do acervo: a mesma edicao
-  // fala de acervo, mapoteca e orcamento.
+  // fala de acervo, mapoteca, orcamento, PIT, efetivo e equipamento.
   //
   // Nao ha rota que GERE o relatorio sob demanda. O documento pertence a uma
   // EDICAO mensal (rpcmtec.edicao), que alguem cria uma vez por mes: primeiro se
   // acha a edicao do ano/mes na listagem, depois se pede o documento dela pelo
   // id. Edicao aberta calcula do banco; edicao fechada devolve o congelado.
+  //
+  // A GUARDA TEM DOIS NIVEIS DESDE 2026-08-08, e ate ali tudo aqui era `admin`.
+  // LER e `verifyGerente` (administrador global OU gerente de QUALQUER modulo),
+  // porque o relatorio e a prestacao de contas da Divisao inteira e sao os
+  // gerentes que a conferem antes de o chefe assinar. ASSINAR continua
+  // `verifyAdmin`: abrir o mes, fechar e reabrir sao atos de quem responde pelo
+  // documento, e nao de quem responde por uma das nove secoes dele. Ver o
+  // cabecalho de rpcmtec/rpcmtec_route.js.
+  //
+  // A ESCRITA DE SUBSECAO nao entra nesta registry: ela e `verifyGerente` mais
+  // `verifyModuloSubsecao()`, ou seja, o gerente so altera a subsecao do modulo
+  // DELE, e anuncia-la aqui com uma guarda so mentiria sobre o recorte.
   rpcmtec: {
     nome: 'RPCMTec (relatorio mensal da Divisao) e Anuario Estatistico',
     schema: carregar('rpcmtec/rpcmtec_schema'),
@@ -746,7 +758,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/rpcmtec/',
         query: 'listarQuery',
-        acesso: 'admin',
+        acesso: 'gerente_qualquer',
         envelope: 'lista',
         colunas: ['id', 'ano', 'mes', 'fechada', 'assinante_uuid', 'data_assinatura'],
         nota: 'e por aqui que se descobre o id da edicao de um mes; o verbo ' +
@@ -755,21 +767,21 @@ const RECURSOS = {
       anos: {
         metodo: 'GET',
         caminho: '/rpcmtec/anos',
-        acesso: 'admin',
+        acesso: 'gerente_qualquer',
         envelope: 'lista'
       },
       obter: {
         metodo: 'GET',
         caminho: '/rpcmtec/:id',
         params: 'idParams',
-        acesso: 'admin',
+        acesso: 'gerente_qualquer',
         envelope: 'registro'
       },
       documento: {
         metodo: 'GET',
         caminho: '/rpcmtec/:id/documento',
         params: 'idParams',
-        acesso: 'admin',
+        acesso: 'gerente_qualquer',
         envelope: 'registro',
         nota: 'o documento INTEIRO, secao por secao. Edicao aberta calcula do ' +
           'banco, edicao fechada devolve o congelado. E a mesma fonte do PDF'
@@ -778,7 +790,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/rpcmtec/:id/conferir',
         params: 'idParams',
-        acesso: 'admin',
+        acesso: 'gerente_qualquer',
         envelope: 'registro',
         nota: 'o que o banco diria HOJE ao lado do que foi congelado. So vale em ' +
           'edicao FECHADA'
@@ -799,7 +811,7 @@ const RECURSOS = {
         envelope: 'registro',
         confirmar: {
           campo: 'id',
-          motivo: 'CONGELA os 34 blocos da edicao: a partir dai o documento para ' +
+          motivo: 'CONGELA os 33 blocos da edicao: a partir dai o documento para ' +
             'de acompanhar o banco. Reabrir e outra rota, e o congelado se perde'
         }
       },
@@ -819,7 +831,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/rpcmtec/anuario',
         query: 'gerarQuery',
-        acesso: 'admin',
+        acesso: 'gerente_qualquer',
         envelope: 'registro',
         nota: 'previa do Anuario Estatistico em JSON; o arquivo .ods sai por ' +
           '`acervo rpcmtec --ano A --mes M --anuario`'

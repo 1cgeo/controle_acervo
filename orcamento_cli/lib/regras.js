@@ -20,6 +20,8 @@ const GERAL = [
   'nao levam prefixo.',
   'Acesso por perfil no modulo orcamento: consulta le, operador cria e atualiza, gerente',
   'deleta. O administrador passa em tudo. So /api (health) e /api/login sao publicos.',
+  '/api/metas nao segue essa regua, porque nao e do orcamento: LER pede verifyAcesso',
+  '(perfil em ALGUM modulo, e ter conta nao basta) e ESCREVER pede administrador.',
   'Nao existe entidade exercicio, PCA nem cabecalho de PDR: tudo e amarrado ao ANO',
   '(coluna ano, sem FK). O PCA do ano e o conjunto dos DFDs do ano; o PDR do ano e o',
   'conjunto dos pdr_item do ano.'
@@ -33,7 +35,7 @@ const REGRAS = {
     'Ele sai na LEITURA como a SOMA dos documentos de recolhimento da NC (recurso',
     '`recolhimento`), e continua sem alterar valor_nc. Manda-lo no corpo volta 400.',
     'classificacao_id responde "esta previsto no PDR autorizado?", nao e a celula',
-    'orcamentaria: 1 = PDR (vai para a tabela 3.2), 2 = Extra-PDR (tabela 3.7).',
+    'orcamentaria: 1 = PDR (vai para a subsecao 4.2), 2 = Extra-PDR (subsecao 4.7).',
     'pdr_item_id so existe quando classificacao_id = 1; com Extra-PDR o campo e',
     'descartado. Ele casa o item previsto (rotulo 1D, 1E, ...).',
     'A NC NAO TEM meta_pit_id desde a 1.31.0. Mandar o campo NAO da erro: ele e',
@@ -92,14 +94,14 @@ const REGRAS = {
   ],
 
   recebimento: [
-    'Recebimento de material de uma NE. Alimenta a tabela 3.6 do RPCMTec.'
+    'Recebimento de material de uma NE. Alimenta a subsecao 4.6 do RPCMTec.'
   ],
 
   pdr: [
     'Nao existe tabela nem cabecalho de PDR: o PDR do ano E o conjunto dos pdr_item',
     'daquele ano. Cada item tem um rotulo (item_label: 1D, 1E, ...).',
     'valor_solicitado e o pedido; valor_autorizado e o que voltou aprovado, e e ele',
-    'que vira a coluna Previsto da tabela 3.1.',
+    'que vira a coluna Previsto da subsecao 4.1.',
     'O `gnd` CONTINUA NA RESPOSTA E DEIXOU DE SER DIGITADO, desde a 1.43.0: ele',
     'sai do GET com o mesmo nome, agora lido de `dominio.natureza_despesa.gnd`',
     'pelo cod_nd do item (eram iguais em 36 de 36). Manda-lo no corpo volta 400.',
@@ -145,14 +147,15 @@ const REGRAS = {
     'NAO HA `nup` nem `fornecedor` desde a 1.43.0, e manda-los volta 400. Os dois',
     'nasceram em 2026-08-04 e ficaram em 0 de 11; o chefe decidiu em 2026-08-08',
     'que UM identificador basta, e o que ficou e o `numero_pregao`.',
-    'Alimenta a tabela 3.4 (GCALC DSG) e a 3.5 (proprias) do RPCMTec.'
+    'Alimenta a subsecao 4.4 (GCALC DSG) e a 4.5 (demais licitacoes da',
+    'atividade-fim) do RPCMTec.'
   ],
 
   rpnp: [
     'Exige nota_empenho_id OU empenho_label (pelo menos um): o RPNP costuma',
     'referenciar empenho de exercicio anterior, que nao esta cadastrado como NE aqui.',
     'valor_a_liquidar aceita 0: um RPNP totalmente liquidado continua sendo exibido na',
-    'tabela 3.3.'
+    'subsecao 4.3.'
   ],
 
   dashboard: [
@@ -165,7 +168,7 @@ const REGRAS = {
     'Cada linha traz o total E o split PDR/Extra (recebido, recebido_pdr,',
     'recebido_extra). O `orcamento saldo` trabalha numa faixa por vez.',
     'O RPCMTec NAO sai daqui: ele e gerado inteiro, fora dos modulos, por',
-    '`acervo rpcmtec --ano N --mes M --docx`.'
+    '`acervo rpcmtec --ano N --mes M --pdf`.'
   ],
 
   arquivo: [

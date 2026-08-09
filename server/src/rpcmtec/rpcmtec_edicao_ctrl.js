@@ -317,8 +317,8 @@ const paraSaida = b => ({
   // O MÓDULO DE QUEM EDITA esta subseção, ou `null` para as que são do
   // administrador. Ele viaja para a TELA desde 2026-08-08, quando o gerente de
   // qualquer módulo passou a LER o relatório inteiro e a editar só o que é da
-  // área dele: sem este campo, a tela ofereceria o editor de todas as 34 e o
-  // servidor responderia 403 em 33 delas.
+  // área dele: sem este campo, a tela ofereceria o editor de todas as 33 e o
+  // servidor responderia 403 em 32 delas.
   //
   // VIAJA, e não se copia: o mapa vive em `rpcmtec_estrutura.js`, que já é a
   // definição única de que saem o gerador, o PDF, o fechamento e a guarda

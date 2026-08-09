@@ -8,8 +8,8 @@
 //
 // O MODULO E `pit`, E NAO UM MODULO NOVO. A tela mora na secao PIT, e
 // `dominio.modulo` continua com seis linhas: campo e o trabalho que o PIT
-// promete, e nao uma area propria a conceder. Quem tem perfil em Producao
-// alcanca esta rota.
+// promete, e nao uma area propria a conceder. Quem tem perfil no PIT (o code 4,
+// que se chamou `producao` ate 2026-08-09) alcanca esta rota.
 //
 // A REGUA DE PERFIL, pela frase da casa (2026-08-08): `consulta` LE as telas do
 // modulo, `operador` LANCA, `gerente` responde pela area. Aqui isso quer dizer:
@@ -55,10 +55,10 @@ const router = express.Router()
 //
 // E TODO `verifyPerfil` LEVA O SEGUNDO ARGUMENTO. O default dele e 'acervo':
 // uma rota daqui que o esquecesse passaria a cobrar perfil no ACERVO, sem erro
-// de sintaxe, sem teste vermelho e sem nada na tela. E aqui isso e mais
-// perigoso que no equipamento, porque
-// `__tests__/routes/modulo_em_toda_rota.test.js` varre so `orcamento` e
-// `mapoteca`: em `pit`, ninguem cobra por voce.
+// de sintaxe, sem teste vermelho e sem nada na tela. Aqui
+// `__tests__/routes/modulo_em_toda_rota.test.js` COBRA: este arquivo entrou na
+// varredura (`{ nome: 'campo', modulo: 'pit' }`) e e o primeiro a cobrir `pit`.
+// No RESTO do modulo `pit` ninguem cobra por voce.
 
 // --- Dominio -----------------------------------------------------------------
 

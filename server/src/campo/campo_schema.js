@@ -194,8 +194,11 @@ models.campoQuery = Joi.object().keys({
 // maior video do dump do SAP tem 37 MB. Base64 cresce o arquivo em um terco,
 // entao o teto do texto tem de ser maior que o teto que se quer do arquivo.
 //
-// E o unico ponto do SCA que aceita um corpo desse tamanho. `express.json` tem
-// limite proprio, e a rota que recebe imagem precisa do dela em `routes.js`.
+// E o unico ponto do SCA que aceita um corpo desse tamanho. O `express.json` e
+// UM SO, global, em `server/app.js`, e o teto dele (60mb desde 2026-08-08) TEM
+// de caber este numero: com o teto do Express menor, o corpo grande morre num
+// 413 do body parser antes de chegar ao Joi, e a mensagem nao diz qual campo
+// excedeu. Mexer num dos dois sem o outro reabre esse buraco.
 const MAX_BASE64 = 58720256
 
 models.imagem = Joi.object().keys({

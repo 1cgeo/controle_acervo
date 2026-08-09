@@ -359,7 +359,7 @@ router.post(
   })
 )
 
-// Registra sessões de impressão (log operacional, qualquer usuário logado)
+// Registra sessões de impressão (log operacional, OPERADOR da mapoteca)
 router.post(
   '/impressao',
   verifyPerfil('operador', 'mapoteca'),
@@ -675,8 +675,8 @@ router.delete(
 // data e sem motivo, e uma delas sobrevivendo ao lado do livro faria a soma do
 // livro deixar de bater com o saldo no primeiro uso.
 //
-// Quem quer mudar o saldo lança um movimento: Entrada, Transferência, Consumo ou
-// Contagem. Ver `POST /movimento_material`, logo abaixo.
+// Quem quer mudar o saldo lança um movimento: Entrada, Transferência ou
+// Consumo. Ver `POST /movimento_material`, logo abaixo.
 router.get(
   '/estoque_material',
   verifyPerfil('consulta', 'mapoteca'),
@@ -712,11 +712,12 @@ router.get(
 
 // O LIVRO DE MOVIMENTOS
 //
-// Entrada, Transferência, Consumo e Contagem, numa tabela só e cada linha com
-// data. Ele substituiu `/consumo_material`, que guardava só um dos quatro
-// movimentos e por isso nunca explicou um saldo inteiro.
+// Entrada, Transferência e Consumo, numa tabela só e cada linha com data. Ele
+// substituiu `/consumo_material`, que guardava só um dos movimentos e por isso
+// nunca explicou um saldo inteiro. Eram QUATRO até 2026-08-08: a Contagem (code
+// 4) foi extinta e não existe nem no domínio, e não há movimento de ajuste.
 //
-// LER é de CONSULTA e LANÇAR é de OPERADOR, inclusive a Contagem. A régua manda
+// LER é de CONSULTA e LANÇAR é de OPERADOR. A régua manda
 // separar quem lê de quem lança, e não esconder de quem lê o que o agregado
 // mensal dele já mostra somado: a lista de lançamentos deixar de abrir para a
 // consulta seria regressão, e foi um 403 vivo em 2026-08-08.

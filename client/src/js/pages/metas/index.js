@@ -57,8 +57,9 @@ import './pit.css';
  * unidos às metas: o exercício recém-aberto não tem meta nenhuma, e enquanto o
  * filtro saía só de `pit.meta` o ano novo era um beco sem saída.
  *
- * LER é de qualquer pessoa logada. ESCREVER é do administrador global, e o
- * servidor cobra: aqui só se esconde o que não adianta oferecer.
+ * LER é de quem tem acesso ao sistema, isto é, perfil em ALGUM módulo: a rota é
+ * `acessoLoader`, e o servidor cobra `verifyAcesso`. ESCREVER é do administrador
+ * global, e o servidor cobra: aqui só se esconde o que não adianta oferecer.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx

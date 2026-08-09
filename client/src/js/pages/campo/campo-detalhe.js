@@ -38,7 +38,7 @@ const VARIANTE = { 1: 'info', 2: 'warning', 3: 'success', 4: 'error' };
  *
  * @param {Object} options
  * @param {number} options.id
- * @param {boolean} [options.podeEditar] - operador ou acima em Produção
+ * @param {boolean} [options.podeEditar] - operador ou acima no PIT
  * @param {Function} [options.onEditar]
  */
 export function abrirDetalheCampo({ id, podeEditar = false, onEditar = null } = {}) {
@@ -114,7 +114,7 @@ export function abrirDetalheCampo({ id, podeEditar = false, onEditar = null } = 
     // por ele.
     //
     // SÓ PARA ADMINISTRADOR: a rota do histórico de 'plataforma' é
-    // `verifyAdmin`, e esta tela abre para quem tem consulta em Produção. Aba
+    // `verifyAdmin`, e esta tela abre para quem tem consulta no PIT. Aba
     // que entrega 403 ao ser clicada é pior que aba nenhuma. É a mesma guarda
     // que a ficha da capacitação já usa.
     //

@@ -272,7 +272,7 @@ export function abrirEditorSubsecao({ edicaoId, subsecao, onSaved = null } = {})
      *
      * O SERVIDOR E QUEM LE O ARQUIVO. Aqui nao se conta virgula nem se procura
      * cabecalho: a regra que decide o que se apaga (casar por repositorio,
-     * preservar o Resumo) mora num lugar so, e vale tambem para o `producao_cli`.
+     * preservar o Resumo) mora num lugar so, e vale tambem para o `pit_cli`.
      *
      * @param {string} texto - o conteudo do CSV, cru
      */

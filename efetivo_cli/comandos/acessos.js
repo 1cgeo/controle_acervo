@@ -5,9 +5,11 @@
 //   efetivo acessos resumo
 //   efetivo acessos logados
 //   efetivo acessos logins dia       [--total 14]
-//   efetivo acessos logins mes       [--total 12]
 //   efetivo acessos logins usuarios  [--total 30] [--max 10]
-//   efetivo acessos logins clientes  [--total 30]
+//
+// SAO QUATRO ROTAS no servidor, e so quatro. A serie MENSAL e a quebra por
+// CLIENTE existiam so aqui, nenhuma tela as mostrava, e sairam do servidor:
+// anuncia-las neste texto mandaria o agente pedir 404.
 //
 // Duas decisoes valem explicar:
 //
@@ -74,9 +76,7 @@ async function executar (args, cfg) {
         '  resumo                       usuarios ativos, logins de hoje e dos 30 dias',
         '  logados                      quem entrou HOJE, por usuario e cliente',
         '  logins dia       [--total]   um ponto por dia (dia sem login sai zero)',
-        '  logins mes       [--total]   um ponto por mes',
         '  logins usuarios  [--total] [--max]   quem mais entrou',
-        '  logins clientes  [--total]   web contra QGIS',
         '',
         'Todas exigem ADMINISTRADOR: isto e rota de plataforma, nao de modulo.',
         'contrato completo: efetivo schema acessos'

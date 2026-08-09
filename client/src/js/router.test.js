@@ -104,7 +104,7 @@ describe('router: guardas', () => {
     expect(perfilLoader('efetivo', ['consulta', 'gerente'])()).toBe('/unauthorized');
   });
 
-  // A consulta em Producao LE a execucao do PIT e a capacitacao ministrada, que
+  // A consulta no PIT LE a execucao do PIT e a capacitacao ministrada, que
   // ate a regua nova pediam gerente e operador. Ler a grade nao move nada.
   test('consulta em Producao abre as telas de leitura do modulo', () => {
     logar({ perfis: { pit: 1 } });
@@ -157,7 +157,7 @@ describe('router: rota raiz', () => {
     expect(rotaRaiz()).toBe('/perfil');
   });
 
-  // PRODUCAO e EFETIVO nao sao modulos do registry: eles existem em
+  // PIT e EFETIVO nao sao modulos do registry: eles existem em
   // `dominio.modulo` e guardam rotas do servidor, mas as telas deles sao de
   // PLATAFORMA, sem manifesto. Sem tratamento proprio na `rotaRaiz`, quem
   // tivesse perfil SO num deles entraria e cairia em /unauthorized, com o perfil

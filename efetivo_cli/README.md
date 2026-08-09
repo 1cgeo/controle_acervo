@@ -15,7 +15,7 @@ node efetivo_cli/efetivo.js --ajuda
 
 ## Por que existe
 
-A autenticação é do próprio SCA: o hash mora em `dgeo.usuario.senha`, o login é local, e não há serviço externo. O efetivo se amarra ao mesmo `dgeo.usuario`, e por isso mora aqui, e não num CLI à parte: quem esteve na Divisão é dado de **pessoal**, guardado por `verifyAdmin` inclusive na leitura, como o histórico de acesso.
+A autenticação é do próprio SCA: o hash mora em `dgeo.usuario.senha`, o login é local, e não há serviço externo. O efetivo se amarra ao mesmo `dgeo.usuario`, e por isso mora aqui, e não num CLI à parte: quem esteve na Divisão é dado de **pessoal**, nominal, e guardado inclusive na leitura. O que guarda deixou de ser o `verifyAdmin` do histórico de acesso: desde a 1.33.0 é o módulo **Efetivo** (code 5), com a régua da seção **Acesso**.
 
 ## Os cinco princípios
 
@@ -31,7 +31,7 @@ A autenticação é do próprio SCA: o hash mora em `dgeo.usuario.senha`, o logi
 
 ## O guardrail: uuid não diz nada, nome diz
 
-Este é o CLI de **maior raio de explosão** do SCA: o que se faz aqui vale nos três módulos de uma vez, e o servidor lê o banco a cada requisição (`verifyPerfil`), então desativar alguém tem efeito no mesmo segundo.
+Este é o CLI de **maior raio de explosão** do SCA: o que se faz aqui vale em todos os módulos de uma vez (são seis em `dominio.modulo`: acervo, mapoteca, orçamento, PIT, efetivo e equipamento), e o servidor lê o banco a cada requisição (`verifyPerfil`), então desativar alguém tem efeito no mesmo segundo.
 
 Por isso toda operação em **lote** (e a irreversível) resolve os `uuid` para **nome** antes de pedir confirmação:
 
@@ -90,7 +90,7 @@ efetivo acessos logados
 efetivo acessos logins dia --total 30
 efetivo acessos logins usuarios --total 30 --max 5
 
-# efetivo (exigem ADMINISTRADOR, inclusive a leitura)
+# efetivo (LER pede consulta no módulo Efetivo; ESCREVER pede gerente)
 efetivo mapa --ano 2026            # o mapa por semana, mais o fechamento do ano
 efetivo mes --ano 2026 --mes 7     # o aproveitamento do mês (a 6.1 do RPCMTec)
 efetivo periodos --ano 2026        # as passagens pela DGEO
@@ -125,21 +125,25 @@ O token fica em cache em `~/.sca/sessao-<servidor>.json`, com validade lida do p
 
 ## Acesso
 
-As três áreas são rotas de plataforma, sem prefixo de módulo, e a guarda **não é a mesma nas três** desde a 1.33.0:
+As três áreas são rotas de plataforma, sem prefixo de módulo, e a guarda **não é a mesma nas três** desde a 1.33.0. A tabela abaixo é o que o `server/` declara hoje, depois da régua de 2026-08-08:
 
 | Área | Guarda |
 |---|---|
 | `/api/usuarios` e `/api/acessos` | `verifyAdmin` (administrador global) |
-| `/api/efetivo/periodos` e `/impedimentos` | `verifyPerfil('operador', 'efetivo')` |
-| `/api/efetivo/mapa` e `/mes` | `verifyPerfil('gerente', 'efetivo')` |
+| `/api/efetivo/mapa`, `/mes`, `/divergencias`, `/militares` | `verifyPerfil('consulta', 'efetivo')` |
+| `/api/efetivo/periodos` e `/impedimentos`, no **GET** | `verifyPerfil('consulta', 'efetivo')` |
+| `/api/efetivo/periodos` e `/impedimentos`, ao **escrever** | `verifyPerfil('gerente', 'efetivo')` |
+| `/api/efetivo/meu_aproveitamento`, `/meu_periodo`, `/meu_impedimento` | `verifyAcesso` (perfil em algum módulo) |
 
 O módulo **Efetivo** (`dominio.modulo` code 5) nasceu na 1.33.0 para haver como dar menos que a flag global: até ali `/api/efetivo` era `verifyAdmin` nas dez rotas, e 5 das 7 contas que trabalhavam no sistema eram administradoras (medido em 2026-08-06). O administrador global continua passando em tudo.
 
-Em `/api/efetivo` a guarda vale **inclusive na leitura**, e é deliberado: a resposta traz licença de saúde e função acumulada de cada militar, nominalmente. É a mesma régua de `/api/acessos`. O mapa anual e o resumo mensal exigem **gerente** porque agregam a Divisão inteira num quadro só.
+**A régua de 2026-08-08 deslocou as dez rotas nos dois sentidos, e nenhuma ficou onde estava.** A leitura **desceu para consulta**, porque até ali ninguém conseguia olhar o aproveitamento da Divisão sem poder também escrevê-lo. A escrita **subiu para gerente**, porque lançar a passagem e o impedimento **de outra pessoa** é dizer o número que a subseção 6.1 do RPCMTec publica sobre terceiros. A guarda continua valendo **inclusive na leitura** (a resposta traz licença de saúde e função acumulada, nominalmente); o que mudou foi o nível, não o princípio.
+
+O operador de Efetivo passou a cuidar do **próprio** aproveitamento, por nove rotas que **este CLI ainda não expõe**: `/efetivo/meu_aproveitamento`, `/efetivo/meu_periodo` e `/efetivo/meu_impedimento`. Elas são `verifyAcesso`, e não `verifyPerfil`, porque declarar o próprio impedimento é obrigação de quem está na Divisão e não trabalho do módulo; o dono sai do **token** e nunca do corpo, e o `:id` de terceiro responde **404**, não 403, para não confirmar que o registro existe.
 
 `/api/usuarios` e `/api/acessos` continuam **admin-only**, e isso é diferente dos CLIs irmãos: lá o que barra é a falta de perfil no módulo, aqui é a falta do **administrador global**, que não se resolve ganhando perfil em módulo nenhum.
 
-As exceções, que bastam login: `efetivo usuario meu-perfil`, `efetivo usuario trocar-senha` e o domínio `tipo_posto_grad`.
+As exceções, que bastam login (`verifyLogin`, a própria conta): `efetivo usuario meu-perfil`, `efetivo usuario trocar-senha` e o domínio `tipo_posto_grad`. **Login não é acesso**: quem não tem perfil em módulo nenhum alcança só essas três, e é isso que `verifyAcesso` separa de `verifyLogin`.
 
 **Não há comando de aplicação.** Não existe catálogo de aplicação no SCA: a lista de clientes é fechada (`sca_web`, `sca_qgis`) e vive no Joi do login. Um CRUD de catálogo de duas linhas seria administração inventada, e o teste `schema.test.js` reprova o dia em que alguém acrescentar o recurso.
 
@@ -164,6 +168,9 @@ Anotadas aqui, e não contornadas em silêncio. Nenhuma é bloqueante.
 6. **`dgeo.login` não é exposta linha a linha**, só agregada (`/acessos/*`). Não há como perguntar "quando esta pessoa entrou pela última vez" fora do painel de logados de hoje.
 7. **O efetivo não tem rota de obter por id.** `GET /efetivo/periodos` e `/efetivo/impedimentos` listam (com filtro opcional por ano), e o `:id` só aparece no `PUT` e no `DELETE`. Para conferir um registro antes de editar, liste o ano e recorte.
 8. **O `PUT` de período e de impedimento não aceita trocar o militar**, e está certo: trocá-lo reescreveria de quem é o período. Corrigir a pessoa é excluir e cadastrar de novo, e o CLI diz isso na nota da operação.
+9. **As nove rotas do PRÓPRIO aproveitamento não estão no CLI.** `GET /efetivo/meu_aproveitamento`, e o GET, POST, PUT e DELETE de `/efetivo/meu_periodo` e de `/efetivo/meu_impedimento` nasceram em 2026-08-08, quando a escrita das outras subiu para gerente. São `verifyAcesso`, o dono sai do token e o `:id` de terceiro responde 404. Quem não é gerente de Efetivo declara o próprio impedimento por elas, e hoje só pela tela `#/perfil`.
+10. **`GET /efetivo/divergencias` e `GET /efetivo/militares` também ficaram de fora.** As duas são `verifyPerfil('consulta', 'efetivo')`: a primeira lista conta ativa sem passagem pela DGEO no mês, e a segunda é o cadastro mínimo de militar que a tela usa para o seletor (sem `login`, `administrador`, `senha_definida` nem perfis, que continuam exclusivos de `/api/usuarios`).
+11. **`GET /efetivo/mes` aceita `formato=json|csv`** (`anoMesRelatorioQuery`), e a registry ainda aponta `anoMesQuery`, que não conhece a chave. Consequência: `--formato csv` não chega à rota. Não é erro de guarda nem de rota, e sim contrato apontado com uma chave a menos.
 
 ## Regras do efetivo que o Joi não conta
 
@@ -186,7 +193,7 @@ Rodam com o `node:test` embutido, sem instalar nada. Os testes de schema rodam *
 
 `__tests__/usuario.test.js` cobre o guardrail de identidade e `__tests__/efetivo.test.js` o de efetivo. O alvo dos dois é a **decisão**, não o transporte: as listagens entram por dependência injetada (o terceiro argumento de `executar`) e as requisições de escrita que importam para a saída são trocadas no próprio módulo `http`. Nada sobe servidor.
 
-Alguns testes existem como trava de regressão de **decisão**, e não de código: nenhuma rota de identidade pode ganhar prefixo de módulo; o `PUT` não pode ganhar `default` em campo nenhum (isso apagaria o cadastro de quem só foi ativado); não pode aparecer um recurso `aplicacao`; nenhuma rota de efetivo pode se anunciar com menos que administrador; e o `PUT` de período não pode passar a aceitar `usuario_uuid`.
+Alguns testes existem como trava de regressão de **decisão**, e não de código: nenhuma rota de identidade pode ganhar prefixo de módulo; o `PUT` não pode ganhar `default` em campo nenhum (isso apagaria o cadastro de quem só foi ativado); não pode aparecer um recurso `aplicacao`; nenhuma rota de efetivo pode se anunciar com menos que perfil no módulo Efetivo (ler em consulta, escrever em gerente); e o `PUT` de período não pode passar a aceitar `usuario_uuid`.
 
 ## Dependências
 

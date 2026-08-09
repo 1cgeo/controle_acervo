@@ -92,7 +92,7 @@ const RECURSOS = {
           campo: 'usuarios',
           subcampo: 'uuid',
           motivo: 'muda administrador, ativo e perfil de VARIAS pessoas de uma vez. ' +
-            'Desativar corta o login nos tres modulos, e nada avisa a pessoa'
+            'Desativar corta o login em TODOS os modulos, e nada avisa a pessoa'
         }
       },
       excluir: {
@@ -233,9 +233,26 @@ const RECURSOS = {
   // de cada militar, nominalmente, e isso e dado de pessoal. O que mudou e que
   // agora ha um compartimento para esse dado, em vez de so a flag global.
   //
-  // OPERADOR na passagem e no impedimento (o cadastro do aproveitamento).
-  // GERENTE no mapa anual e no resumo mensal, que agregam a Divisao inteira num
-  // quadro so. O administrador global passa nos dois niveis.
+  // A REGUA DE 2026-08-08 deslocou estas dez rotas nos DOIS sentidos, e nenhuma
+  // ficou onde estava:
+  //
+  //   LER e de CONSULTA. O mapa anual, o resumo mensal, a lista de passagens e a
+  //   de impedimentos eram de gerente ou de operador, e o efeito era que ninguem
+  //   conseguia OLHAR o aproveitamento da Divisao sem poder tambem escreve-lo.
+  //
+  //   ESCREVER e de GERENTE. Cadastrar a passagem e o impedimento DE OUTRA
+  //   pessoa e dizer o numero que a subsecao 6.1 do RPCMTec publica sobre
+  //   terceiros: e ato de quem responde pelo efetivo, e nao de quem lanca o
+  //   proprio.
+  //
+  // O administrador global passa nos dois niveis, pelo proprio verifyPerfil.
+  //
+  // O QUE FALTA AQUI, e e lacuna do CLI e nao erro de guarda: o servidor tem
+  // NOVE rotas do PROPRIO aproveitamento (/efetivo/meu_aproveitamento,
+  // /meu_periodo e /meu_impedimento, com GET, POST, PUT e DELETE), guardadas por
+  // `verifyAcesso` e com o dono saindo do token. Elas nasceram em 2026-08-08
+  // junto com a subida da escrita para gerente, e sao por onde quem nao responde
+  // pelo efetivo declara o proprio impedimento. Este CLI ainda nao as expoe.
   efetivo: {
     nome: 'aproveitamento do efetivo (passagem pela DGEO e impedimento)',
     schema: carregar('efetivo/efetivo_schema'),
@@ -244,7 +261,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/efetivo/mapa',
         query: 'anoObrigatorioQuery',
-        acesso: 'efetivo_gerente',
+        acesso: 'efetivo_consulta',
         envelope: 'registro',
         nota: 'devolve { ano, semanas, anual }: o mapa semana a semana e o ' +
           'fechamento do ano, da mesma base. O verbo `efetivo mapa` recorta isso'
@@ -253,7 +270,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/efetivo/mes',
         query: 'anoMesQuery',
-        acesso: 'efetivo_gerente',
+        acesso: 'efetivo_consulta',
         envelope: 'lista',
         nota: 'o recorte que vira a subsecao 6.1 do RPCMTec'
       },
@@ -261,7 +278,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/efetivo/periodos',
         query: 'anoQuery',
-        acesso: 'efetivo_operador',
+        acesso: 'efetivo_consulta',
         envelope: 'lista',
         colunas: ['id', 'usuario_uuid', 'tipo_posto_grad', 'nome_guerra', 'data_inicio', 'data_fim', 'observacao']
       },
@@ -269,18 +286,20 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/efetivo/periodos',
         corpo: 'criarPeriodo',
-        acesso: 'efetivo_operador',
+        acesso: 'efetivo_gerente',
         envelope: 'registro',
         nota: 'a passagem NAO sobrepoe outra da mesma pessoa: quem cobra e um ' +
           'EXCLUDE no banco, e a colisao volta como recusa. data_fim nula e ' +
-          '"sem previsao de saida", que e o caso comum'
+          '"sem previsao de saida", que e o caso comum. Lanca a passagem DE ' +
+          'OUTRA pessoa, e por isso pede gerente; a propria vai por ' +
+          'POST /efetivo/meu_periodo, que este CLI ainda nao expoe'
       },
       'periodos editar': {
         metodo: 'PUT',
         caminho: '/efetivo/periodos/:id',
         corpo: 'atualizarPeriodo',
         params: 'idParams',
-        acesso: 'efetivo_operador',
+        acesso: 'efetivo_gerente',
         envelope: 'registro',
         nota: 'o MILITAR nao entra no corpo: trocar de dono reescreveria de quem ' +
           'e o periodo. Para isso, exclua e cadastre de novo'
@@ -289,7 +308,7 @@ const RECURSOS = {
         metodo: 'DELETE',
         caminho: '/efetivo/periodos/:id',
         params: 'idParams',
-        acesso: 'efetivo_operador',
+        acesso: 'efetivo_gerente',
         envelope: 'mensagem',
         confirmar: {
           campo: 'id',
@@ -302,7 +321,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/efetivo/impedimentos',
         query: 'anoQuery',
-        acesso: 'efetivo_operador',
+        acesso: 'efetivo_consulta',
         envelope: 'lista',
         colunas: ['id', 'usuario_uuid', 'tipo_posto_grad', 'nome_guerra', 'descricao', 'percentual', 'data_inicio', 'data_fim']
       },
@@ -310,18 +329,20 @@ const RECURSOS = {
         metodo: 'POST',
         caminho: '/efetivo/impedimentos',
         corpo: 'criarImpedimento',
-        acesso: 'efetivo_operador',
+        acesso: 'efetivo_gerente',
         envelope: 'registro',
         nota: 'impedimento SOBREPOE outro (ao contrario da passagem), e os ' +
           'percentuais somam ate 100. `descricao` e texto livre e vale o que TIRA ' +
-          'a pessoa do trabalho da Divisao, nunca o que ela faz aqui'
+          'a pessoa do trabalho da Divisao, nunca o que ela faz aqui. Lanca o ' +
+          'impedimento DE OUTRA pessoa (dai o gerente); o proprio vai por ' +
+          'POST /efetivo/meu_impedimento, que este CLI ainda nao expoe'
       },
       'impedimentos editar': {
         metodo: 'PUT',
         caminho: '/efetivo/impedimentos/:id',
         corpo: 'atualizarImpedimento',
         params: 'idParams',
-        acesso: 'efetivo_operador',
+        acesso: 'efetivo_gerente',
         envelope: 'registro',
         nota: 'como no periodo, o MILITAR nao entra no corpo'
       },
@@ -329,7 +350,7 @@ const RECURSOS = {
         metodo: 'DELETE',
         caminho: '/efetivo/impedimentos/:id',
         params: 'idParams',
-        acesso: 'efetivo_operador',
+        acesso: 'efetivo_gerente',
         envelope: 'mensagem',
         confirmar: {
           campo: 'id',

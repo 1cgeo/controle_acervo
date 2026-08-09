@@ -10,14 +10,20 @@
 // por versao com dezoito colunas, das quais seis respondem a pergunta.
 //
 // `rpcmtec` delega a montagem ao servidor, que ja sabe fazer o relatorio
-// INTEIRO (acervo, mapoteca e orcamento). O CLI nao remonta tabela nenhuma: se
-// uma subsecao mudar, muda no backend e o CLI acompanha sozinho. `--anuario`
-// baixa o Anuario Estatistico do mesmo mes, que sobe para a DSG no mesmo envio.
+// INTEIRO: os 33 blocos, repartidos entre acervo, mapoteca, orcamento, pit,
+// efetivo e equipamento. O CLI nao remonta tabela nenhuma: se uma subsecao
+// mudar, muda no backend e o CLI acompanha sozinho. `--anuario` baixa o Anuario
+// Estatistico do mesmo mes, que sobe para a DSG no mesmo envio.
 //
 // O documento pertence a uma EDICAO mensal, e nao ha rota que o gere sob
 // demanda: este verbo acha a edicao do ano/mes na listagem e pede o documento
 // dela pelo id. Sem edicao criada nao ha relatorio, e a mensagem diz como criar.
-// Tudo aqui e ADMIN: o relatorio cruza os tres modulos e traz valor de credito.
+//
+// A GUARDA DESTE VERBO E `verifyGerente`, e nao admin, desde 2026-08-08: quem e
+// gerente de QUALQUER modulo LE o relatorio inteiro, o PDF e o Anuario. O que
+// continua sendo do ADMINISTRADOR e ABRIR a edicao do mes (`acervo rpcmtec
+// criar`), que e a mensagem que este verbo devolve quando a edicao nao existe --
+// e ela pode reprovar por falta de administrador em quem so pode ler.
 
 const fs = require('fs')
 

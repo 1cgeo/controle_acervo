@@ -49,7 +49,7 @@ describe('o Joi da celula nao oferece mais as duas colunas', () => {
   })
 
   // O CONTROLE. Sem ele, apagar o schema inteiro faria o caso acima passar.
-  // Os quatro que ficam sao o contrato vivo que o `producao_cli` le.
+  // Os quatro que ficam sao o contrato vivo que o `pit_cli` le.
   test('os quatro campos que ficam continuam la', () => {
     expect(chaves.sort()).toEqual(
       ['mes', 'meta_id', 'quantidade', 'quantidade_planejada'].sort()

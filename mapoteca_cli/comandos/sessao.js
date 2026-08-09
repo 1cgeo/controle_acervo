@@ -61,7 +61,8 @@ async function executar (args, cfg) {
   const minutos = exp ? Math.floor((exp - Math.floor(Date.now() / 1000)) / 60) : 60
 
   // O acesso e por PERFIL no modulo mapoteca: consulta ve, operador imprime e faz
-  // TUDO de material (lanca movimento, cadastra e conta), gerente cadastra pedido
+  // TUDO de material (lanca movimento no livro e cadastra o insumo), gerente
+  // cadastra pedido
   // e exclui. Administrador e global e passa em tudo. Dizer isso agora e mais
   // barato que descobrir no 403 depois de montar um plano inteiro.
   const NIVEL = { 1: 'consulta', 2: 'operador', 3: 'gerente' }

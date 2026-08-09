@@ -58,20 +58,27 @@ test('toda operacao de efetivo aponta uma chave que existe no schema vivo', () =
 // Anunciar "exige login" numa delas faria o agente concluir que um usuario comum
 // le, e e esse o modo de falha que este caso tranca.
 //
-// GERENTE nas duas leituras AGREGADAS (mapa anual e resumo mensal), que resumem
-// a Divisao inteira num quadro so; OPERADOR nas oito do cadastro. O
-// administrador global passa nas dez, pelo proprio verifyPerfil.
-test('nenhuma rota de efetivo se anuncia com menos que operador no modulo', () => {
-  const AGREGADAS = { mapa: 'efetivo_gerente', mes: 'efetivo_gerente' }
+// O NIVEL MUDOU EM 2026-08-08, e nos DOIS sentidos. LER (mapa anual, resumo
+// mensal e as duas listagens) desceu para CONSULTA, porque ninguem conseguia
+// olhar o aproveitamento sem poder escreve-lo. ESCREVER subiu para GERENTE,
+// porque lancar a passagem e o impedimento DE OUTRA pessoa e ato de quem
+// responde pelo efetivo. O administrador global passa nas dez, pelo proprio
+// verifyPerfil.
+//
+// O ESPERADO SAI DO METODO, e nao de uma lista escrita a mao: GET e leitura, o
+// resto e escrita. Uma lista fixa concordaria com a registry sem cobrar a regra
+// que a produziu.
+test('efetivo se anuncia por CONSULTA para ler e GERENTE para escrever', () => {
   const operacoes = Object.entries(obter('efetivo').operacoes)
 
-  // A VARIANCIA primeiro: as dez estao la, e as duas agregadas entre elas. Um
-  // objeto vazio, ou sem o mapa, satisfaria o laco abaixo sem provar nada.
+  // A VARIANCIA primeiro: as dez estao la, e ha dos dois lados entre elas. Um
+  // objeto vazio, ou so com GETs, satisfaria o laco abaixo sem provar nada.
   assert.strictEqual(operacoes.length, 10)
-  assert.ok(operacoes.some(([acao]) => acao === 'mapa'))
+  assert.ok(operacoes.some(([, op]) => op.metodo === 'GET'))
+  assert.ok(operacoes.some(([, op]) => op.metodo !== 'GET'))
 
   for (const [acao, op] of operacoes) {
-    const esperado = AGREGADAS[acao] || 'efetivo_operador'
+    const esperado = op.metodo === 'GET' ? 'efetivo_consulta' : 'efetivo_gerente'
     assert.strictEqual(op.acesso, esperado, `${acao} anuncia acesso ${op.acesso}`)
   }
 })

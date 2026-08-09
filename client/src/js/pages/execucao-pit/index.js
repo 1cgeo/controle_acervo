@@ -58,7 +58,7 @@ const numero = (v) => (v == null ? '·' : String(v));
  */
 export async function renderExecucaoPit(container, _ctx) {
   let disposed = false;
-  // ESCREVER a célula da grade é do OPERADOR DE PRODUÇÃO desde a 1.33.0, e era
+  // ESCREVER a célula da grade é do OPERADOR DO PIT desde a 1.33.0, e era
   // do administrador global. `temPerfil` já devolve true para o administrador.
   // O servidor cobra o mesmo em POST e DELETE /metas/execucao; aqui é só
   // ergonomia, para o botão não existir só para levar 403.

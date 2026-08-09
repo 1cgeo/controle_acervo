@@ -96,7 +96,7 @@ export const limparSubsecao = (id, numero) =>
  * QUEM LE O CSV E O SERVIDOR, e nao esta funcao. Aqui so passa o texto: o
  * arquivo escolhido, lido como string, ou o que a pessoa colou. Ler o CSV decide
  * o que se APAGA (casar por repositorio e preservar o Resumo escrito a mao), e
- * essa regra posta no cliente nao valeria para o `producao_cli`.
+ * essa regra posta no cliente nao valeria para o `pit_cli`.
  *
  * O RESUMO NAO VAI NO CORPO. Ele e a unica coluna da 5.1 escrita por pessoa, e
  * quem o preserva e o servidor, cruzando com o que ja esta gravado.

@@ -31,7 +31,7 @@ import { openVersoesDialog } from './versoes-dialog.js';
  */
 export async function renderExtraPitList(container, _ctx) {
   let disposed = false;
-  // CADASTRAR a demanda Extra-PIT é do OPERADOR DE PRODUÇÃO desde a 1.33.0, e
+  // CADASTRAR a demanda Extra-PIT é do OPERADOR DO PIT desde a 1.33.0, e
   // era do administrador global. O servidor cobra o mesmo em POST, PUT e DELETE
   // /metas/extra. LIGAR uma VERSÃO do acervo à demanda continua do
   // administrador, e por isso `versoes-dialog.js` segue com `isAdmin`: aquilo

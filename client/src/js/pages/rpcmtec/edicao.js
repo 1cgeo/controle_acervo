@@ -153,9 +153,14 @@ export async function renderRpcmtecEdicao(container, ctx) {
   // depois. O agregado `edicao` reune a edicao, as subsecoes digitadas e o
   // anexo assinado.
   //
-  // A tela ja e admin-only (`adminLoader`), que e a mesma guarda da rota do
-  // historico de 'plataforma': aqui nao ha o descasamento que obrigou a esconder
-  // o painel na meta e na capacitacao.
+  // SO PARA ADMINISTRADOR, e o desencontro custou a descoberta. A rota da tela e
+  // `gerenteLoader` desde que ela deixou de ser admin-only, e o historico de
+  // 'plataforma' continua `verifyAdmin`
+  // (server/src/auditoria/auditoria_route.js). O painel era montado sem checar
+  // `isAdmin()`: o gerente que nao e administrador o via e levava 403 ao abrir.
+  // Ele nasce recolhido e so busca quando aberto, o que ADIAVA a falha em vez de
+  // evita-la, e por isso ninguem tinha topado com ela. A meta e a capacitacao ja
+  // escondiam o painel por esse mesmo descasamento.
   const areaHistorico = el('div', { className: 'dashboard-section' });
 
   const page = el('div', { className: 'page' }, [
@@ -886,6 +891,9 @@ export async function renderRpcmtecEdicao(container, ctx) {
   let historico = null;
 
   function desenharHistorico() {
+    // Ver o comentario de `areaHistorico`: painel que entrega 403 ao ser aberto
+    // e pior que painel nenhum.
+    if (!isAdmin()) return;
     if (!historico) {
       historico = criarHistorico({
         modulo: 'plataforma',
