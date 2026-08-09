@@ -1,7 +1,7 @@
 'use strict'
 
 /**
- * A regra do diff da auditoria, UMA, para os tres modulos. Copiar esta regra
+ * A regra do diff da auditoria, UMA, para os módulos. Copiar esta regra
  * por modulo e a divergencia esperando acontecer.
  */
 

@@ -11,7 +11,7 @@
 // orcamento levam. Ver server/src/routes.js.
 //
 // A tela de usuarios NAO mora aqui: e de PLATAFORMA ('#/usuarios'), unica para
-// os tres modulos, e so o administrador global a ve.
+// os modulos, e so o administrador global a ve.
 
 import { ICONS } from '@utils/dom.js';
 import './acervo.css';

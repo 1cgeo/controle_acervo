@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fumaca da plataforma DGEO: os tres modulos de ponta a ponta, SO LEITURA.
+"""Fumaca da plataforma DGEO: o nucleo de ponta a ponta, SO LEITURA.
 
 Roda depois de todo deploy. Nenhum POST, PUT, PATCH ou DELETE, exceto o proprio
 login. Cada checagem diz o que esperava e o que veio, para o resultado ser prova
@@ -90,10 +90,10 @@ c, b = chamar('/api/login', 'POST', {'usuario': USUARIO, 'senha': SENHA, 'client
 dados = b.get('dados') or {}
 tok = dados.get('token')
 modulos = [m['nome_abrev'] for m in (dados.get('modulos') or [])]
-# O catalogo CRESCE: nasceu com tres modulos, chegou a cinco na 1.33.0 (entraram
+# O catalogo CRESCE: nasceu com módulos, chegou a cinco na 1.33.0 (entraram
 # producao e efetivo) e a SEIS na 1.46.0 (equipamento). O de code 4 passou a se
 # chamar `pit` em 2026-08-09. Comparar com a lista exata reprovava a cada modulo
-# novo, com o login perfeito. O piso sao os tres modulos que a plataforma
+# novo, com o login perfeito. O piso sao os módulos que a plataforma
 # prometia desde o inicio; o resto e crescimento, e cresce de novo quando o core
 # do SAP entrar.
 NUCLEO = {'acervo', 'mapoteca', 'orcamento'}
@@ -175,7 +175,7 @@ if ano:
     lista([
         (f'/api/orcamento/pdr?ano={ano}', f'itens do PDR de {ano}', 1),
         # As metas do PIT sairam do orcamento em 2026-07-31 e viraram rota de
-        # PLATAFORMA, sem prefixo de modulo, como /usuarios: os tres modulos
+        # PLATAFORMA, sem prefixo de modulo, como /usuarios: os modulos
         # consomem o plano anual e nenhum e dono dele.
         (f'/api/metas?ano={ano}', 'metas do PIT', 1),
     ], tok)
@@ -195,7 +195,7 @@ if ano:
 c, b = chamar('/api/orcamento/arquivo?nota_credito_id=1', token=tok)
 checa('anexos de NC (conteudo BYTEA)', c == 200, f"HTTP {c}, {len(b.get('dados') or [])} anexo(s)")
 
-secao('RPCMTec (plataforma, fora dos tres modulos)')
+secao('RPCMTec (plataforma, fora dos modulos)')
 # Desde 2026-08-01 o relatorio inteiro sai de um gerador so. Antes eram dois
 # (/api/relatorio/rpcmtec e /api/orcamento/relatorio/secao3), com numeracao
 # propria cada um, e alguem colava um arquivo no outro.

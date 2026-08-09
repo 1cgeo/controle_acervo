@@ -93,7 +93,7 @@ const PALAVRA_ACENTUADA = {
  * tabela. Ver server/src/auditoria/mapa/index.js.
  *
  * POR QUE NÃO UM MAPA DE TABELAS AQUI. São cerca de 60 tabelas auditadas nos
- * três módulos, e este componente serve mais de vinte telas. Mapa escrito à mão
+ * módulos, e este componente serve mais de vinte telas. Mapa escrito à mão
  * apodrece na primeira tabela nova, e a chave que faltar devolve o nome cru
  * justamente na tela que esta regra existe para proteger.
  *
@@ -368,7 +368,7 @@ export function criarHistorico({
    * sai de rotuloDaTabela(); o nome cru fica no valor da opção.
    *
    * AS OPÇÕES VÊM DOS DADOS, nunca de uma lista fixa: este componente serve os
-   * três módulos e mais de vinte telas, e lista escrita à mão apodrece na
+   * módulos e mais de vinte telas, e lista escrita à mão apodrece na
    * primeira tabela nova.
    *
    * FILTRO COM UMA OPÇÃO SÓ NÃO APARECE. Ele não recorta nada e vira ruído na

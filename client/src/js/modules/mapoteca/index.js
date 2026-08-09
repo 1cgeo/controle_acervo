@@ -9,7 +9,7 @@
 // FORA DAQUI, de proposito:
 //  - a consulta publica de pedido por localizador ('#/consultar-pedido'), que
 //    nao tem sessao, e rota de PLATAFORMA em src/js/index.js;
-//  - a tela de usuarios, que e unica da plataforma e cobre os tres modulos.
+//  - a tela de usuarios, que e unica da plataforma e cobre todos os modulos.
 
 // CSS: quase tudo vem do CSS de plataforma (layout, tables, forms, modal,
 // wizard, chips, dashboard e extras, este ultimo com .rpcm-toolbar e

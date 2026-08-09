@@ -31,7 +31,7 @@ BEGIN;
 -- aproveitamento é `dgeo.efetivo_periodo` mais `dgeo.impedimento`. A razão está
 -- escrita em er/dgeo.sql.
 --
--- PERMISSÃO. Ler e gerar é de quem administra: o RPCMTec cruza os três módulos,
+-- PERMISSÃO. Ler e gerar é de quem administra: o RPCMTec cruza os módulos,
 -- inclusive valor de crédito e de empenho, e liberá-lo por perfil de um módulo
 -- entregaria o orçamento a quem só tem acervo.
 

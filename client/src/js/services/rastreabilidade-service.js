@@ -7,7 +7,7 @@ import { apiGet, apiGetPaginado } from './api-client.js';
  * duas razões:
  *
  * 1. ESCOPO. `/api/auditoria` é rota de plataforma, mas o assunto não é
- *    "administrar o sistema": é o histórico de dado dos três módulos. Ele é
+ *    "administrar o sistema": é o histórico de dado dos módulos. Ele é
  *    consumido pelo `components/historico/`, que aparece em seis fichas de
  *    módulos diferentes, e por `#/rastreabilidade`. Nenhuma dessas telas quer o
  *    resto do `plataforma-service`.
@@ -30,7 +30,7 @@ import { apiGet, apiGetPaginado } from './api-client.js';
  * A resposta já vem com o diff RENDERIZADO pelo servidor (`mudancas`, com rótulo
  * em português e os dois valores em texto) e o `resumo` de cada registro. O
  * cliente não traduz nada: são ~60 tabelas auditadas e ~25 domínios, e a tela de
- * rastreabilidade mistura os três módulos numa página só. Ver
+ * rastreabilidade mistura os módulos numa página só. Ver
  * server/src/auditoria/renderizar.js.
  *
  * @param {string} modulo - acervo, mapoteca, orcamento, equipamento ou

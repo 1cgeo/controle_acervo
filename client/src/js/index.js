@@ -97,7 +97,7 @@ router.add('/acessos', withLayout(renderAcessos), {
 // depois de entrar.
 //
 // `gerenteLoader`, e nao `adminLoader`: a tela e do administrador global (que ve
-// os tres modulos e a plataforma) E do gerente de qualquer modulo (que ve o
+// os modulos e a plataforma) E do gerente de qualquer modulo (que ve o
 // dele). O recorte de verdade vem do servidor, no verifyRastreabilidade, que le
 // o perfil do BANCO a cada requisicao -- este guarda so evita abrir uma tela que
 // responderia 403.
@@ -113,7 +113,7 @@ router.add('/rastreabilidade', withLayout(renderRastreabilidade), {
 // so o administrador troca senha, por reset.
 router.add('/perfil', withLayout(renderPerfil), { guard: authLoader });
 
-// O PIT DO ANO: o plano anual da Divisao, que os tres modulos consomem. Nao e
+// O PIT DO ANO: o plano anual da Divisao, que os modulos consomem. Nao e
 // tela de modulo, senao quem so tem perfil na mapoteca nao veria a lista. Sem
 // `adminLoader`: LER e de quem tem acesso ao sistema, e o backend cobra o
 // administrador so na escrita.

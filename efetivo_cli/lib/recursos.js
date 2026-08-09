@@ -252,7 +252,9 @@ const RECURSOS = {
   // /meu_periodo e /meu_impedimento, com GET, POST, PUT e DELETE), guardadas por
   // `verifyAcesso` e com o dono saindo do token. Elas nasceram em 2026-08-08
   // junto com a subida da escrita para gerente, e sao por onde quem nao responde
-  // pelo efetivo declara o proprio impedimento. Este CLI ainda nao as expoe.
+  // pelo efetivo declara o proprio impedimento. Elas vivem no recurso `meu`,
+  // logo abaixo, e nao aqui: o que as separa nao e o assunto, e QUEM pode
+  // chamar -- misturadas, a lista de acesso deste recurso teria duas respostas.
   efetivo: {
     nome: 'aproveitamento do efetivo (passagem pela DGEO e impedimento)',
     schema: carregar('efetivo/efetivo_schema'),
@@ -292,7 +294,7 @@ const RECURSOS = {
           'EXCLUDE no banco, e a colisao volta como recusa. data_fim nula e ' +
           '"sem previsao de saida", que e o caso comum. Lanca a passagem DE ' +
           'OUTRA pessoa, e por isso pede gerente; a propria vai por ' +
-          'POST /efetivo/meu_periodo, que este CLI ainda nao expoe'
+          '`efetivo meu periodo criar`'
       },
       'periodos editar': {
         metodo: 'PUT',
@@ -335,7 +337,7 @@ const RECURSOS = {
           'percentuais somam ate 100. `descricao` e texto livre e vale o que TIRA ' +
           'a pessoa do trabalho da Divisao, nunca o que ela faz aqui. Lanca o ' +
           'impedimento DE OUTRA pessoa (dai o gerente); o proprio vai por ' +
-          'POST /efetivo/meu_impedimento, que este CLI ainda nao expoe'
+          '`efetivo meu impedimento criar`'
       },
       'impedimentos editar': {
         metodo: 'PUT',
@@ -355,6 +357,117 @@ const RECURSOS = {
         confirmar: {
           campo: 'id',
           motivo: 'apaga o impedimento, e nao ha tabela de deletados. O ' +
+            'aproveitamento do periodo que ele cobria sobe, e o RPCMTec do mes muda'
+        }
+      }
+    }
+  },
+
+  // O PROPRIO, e nao o da Divisao. Nove rotas, todas `verifyAcesso`: a obrigacao
+  // e de quem esta na Divisao, e nao do modulo. Quem trabalha so no acervo nao
+  // tem perfil em Efetivo e mesmo assim precisa declarar a propria licenca.
+  //
+  // RECURSO SEPARADO, e nao operacoes dentro de `efetivo`. O assunto e o mesmo
+  // (passagem e impedimento), mas o ACESSO nao: la e consulta ou gerente no
+  // modulo, aqui e so ter acesso. Num recurso so, `efetivo schema` teria de
+  // anunciar duas guardas para o mesmo assunto, e quem le escolheria a errada.
+  //
+  // O DONO SAI DO TOKEN, e nao do corpo nem da query. `usuario_uuid` no corpo
+  // cai no Joi como chave desconhecida (o `meuPeriodo` e o `atualizarPeriodo`,
+  // que nao a conhece), e o `:id` de OUTRA pessoa responde 404 -- o controlador
+  // recorta por dono antes de achar a linha.
+  meu: {
+    nome: 'o proprio aproveitamento (a minha passagem e o meu impedimento)',
+    schema: carregar('efetivo/efetivo_schema'),
+    operacoes: {
+      aproveitamento: {
+        metodo: 'GET',
+        caminho: '/efetivo/meu_aproveitamento',
+        query: 'anoObrigatorioQuery',
+        acesso: 'acesso',
+        envelope: 'registro',
+        nota: 'devolve { ano, semanas, anual }, o mesmo par do mapa da Divisao ' +
+          'recortado por pessoa. COM recorte de ano, ao contrario das duas ' +
+          'listas abaixo: a grade E o ano'
+      },
+      periodo: {
+        metodo: 'GET',
+        caminho: '/efetivo/meu_periodo',
+        acesso: 'acesso',
+        envelope: 'lista',
+        colunas: ['id', 'data_inicio', 'data_fim', 'observacao'],
+        nota: 'SEM recorte de ano: sao as minhas passagens, todas'
+      },
+      'periodo criar': {
+        metodo: 'POST',
+        caminho: '/efetivo/meu_periodo',
+        corpo: 'meuPeriodo',
+        acesso: 'acesso',
+        envelope: 'registro',
+        nota: 'a MINHA passagem. O dono sai do token, entao `usuario_uuid` nao ' +
+          'entra no corpo. Ela NAO sobrepoe outra minha: quem cobra e um ' +
+          'EXCLUDE no banco'
+      },
+      'periodo editar': {
+        metodo: 'PUT',
+        caminho: '/efetivo/meu_periodo/:id',
+        corpo: 'meuPeriodo',
+        params: 'idParams',
+        acesso: 'acesso',
+        envelope: 'registro',
+        nota: 'o `:id` de outra pessoa responde 404, e nao 403: o recorte por ' +
+          'dono acontece antes de a linha ser achada'
+      },
+      'periodo excluir': {
+        metodo: 'DELETE',
+        caminho: '/efetivo/meu_periodo/:id',
+        params: 'idParams',
+        acesso: 'acesso',
+        envelope: 'mensagem',
+        confirmar: {
+          campo: 'id',
+          motivo: 'apaga a MINHA passagem pela DGEO, e nao ha tabela de ' +
+            'deletados. Todo mes e semana que ela cobria mudam de numero no mapa ' +
+            'da Divisao e no RPCMTec'
+        }
+      },
+      impedimento: {
+        metodo: 'GET',
+        caminho: '/efetivo/meu_impedimento',
+        acesso: 'acesso',
+        envelope: 'lista',
+        colunas: ['id', 'descricao', 'percentual', 'data_inicio', 'data_fim'],
+        nota: 'SEM recorte de ano, como a passagem acima'
+      },
+      'impedimento criar': {
+        metodo: 'POST',
+        caminho: '/efetivo/meu_impedimento',
+        corpo: 'meuImpedimento',
+        acesso: 'acesso',
+        envelope: 'registro',
+        nota: 'o MEU impedimento, e e por aqui que quem nao responde pelo ' +
+          'efetivo declara a propria licenca. Impedimento SOBREPOE outro, e os ' +
+          'percentuais somam ate 100. `descricao` vale o que TIRA a pessoa do ' +
+          'trabalho da Divisao, nunca o que ela faz aqui'
+      },
+      'impedimento editar': {
+        metodo: 'PUT',
+        caminho: '/efetivo/meu_impedimento/:id',
+        corpo: 'meuImpedimento',
+        params: 'idParams',
+        acesso: 'acesso',
+        envelope: 'registro',
+        nota: 'como na passagem, o `:id` de outra pessoa responde 404'
+      },
+      'impedimento excluir': {
+        metodo: 'DELETE',
+        caminho: '/efetivo/meu_impedimento/:id',
+        params: 'idParams',
+        acesso: 'acesso',
+        envelope: 'mensagem',
+        confirmar: {
+          campo: 'id',
+          motivo: 'apaga o MEU impedimento, e nao ha tabela de deletados. O ' +
             'aproveitamento do periodo que ele cobria sobe, e o RPCMTec do mes muda'
         }
       }

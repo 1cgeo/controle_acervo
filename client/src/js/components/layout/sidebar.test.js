@@ -158,7 +158,7 @@ describe('sidebar: Efetivo e uma seção de sistema, como os modulos', () => {
     const efetivo = cabecalhos.find(h => h.textContent.includes('Efetivo'));
 
     expect(efetivo).toBeTruthy();
-    // Clicar no nome do sistema entra nele, como nos três módulos.
+    // Clicar no nome do sistema entra nele, como nos módulos de tela.
     expect(efetivo.getAttribute('href')).toBe('#/acessos');
     // E NÃO é um grupo daqueles que só abrem e fecham.
     expect(efetivo.tagName).toBe('A');

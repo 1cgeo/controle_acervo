@@ -1,4 +1,4 @@
-// Tema unico da plataforma: a preferencia vale nos tres modulos.
+// Tema unico da plataforma: a preferencia vale na interface inteira.
 const STORAGE_KEY = 'sca-theme-mode';
 
 /**

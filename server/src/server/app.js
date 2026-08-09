@@ -153,7 +153,7 @@ app.use('/api', (req, res, next) => {
   return next(err)
 })
 
-// Interface ÚNICA do SCA, com os três módulos dentro dela. Um build só, em
+// Interface ÚNICA do SCA, com os módulos dentro dela. Um build só, em
 // build/, servido na raiz. Trocar de módulo é trocar de rota (#/acervo/...,
 // #/mapoteca/..., #/orcamento/...), sem recarregar e sem novo login.
 app.use(express.static(path.join(__dirname, "..", "build")));

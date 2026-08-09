@@ -3,7 +3,7 @@
 // A GUARDA DA LEITURA DO PIT: ela pede ACESSO AO SISTEMA, e não só sessão.
 //
 // O PIT do ano e o Extra-PIT são rotas de PLATAFORMA: não têm prefixo de módulo
-// e não pedem perfil num módulo específico, porque os três módulos consomem a
+// e não pedem perfil num módulo específico, porque os módulos consomem a
 // lista. Elas eram `verifyLogin`, e a diferença é a conta RECÉM-CRIADA: ela
 // nasce sem nenhuma linha em `dgeo.usuario_perfil`, está logada e não está no
 // sistema. O plano de trabalho da Divisão inteira não é o que ela vê enquanto

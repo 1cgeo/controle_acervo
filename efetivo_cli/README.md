@@ -139,7 +139,18 @@ O módulo **Efetivo** (`dominio.modulo` code 5) nasceu na 1.33.0 para haver como
 
 **A régua de 2026-08-08 deslocou as dez rotas nos dois sentidos, e nenhuma ficou onde estava.** A leitura **desceu para consulta**, porque até ali ninguém conseguia olhar o aproveitamento da Divisão sem poder também escrevê-lo. A escrita **subiu para gerente**, porque lançar a passagem e o impedimento **de outra pessoa** é dizer o número que a subseção 6.1 do RPCMTec publica sobre terceiros. A guarda continua valendo **inclusive na leitura** (a resposta traz licença de saúde e função acumulada, nominalmente); o que mudou foi o nível, não o princípio.
 
-O operador de Efetivo passou a cuidar do **próprio** aproveitamento, por nove rotas que **este CLI ainda não expõe**: `/efetivo/meu_aproveitamento`, `/efetivo/meu_periodo` e `/efetivo/meu_impedimento`. Elas são `verifyAcesso`, e não `verifyPerfil`, porque declarar o próprio impedimento é obrigação de quem está na Divisão e não trabalho do módulo; o dono sai do **token** e nunca do corpo, e o `:id` de terceiro responde **404**, não 403, para não confirmar que o registro existe.
+O operador de Efetivo passou a cuidar do **próprio** aproveitamento, por nove rotas que vivem no recurso **`meu`**: `/efetivo/meu_aproveitamento`, `/efetivo/meu_periodo` e `/efetivo/meu_impedimento`. Elas são `verifyAcesso`, e não `verifyPerfil`, porque declarar o próprio impedimento é obrigação de quem está na Divisão e não trabalho do módulo; o dono sai do **token** e nunca do corpo, e o `:id` de terceiro responde **404**, não 403, para não confirmar que o registro existe.
+
+**`meu` é recurso separado de `efetivo`, e não operações dentro dele.** O assunto é o mesmo (passagem e impedimento), mas o acesso não: lá é consulta ou gerente no módulo, aqui basta ter acesso. Num recurso só, `efetivo schema` teria de anunciar duas guardas para o mesmo assunto, e quem lesse escolheria a errada.
+
+```
+efetivo meu aproveitamento --ano 2026
+efetivo meu periodo
+efetivo meu periodo criar   --data '{"data_inicio": "2026-01-05"}'
+efetivo meu impedimento criar --data '{"descricao": "LTSP", "percentual": 100, "data_inicio": "2026-03-02"}'
+```
+
+Repare que `usuario_uuid` **não** entra no corpo: o `meuPeriodo` e o `meuImpedimento` do Joi não a conhecem, e mandá-la vira chave desconhecida.
 
 `/api/usuarios` e `/api/acessos` continuam **admin-only**, e isso é diferente dos CLIs irmãos: lá o que barra é a falta de perfil no módulo, aqui é a falta do **administrador global**, que não se resolve ganhando perfil em módulo nenhum.
 
@@ -168,9 +179,8 @@ Anotadas aqui, e não contornadas em silêncio. Nenhuma é bloqueante.
 6. **`dgeo.login` não é exposta linha a linha**, só agregada (`/acessos/*`). Não há como perguntar "quando esta pessoa entrou pela última vez" fora do painel de logados de hoje.
 7. **O efetivo não tem rota de obter por id.** `GET /efetivo/periodos` e `/efetivo/impedimentos` listam (com filtro opcional por ano), e o `:id` só aparece no `PUT` e no `DELETE`. Para conferir um registro antes de editar, liste o ano e recorte.
 8. **O `PUT` de período e de impedimento não aceita trocar o militar**, e está certo: trocá-lo reescreveria de quem é o período. Corrigir a pessoa é excluir e cadastrar de novo, e o CLI diz isso na nota da operação.
-9. **As nove rotas do PRÓPRIO aproveitamento não estão no CLI.** `GET /efetivo/meu_aproveitamento`, e o GET, POST, PUT e DELETE de `/efetivo/meu_periodo` e de `/efetivo/meu_impedimento` nasceram em 2026-08-08, quando a escrita das outras subiu para gerente. São `verifyAcesso`, o dono sai do token e o `:id` de terceiro responde 404. Quem não é gerente de Efetivo declara o próprio impedimento por elas, e hoje só pela tela `#/perfil`.
-10. **`GET /efetivo/divergencias` e `GET /efetivo/militares` também ficaram de fora.** As duas são `verifyPerfil('consulta', 'efetivo')`: a primeira lista conta ativa sem passagem pela DGEO no mês, e a segunda é o cadastro mínimo de militar que a tela usa para o seletor (sem `login`, `administrador`, `senha_definida` nem perfis, que continuam exclusivos de `/api/usuarios`).
-11. **`GET /efetivo/mes` aceita `formato=json|csv`** (`anoMesRelatorioQuery`), e a registry ainda aponta `anoMesQuery`, que não conhece a chave. Consequência: `--formato csv` não chega à rota. Não é erro de guarda nem de rota, e sim contrato apontado com uma chave a menos.
+9. **`GET /efetivo/divergencias` e `GET /efetivo/militares` também ficaram de fora.** As duas são `verifyPerfil('consulta', 'efetivo')`: a primeira lista conta ativa sem passagem pela DGEO no mês, e a segunda é o cadastro mínimo de militar que a tela usa para o seletor (sem `login`, `administrador`, `senha_definida` nem perfis, que continuam exclusivos de `/api/usuarios`).
+10. **`GET /efetivo/mes` aceita `formato=json|csv`** (`anoMesRelatorioQuery`), e a registry ainda aponta `anoMesQuery`, que não conhece a chave. Consequência: `--formato csv` não chega à rota. Não é erro de guarda nem de rota, e sim contrato apontado com uma chave a menos.
 
 ## Regras do efetivo que o Joi não conta
 

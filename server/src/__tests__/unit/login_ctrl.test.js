@@ -5,7 +5,7 @@
 // mockar o bcrypt provaria a consulta, e nao a conferencia.
 //
 // O que ele protege, alem da senha: a resposta do login carrega, FORA do token,
-// o que o client precisa para montar a interface unica dos tres modulos.
+// o que o client precisa para montar a interface unica dos módulos.
 //   - `perfis`: mapa nome_abrev -> nivel, para o client saber onde a pessoa entra
 //   - `modulos`: o catalogo dominio.modulo, para o seletor exibir o NOME de cada
 //     modulo em vez de decorar codigo (GET /usuarios/dominio/modulo e admin-only,

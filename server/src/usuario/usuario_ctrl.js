@@ -43,7 +43,7 @@ controller.getUsuarios = async () => {
   // `tem_registro` responde uma pergunta da TELA: mostrar ou nao o botao
   // "Excluir". Ele e VERDADEIRO quando a pessoa ja tem login, passagem ou
   // impedimento gravado. FALSO nao promete que o DELETE passa: dezenas de
-  // tabelas dos tres modulos tambem apontam para o uuid, e a recusa final e do
+  // tabelas dos módulos tambem apontam para o uuid, e a recusa final e do
   // banco (23503), traduzida em `deletaUsuario`.
   //
   // A ORDEM e a HIERARQUIA, a mesma de `efetivo_ctrl` (posto decrescente,
@@ -436,7 +436,7 @@ controller.atualizaUsuarioLista = async (usuarios, autorUuid, contexto) => {
  * Exclui a pessoa.
  *
  * NA PRATICA quase sempre falha, e esta certo assim: `dgeo.usuario.uuid` e
- * referenciado por dezenas de tabelas dos tres modulos
+ * referenciado por dezenas de tabelas dos módulos
  * (`acervo.versao.usuario_criacao_uuid`, `rpcmtec.edicao.usuario_cadastramento_uuid`,
  * `mapoteca.pedido.usuario_id`, ...), e quem ja trabalhou no sistema nao se
  * apaga: se DESATIVA. Apagar reescreveria a autoria do que a pessoa cadastrou.

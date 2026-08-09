@@ -17,7 +17,7 @@
 //              gerente da mapoteca lia a grade da produção, e o operador de
 //              Produção não lia.
 //
-// A régua nova é a dos três módulos: CONSULTA lê, OPERADOR lança, GERENTE
+// A régua nova é a dos módulos: CONSULTA lê, OPERADOR lança, GERENTE
 // responde pela área. Aqui isso vira `verifyPerfil('consulta', 'pit')` na
 // leitura, com a escrita intocada em `verifyPerfil('operador', 'pit')`.
 //

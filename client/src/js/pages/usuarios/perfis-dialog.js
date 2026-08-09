@@ -5,7 +5,7 @@ import { atualizarUsuario } from '@services/plataforma-service.js';
 
 /**
  * O que cada nivel permite, em uma linha, para o chefe escolher sem adivinhar.
- * Vale igual nos tres modulos: o nivel e a hierarquia, o modulo e o escopo.
+ * Vale igual em todos os modulos: o nivel e a hierarquia, o modulo e o escopo.
  */
 const AJUDA_NIVEL = {
   0: 'Sem acesso: a pessoa não entra no módulo, nem para ler.',

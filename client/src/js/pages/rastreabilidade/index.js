@@ -26,7 +26,7 @@ import './rastreabilidade.css';
  * mesmo nome e perguntas diferentes seriam confundidas para sempre.
  *
  * TELA DE PLATAFORMA, ao lado de #/usuarios, #/acessos e #/rpcmtec: o rastro dos
- * três módulos vive numa tabela só, e "o que o usuário X fez" não é pergunta de
+ * módulos vive numa tabela só, e "o que o usuário X fez" não é pergunta de
  * módulo nenhum.
  *
  * O RECORTE É DO SERVIDOR. Administrador global vê tudo e ganha o filtro de

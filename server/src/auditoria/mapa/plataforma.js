@@ -12,7 +12,7 @@
  * concedeu.
  *
  * O AGREGADO DE `usuario` E O UUID, e nao o `id` serial. E ele que aparece na
- * URL da tela (#/usuarios), e que as dezenas de tabelas dos tres modulos
+ * URL da tela (#/usuarios), e que as dezenas de tabelas dos módulos
  * referenciam; o `id` so vive dentro de `dgeo`. Com o `id` no `entidade_id`, o
  * historico de uma pessoa nao casaria com nada do resto do sistema.
  */

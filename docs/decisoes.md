@@ -610,7 +610,7 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 
 ## Auditoria e rastreabilidade
 
-- **`auditoria.evento` é UMA tabela para os três módulos, e o rastro nasce no BACKEND** (chefe). O
+- **`auditoria.evento` é UMA tabela para todos os módulos, e o rastro nasce no BACKEND** (chefe). O
   gatilho não conhece o usuário da sessão HTTP, porque o Postgres vê a conexão do pool. O preço é a
   rota nova que esquece de auditar, e quem cobra é um teste de varredura que lê o router de verdade.
 - **`auditoria` é o único schema sem `UPDATE` e sem `DELETE` para a aplicação.** Trilha que a própria
@@ -633,7 +633,7 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   BYTEA dos anexos e valor acima de 8 kB, que vira resumo. **O teto de 8 kB está pendente de
   confirmação da chefia**: acima dele o estado anterior de uma folha de recorte irregular deixa de ser
   recuperável, e subir o teto depois não recupera o que já foi gravado resumido.
-- **O DIFF SAI PRONTO DO SERVIDOR, e o cliente não traduz nada.** A tela mistura os três módulos e
+- **O DIFF SAI PRONTO DO SERVIDOR, e o cliente não traduz nada.** A tela mistura os módulos e
   precisaria de todos os catálogos, inclusive dos que a pessoa não usa. **Domínio traduz; FK para
   ENTIDADE não**, e sai o id, porque o nome de hoje ao lado de um valor antigo pode ser falso. **Campo
   não declarado NÃO some da tela**, senão o mapa esconderia o que ninguém está olhando.

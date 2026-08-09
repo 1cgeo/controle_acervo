@@ -1,6 +1,6 @@
 BEGIN;
 
--- Rastreabilidade de TODA alteração feita por pessoa, nos três módulos.
+-- Rastreabilidade de TODA alteração feita por pessoa, nos módulos.
 --
 -- O QUE ELA NÃO É. Não é `#/acervo/auditoria` (que mede os invariantes do
 -- acervo HOJE e não diz quem produziu a incoerência), não é `dgeo.login` (que
@@ -148,7 +148,7 @@ CREATE INDEX idx_evento_lote ON auditoria.evento(lote_id) WHERE lote_id IS NOT N
 -- A tabela também NÃO nasce particionada. Se o crescimento pedir, o
 -- particionamento por ano de `data_evento` não muda o contrato de escrita nem o
 -- de leitura, mas custa migração de dados. Estimativa com o uso atual: dezenas
--- de milhares de eventos por ano no movimento normal dos três módulos, fora as
+-- de milhares de eventos por ano no movimento normal dos módulos, fora as
 -- cargas em lote do acervo legado.
 --
 -- PENDENTE DE CONFIRMAÇÃO DA CHEFIA: se um teto de retenção for decidido, ele

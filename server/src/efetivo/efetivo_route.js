@@ -12,7 +12,7 @@
 // saúde e função acumulada de cada militar, nominalmente. O que mudou é que
 // agora existe um compartimento para esse dado, em vez de só a flag global.
 //
-// A RÉGUA DOS NÍVEIS mudou em 2026-08-08, e ela vale igual nos três módulos:
+// A RÉGUA DOS NÍVEIS mudou em 2026-08-08, e ela vale igual nos módulos:
 // quem tem CONSULTA no módulo LÊ as telas do módulo; quem tem OPERADOR lança o
 // que é dele; quem tem GERENTE responde pela área toda. Aqui isso deslocou as
 // rotas nos DOIS sentidos, e é deliberado:

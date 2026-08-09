@@ -41,7 +41,7 @@ const { pitRoute } = require('../../../pit')
 const { dominioRoute } = require('../../../orcamento/dominio')
 
 // A rota /usuarios do repo de origem nao veio na fusao: o SCA ja tem a sua, e e
-// ela que serve os tres modulos. O corpo dela segue a regra do schemaValidation
+// ela que serve os módulos. O corpo dela segue a regra do schemaValidation
 // do SCA (descarta e avisa), coberta por __tests__/unit/utils/schema_validation.
 const app = buildTestApp([
   { path: '/dfd', router: dfdRoute },

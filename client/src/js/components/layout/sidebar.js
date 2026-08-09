@@ -62,7 +62,7 @@ const MENU_PLATAFORMA = [
  * quebra link guardado.
  *
  * Ele fica logo depois do orçamento, ACIMA do separador, e se desenha como os
- * três módulos: cabeçalho que é LINK para a home, com o chevron ao lado abrindo
+ * módulos de tela: cabeçalho que é LINK para a home, com o chevron ao lado abrindo
  * a lista sem navegar. Administrar gente é um sistema de verdade: tem dashboard,
  * tem cadastro, e tem quem entre nele para trabalhar um turno inteiro.
  *
@@ -289,7 +289,7 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
   });
 
   // Chave dos itens: `<modulo>:<item>` nos modulos e `<item>` na plataforma.
-  // Sem o prefixo, o `dashboard` dos tres modulos colidiria num mapa so.
+  // Sem o prefixo, o `dashboard` de cada modulo colidiria num mapa so.
   const itemElements = {};
   // Uma entrada por modulo, para abrir e fechar a seção.
   const moduleSections = [];
@@ -354,7 +354,7 @@ export function createSidebar({ collapsed = false, modulo = null } = {}) {
    * clicar nele ja entra no sistema; o chevron ao lado abre e fecha a lista sem
    * navegar.
    *
-   * Serve aos tres modulos E as seções PIT e Efetivo, que se desenham igual sem
+   * Serve aos modulos de tela E as seções PIT e Efetivo, que se desenham igual sem
    * ser modulo (ver SISTEMA_EFETIVO e SISTEMA_PRODUCAO). Por isso ela recebe o
    * rotulo e a home JA RESOLVIDOS: o modulo os tira do catalogo do servidor
    * (`nomeModulo`) e do manifesto (`rotaInicial`), e as duas seções os declaram,

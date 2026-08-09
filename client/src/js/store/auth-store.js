@@ -1,4 +1,5 @@
-// Sessao UNICA da plataforma SCA. Os tres modulos (acervo, mapoteca, orcamento)
+// Sessao UNICA da plataforma SCA. Os modulos de tela (acervo, mapoteca,
+// orcamento, equipamento)
 // vivem na mesma origem e no mesmo client, entao a chave de sessao e uma so, com
 // o prefixo '@sca-'. Antes cada client tinha o seu ('@mapoteca-*', '@orcamento-*'),
 // o que obrigava a mesma pessoa a logar duas vezes no mesmo navegador.

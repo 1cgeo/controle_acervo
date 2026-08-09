@@ -6,10 +6,10 @@ const { entradaDe, dominiosCitados, normalizarDominio } = require('./mapa')
 /**
  * O DIFF SAI PRONTO DO SERVIDOR, e o cliente nao traduz nada.
  *
- * POR QUE AQUI. Sao cerca de 60 tabelas auditadas nos tres modulos e cerca de 25
+ * POR QUE AQUI. Sao cerca de 60 tabelas auditadas nos módulos e cerca de 25
  * tabelas de dominio referenciadas por elas. Para traduzir `situacao_pedido_id: 3`
  * o cliente precisaria do catalogo daquele dominio em memoria, e a tela de
- * rastreabilidade mistura os tres modulos numa pagina so: ela precisaria de
+ * rastreabilidade mistura os módulos numa pagina so: ela precisaria de
  * TODOS os catalogos, inclusive dos modulos que a pessoa nao usa. Hoje o
  * orcamento nao guarda catalogo nenhum no cliente, e o `services/cache.js` nem
  * tem API para ler o cache sem refazer a chamada. O servidor tem os 25 catalogos

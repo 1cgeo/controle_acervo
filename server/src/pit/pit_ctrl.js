@@ -58,7 +58,7 @@ const { db } = require('../database')
 const { AppError, httpCode } = require('../utils')
 
 // As metas do ano alimentam o RPCMTec e sao apontadas pelo PDR, pela NC e pelo
-// pedido de impressao: mudar uma meta muda o que os tres modulos contam.
+// pedido de impressao: mudar uma meta muda o que os módulos contam.
 const { auditoriaCtrl } = require('../auditoria')
 
 const controller = {}

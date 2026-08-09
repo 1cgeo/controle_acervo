@@ -83,6 +83,73 @@ test('efetivo se anuncia por CONSULTA para ler e GERENTE para escrever', () => {
   }
 })
 
+// O RECURSO `meu` E O CONTRARIO do de cima, e por isso ele existe.
+//
+// As nove rotas do proprio aproveitamento sao TODAS `verifyAcesso`: nem consulta
+// nem gerente no modulo Efetivo, so ter perfil em ALGUM modulo. Declarar a
+// propria licenca e obrigacao de quem esta na Divisao, e quem trabalha so no
+// acervo tambem precisa faze-lo.
+//
+// SEM ESTE CASO, `meu` poderia herdar por descuido a guarda do recurso ao lado,
+// e o CLI passaria a anunciar que o proprio impedimento exige gerente -- que e
+// exatamente a lacuna que ele veio fechar.
+test('meu se anuncia por ACESSO nas nove, e nunca por perfil no modulo', () => {
+  const operacoes = Object.entries(obter('meu').operacoes)
+
+  // A VARIANCIA primeiro: as nove estao la, com leitura e escrita entre elas.
+  assert.strictEqual(operacoes.length, 9)
+  assert.ok(operacoes.some(([, op]) => op.metodo === 'GET'))
+  assert.ok(operacoes.some(([, op]) => op.metodo !== 'GET'))
+
+  for (const [acao, op] of operacoes) {
+    assert.strictEqual(op.acesso, 'acesso', `meu ${acao} anuncia acesso ${op.acesso}`)
+  }
+})
+
+// O DONO SAI DO TOKEN, e nao do corpo. `usuario_uuid` no corpo cairia no Joi
+// como chave desconhecida, e o servidor a DESCARTA em silencio: quem mandasse
+// acharia que lancou pelo outro, e teria lancado para si mesmo.
+test('nenhuma escrita de `meu` pede usuario_uuid no corpo', () => {
+  const modulo = obter('meu').schema()
+  const comCorpo = Object.entries(obter('meu').operacoes).filter(([, op]) => op.corpo)
+
+  assert.ok(comCorpo.length >= 4)
+  for (const [acao, op] of comCorpo) {
+    const campos = esquema.camposDe(modulo[op.corpo]).map(c => c.nome)
+    assert.ok(
+      !campos.includes('usuario_uuid'),
+      `meu ${acao} anuncia usuario_uuid, que o dono do token ja decide`
+    )
+  }
+})
+
+// O CAMINHO DE `meu` E OUTRO, e o despachante tem de saber disso: `efetivo meu
+// periodo criar` tem um segmento a mais que `efetivo periodos criar`. Este caso
+// tranca a traducao, que e o unico lugar onde os dois formatos se encontram.
+test('o despachante manda `meu` para o recurso certo, com um segmento a mais', () => {
+  assert.strictEqual(efetivo.recursoDe('meu'), 'meu')
+  assert.strictEqual(efetivo.recursoDe('periodos'), 'efetivo')
+  assert.strictEqual(efetivo.recursoDe('mapa'), 'efetivo')
+
+  assert.strictEqual(
+    efetivo.resolverOperacao({ _: ['meu', 'periodo', 'criar'], flags: {} }), 'periodo criar'
+  )
+  assert.strictEqual(efetivo.resolverOperacao({ _: ['meu', 'impedimento'], flags: {} }), 'impedimento')
+  assert.strictEqual(
+    efetivo.resolverOperacao({ _: ['periodos', 'criar'], flags: {} }), 'periodos criar'
+  )
+})
+
+// Errar o assunto e conhecimento LOCAL: nao pode exigir servidor, e a mensagem
+// tem de ensinar os tres que existem.
+test('`meu` sem assunto ensina os tres, sem tocar a rede', () => {
+  assert.throws(
+    () => efetivo.resolverOperacao({ _: ['meu'], flags: {} }),
+    /aproveitamento, periodo, impedimento/
+  )
+  assert.strictEqual(efetivo.precisaServidor({ _: ['meu'], flags: {} }), false)
+})
+
 test('efetivo e rota de PLATAFORMA: sem prefixo de modulo', () => {
   for (const [acao, op] of Object.entries(obter('efetivo').operacoes)) {
     assert.ok(

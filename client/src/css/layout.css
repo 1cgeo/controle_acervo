@@ -330,7 +330,7 @@
 /* ---------------------------------------------------------------------------
  * Seção de MODULO na sidebar (acervo, mapoteca, orcamento).
  *
- * A sidebar lista os tres modulos ao mesmo tempo, cada um colapsavel, e nunca
+ * A sidebar lista os modulos de tela ao mesmo tempo, cada um colapsavel, e nunca
  * se desmonta. Foi o que substituiu o seletor em dropdown da navbar, e o que
  * fez o menu parar de sumir ao entrar numa rota de plataforma.
  * ------------------------------------------------------------------------- */

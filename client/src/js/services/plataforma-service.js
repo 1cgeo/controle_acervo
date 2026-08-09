@@ -4,7 +4,7 @@ import { apiGet, apiPost, apiPut, apiDelete, apiUpload, apiDownload } from './ap
  * Servicos de PLATAFORMA: o que nao pertence a nenhum modulo.
  *
  * `/api/login` e `/api/usuarios` continuaram SEM o prefixo de modulo na fusao,
- * de proposito: servem os tres modulos. Todo endpoint de modulo mora no
+ * de proposito: servem todos os modulos. Todo endpoint de modulo mora no
  * service do proprio modulo (ex.: modules/orcamento/services/orcamento-service.js).
  */
 
@@ -69,7 +69,7 @@ export const alterarMinhaSenha = (body) => apiPut('/usuarios/perfil/senha', body
 
 // ---- Metas do PIT ----
 // Rota de plataforma, e nao do orcamento: o PIT e o plano anual da Divisao, e os
-// tres modulos o consomem. LER e de quem tem perfil em ALGUM modulo
+// os modulos o consomem. LER e de quem tem perfil em ALGUM modulo
 // (`verifyAcesso`, e `acessoLoader` na rota do client); ESCREVER e do
 // administrador global (o backend cobra, o cliente so evita oferecer o botao).
 export const getMetasPit = (ano) => apiGet(ano ? `/metas?ano=${ano}` : '/metas');

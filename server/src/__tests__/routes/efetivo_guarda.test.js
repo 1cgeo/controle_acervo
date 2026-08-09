@@ -2,7 +2,7 @@
 
 // A GUARDA DO APROVEITAMENTO DO EFETIVO, depois da régua de 2026-08-08.
 //
-// A REGRA NOVA, que vale igual nos três módulos: quem tem CONSULTA no módulo LÊ
+// A REGRA NOVA, que vale igual nos módulos: quem tem CONSULTA no módulo LÊ
 // as telas do módulo, quem tem OPERADOR lança o que é dele, quem tem GERENTE
 // responde pela área toda. Aqui ela moveu as rotas nos DOIS sentidos:
 //

@@ -70,6 +70,17 @@ EFETIVO  (modulo Efetivo: LER pede consulta, ESCREVER pede gerente)
   efetivo impedimentos editar  --id 30 --data '{...}'
   efetivo impedimentos excluir --id 30 --confirmar 30
 
+O PROPRIO  (nao pede perfil em Efetivo: basta ter acesso a ALGUM modulo)
+  efetivo meu aproveitamento --ano 2026   a minha grade do ano
+  efetivo meu periodo                     as minhas passagens, todas
+  efetivo meu periodo criar   --data '{"data_inicio": "2026-01-05"}'
+  efetivo meu periodo editar  --id 12 --data '{"data_inicio": "2026-01-05"}'
+  efetivo meu periodo excluir --id 12 --confirmar 12
+  efetivo meu impedimento                 os meus impedimentos, todos
+  efetivo meu impedimento criar   --data '{"descricao": "LTSP", "percentual": 100, "data_inicio": "2026-03-02"}'
+  efetivo meu impedimento editar  --id 30 --data '{...}'
+  efetivo meu impedimento excluir --id 30 --confirmar 30
+
 SESSAO
   efetivo status                      o SCA esta no ar? ha token em cache? sou admin?
   efetivo login                       autentica uma vez e guarda o token (~1h)
@@ -112,6 +123,9 @@ const ROTEADOR = {
   impedimentos: './comandos/efetivo',
   mapa: './comandos/efetivo',
   mes: './comandos/efetivo',
+  // O PROPRIO aproveitamento. Mesmo arquivo de comando, RECURSO diferente: ver
+  // `recursoDe` em comandos/efetivo.js. O que os separa e o ACESSO.
+  meu: './comandos/efetivo',
   login: './comandos/sessao',
   logout: './comandos/sessao',
   status: './comandos/sessao'

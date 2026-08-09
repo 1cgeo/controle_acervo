@@ -194,7 +194,7 @@ router.get(
  *
  * DUAS GUARDAS, E NÃO UMA, desde 2026-08-08. O molde recebia UM middleware e o
  * repetia nas seis rotas, o que amarrava ler e escrever ao mesmo nível: quem
- * pudesse LISTAR os cursos podia também APAGÁ-LOS. A régua nova dos três módulos
+ * pudesse LISTAR os cursos podia também APAGÁ-LOS. A régua nova dos módulos
  * separa as duas coisas (consulta LÊ, operador lança, gerente responde pela
  * área), e um molde de guarda única não sabe expressá-la.
  *

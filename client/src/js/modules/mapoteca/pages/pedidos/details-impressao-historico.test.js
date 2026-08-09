@@ -16,7 +16,7 @@ vi.mock('@modules/mapoteca/services/acervo-service.js', async () => {
   const { mockAcervoService } = await import('@modules/mapoteca/services/service-mocks.js');
   return mockAcervoService();
 });
-// O histórico é `/api/auditoria`, rota de PLATAFORMA: o rastro dos três módulos
+// O histórico é `/api/auditoria`, rota de PLATAFORMA: o rastro dos módulos
 // vive numa tabela só.
 //
 // O service dele é PRÓPRIO e pequeno (três funções), e por isso o mock aqui é

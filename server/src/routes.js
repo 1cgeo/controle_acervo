@@ -69,7 +69,7 @@ router.use("/acessos", acessosRoute);
 
 // Rastreabilidade: o que foi mudado, quando, por quem e qual era o estado
 // anterior. Rota de PLATAFORMA, sem prefixo de módulo, como /usuarios e
-// /acessos: o rastro dos três módulos mora numa tabela só, e a pergunta "o que o
+// /acessos: o rastro dos módulos mora numa tabela só, e a pergunta "o que o
 // usuário X fez" não é de módulo nenhum.
 //
 // NÃO confundir com `/acervo/auditoria`, que roda os invariantes do acervo: essa
@@ -81,7 +81,7 @@ router.use("/acessos", acessosRoute);
 router.use("/auditoria", auditoriaRoute);
 
 // Metas do PIT. Rota de PLATAFORMA, sem prefixo de módulo, como /usuarios:
-// os três módulos consomem o plano anual da Divisão e nenhum é dono dele.
+// os módulos consomem o plano anual da Divisão e nenhum é dono dele.
 router.use("/metas", pitRoute);
 
 // Aproveitamento do efetivo: quem esteve na Divisão, quando, e o que o impediu.

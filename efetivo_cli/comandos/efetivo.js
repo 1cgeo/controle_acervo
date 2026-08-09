@@ -35,11 +35,52 @@ const FLAGS_CLI = new Set([
 const SUBVERBOS = new Set(['criar', 'editar', 'excluir'])
 
 /**
+ * O RECURSO de um comando: `meu` tem o seu, e o resto cai em `efetivo`.
+ *
+ * Eles nao sao o mesmo recurso porque nao tem o mesmo ACESSO: em `efetivo` ler
+ * pede consulta e escrever pede gerente no modulo; em `meu` basta ter acesso a
+ * algum modulo, porque declarar o proprio impedimento e obrigacao de quem esta
+ * na Divisao. Ver o comentario de `meu` em lib/recursos.js.
+ */
+function recursoDe (comando) {
+  return comando === 'meu' ? 'meu' : 'efetivo'
+}
+
+/**
  * A chave da operacao na registry, montada do que se digitou.
  * `efetivo periodos criar` -> 'periodos criar'; `efetivo mapa` -> 'mapa'.
+ *
+ * `meu` TEM UM SEGMENTO A MAIS, e por isso nao cabe no caminho comum:
+ *
+ *   efetivo periodos criar      -> recurso `efetivo`, operacao 'periodos criar'
+ *   efetivo meu periodo criar   -> recurso `meu`,     operacao 'periodo criar'
+ *
+ * O assunto (`aproveitamento`, `periodo`, `impedimento`) e o primeiro segmento
+ * depois de `meu`, e o subverbo e o segundo.
  */
 function resolverOperacao (args) {
   const comando = args._[0]
+
+  if (comando === 'meu') {
+    const assunto = args._[1]
+    const sub = args._[2]
+    if (!assunto) {
+      throw new Error(
+        'Falta o assunto em `meu`. Use: aproveitamento, periodo, impedimento.\n' +
+        'Contrato: efetivo schema meu'
+      )
+    }
+    if (!sub) return assunto
+    if (!SUBVERBOS.has(sub)) {
+      throw new Error(
+        `Verbo desconhecido "${sub}" em meu ${assunto}. Use: ${[...SUBVERBOS].join(', ')}.\n` +
+        `Para listar: efetivo meu ${assunto}\n` +
+        'Contrato: efetivo schema meu'
+      )
+    }
+    return `${assunto} ${sub}`
+  }
+
   const sub = args._[1]
 
   if (!sub) return comando
@@ -131,8 +172,9 @@ function formatarMapa (dados, opcoesSaida) {
 async function executar (args, cfg) {
   const flags = args.flags
   const acao = resolverOperacao(args)
-  const { operacao } = obterOperacao('efetivo', acao)
-  const modulo = obter('efetivo').schema()
+  const recurso = recursoDe(args._[0])
+  const { operacao } = obterOperacao(recurso, acao)
+  const modulo = obter(recurso).schema()
 
   const opcoesSaida = {
     formato: flags.json ? 'json' : (flags.formato || 'tsv'),
@@ -261,7 +303,7 @@ function precisaServidor (args) {
   let acao
   try {
     acao = resolverOperacao(args)
-    obterOperacao('efetivo', acao)
+    obterOperacao(recursoDe(args._[0]), acao)
   } catch (e) {
     return false
   }
@@ -269,4 +311,4 @@ function precisaServidor (args) {
   return true
 }
 
-module.exports = { executar, precisaServidor, resolverOperacao, formatarMapa }
+module.exports = { executar, precisaServidor, resolverOperacao, recursoDe, formatarMapa }

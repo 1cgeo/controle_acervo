@@ -13,9 +13,10 @@ BEGIN;
 -- código da meta como texto livre: duas verdades sobre a mesma coisa, e o banco
 -- sem cobrar nenhuma.
 --
--- PERMISSÃO. Ler é de qualquer pessoa logada, porque todo módulo precisa
--- oferecer a lista. Escrever é do administrador global: o PIT muda uma vez por
--- ano e errar nele contamina os três módulos.
+-- PERMISSÃO. Ler exige ACESSO (perfil em ALGUM módulo), porque todo módulo
+-- precisa oferecer a lista; era `verifyLogin` até 2026-08-08, quando ter conta e
+-- ter acesso viraram dois momentos. Escrever é do administrador global: o PIT
+-- muda uma vez por ano e errar nele contamina os módulos.
 --
 -- A META NÃO É SÓ UM RÓTULO: ela guarda o que o PIT promete (quantidade,
 -- unidade, demandante, prazo), e ao lado dela vivem a execução mensal e a

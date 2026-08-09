@@ -5,7 +5,7 @@
 // O QUE MUDOU. O molde `rotasDeCapacitacao` recebia UMA guarda e a repetia nas
 // seis rotas do tipo, o que amarrava ler e escrever ao mesmo nível: quem pudesse
 // LISTAR os cursos podia também APAGÁ-LOS, e quem não pudesse apagar não podia
-// nem olhar. O molde passou a receber DUAS, e a régua dos três módulos entra
+// nem olhar. O molde passou a receber DUAS, e a régua dos módulos entra
 // aqui inteira: CONSULTA lê, OPERADOR lança.
 //
 //   MINISTRADA (2.6)  serviço que a Divisão PRESTA. Módulo PRODUÇÃO.

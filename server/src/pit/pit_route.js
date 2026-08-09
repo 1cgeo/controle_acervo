@@ -38,7 +38,7 @@ const router = express.Router()
 // nao e o que ela ve enquanto espera o acesso.
 //
 // ESCREVER e do administrador global (`verifyAdmin`): o PIT muda uma vez por
-// ano, vem de documento assinado, e errar nele contamina os tres modulos.
+// ano, vem de documento assinado, e errar nele contamina os módulos.
 
 router.get(
   '/',
@@ -74,7 +74,7 @@ router.get(
 //
 //   O NÍVEL. Exigir gerente para OLHAR a grade era dizer que quem lança a
 //   execução não pode conferir o resultado do que lançou, porque lançar é do
-//   operador. A régua nova é a mesma dos três módulos: consulta LÊ, operador
+//   operador. A régua nova é a mesma dos módulos: consulta LÊ, operador
 //   lança, gerente responde pela área.
 //
 //   O MÓDULO. O `verifyGerente` aceitava o gerente de QUALQUER módulo, inclusive

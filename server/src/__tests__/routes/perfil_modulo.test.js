@@ -176,10 +176,10 @@ describe('Perfil por modulo: acervo, mapoteca e orcamento sao compartimentos', (
     expect(leituraMapoteca.status).toBe(200)
   })
 
-  // Requisito da fusao: o administrador global vale nos TRES modulos, e sem
+  // Requisito da fusao: o administrador global vale em TODO modulo, e sem
   // nenhuma linha em dgeo.usuario_perfil. Se um dia alguem trocar a flag global
   // por perfil por modulo, este teste cai primeiro.
-  it('administrador passa nos tres modulos sem ter linha de perfil', async () => {
+  it('administrador passa em todo modulo sem ter linha de perfil', async () => {
     const linhas = await conn.any(
       `SELECT up.id FROM dgeo.usuario_perfil AS up
        INNER JOIN dgeo.usuario AS u ON u.id = up.usuario_id
