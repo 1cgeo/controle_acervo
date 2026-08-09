@@ -121,3 +121,65 @@ de propósito (ver `docs/decisoes.md`).
 Quem sobrar na lista **não entra**, com mensagem própria no login ("Usuário sem
 senha cadastrada no sistema"), e aparece marcado na tela `#/usuarios`. Dê-lhe uma
 senha por ali (Resetar senha) ou pelo `efetivo_cli`.
+
+---
+
+## `carregar_campo_sap.py`
+
+Carga do schema `campo` a partir do `controle_campo` do SAP. É a travessia da
+subseção 2.5 do RPCMTec, que era digitada da tela de lá até 2026-08-08.
+
+Dependência **zero**: quem fala com o banco é o `psql` já instalado.
+
+### O que precisa estar pronto antes
+
+1. A migração `migrations/2026-08-08_campo.sql` aplicada no banco do SCA.
+2. O `controle_campo` do SAP restaurado **dentro** do banco do SCA, num schema de
+   apoio. É de propósito: são cerca de 283 MB (179 de foto e vídeo, 97 de ponto
+   de GPS), e fazer esses bytes atravessarem um processo Python seria pagar caro
+   por nada. Dentro do mesmo banco, o `INSERT ... SELECT` os move sem sair do
+   servidor.
+
+### Modo leitura é o padrão
+
+Sem `--aplicar` o script **não escreve nada**: lê os dois lados, confere e
+imprime o relatório. Esse relatório é o produto de verdade. Ele diz quantos
+exercícios do PIT vão ser criados, quantos militares casaram com `dgeo.usuario` e
+quantos vão para `militares_externos`, e **quais campos estão sem polígono**.
+
+`--aplicar --saida <caminho fora do repositório>.sql` gera o SQL, que é UMA
+transação com guardas no início e conferência de contagem no fim. O repositório é
+público, e o script recusa `--saida` apontando para dentro dele.
+
+A senha vem de `PGPASSWORD`, como todo cliente do Postgres. Ela nunca é
+argumento: argumento aparece na lista de processos da máquina.
+
+### Carga em ETAPAS
+
+`--ano 2026` (repetível) recorta a carga. Serve para implantar por partes: trazer
+o ano corrente, conferir na tela, e só então trazer os treze anteriores. O
+recorte vale para a carga inteira, e não só para a tabela `campo`: foto, trajeto
+e vínculo entram pelo JOIN, então nenhum campo de fora do recorte deixa foto
+órfã para trás. A guarda de "já tem linha" acompanha o recorte, senão a segunda
+etapa seria recusada pela primeira.
+
+### A carga PARA quando falta polígono
+
+`campo.geom` é NOT NULL por decisão do chefe em 2026-08-08, e o script **não
+inventa** um ponto no meio do município. Os campos sem polígono aparecem
+nomeados no relatório e bloqueiam a geração do SQL. Quem os tiver os fornece num
+arquivo `nome<TAB>WKT`, em EPSG:4326, fora do repositório:
+
+    python scripts/carregar_campo_sap.py ... --geometrias <caminho>.tsv
+
+`--sem-geometria pular` deixa esses campos **de fora** da carga em vez de
+bloqueá-la. Eles saem nomeados no relatório e no cabeçalho do SQL gerado, e
+continuam no SAP para entrar depois. **Nenhum dos dois caminhos inventa
+geometria**: a diferença é só se a ausência bloqueia o resto.
+
+### O que ela não faz
+
+Não registra `auditoria.evento`. A auditoria do SCA é do **servidor** (usuário da
+sessão HTTP, estado antes e depois lidos do banco), e carga inicial roda por fora
+do serviço, como a implantação da mapoteca e a do equipamento. O relatório diz
+isso em voz alta.

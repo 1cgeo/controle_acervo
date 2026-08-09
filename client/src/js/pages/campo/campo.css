@@ -1,0 +1,346 @@
+/*
+ * Atividades de campo.
+ *
+ * BEM e tokens de `design-tokens.css`, como o resto da casa. Nenhuma cor
+ * literal fora das do MAPA: as quatro da situacao vivem em `campo-mapa.js`
+ * porque quem as le e o MapLibre, numa expressao `match`, e nao o CSS.
+ */
+
+/* --- O mapa --------------------------------------------------------------- */
+
+.campo-mapa {
+  position: relative;
+}
+
+.campo-mapa__area {
+  min-height: 520px;
+}
+
+/*
+ * ALTURA EXPLICITA, e nao `height: 100%`. O MapLibre le o tamanho do conteiner
+ * UMA vez, na construcao: conteiner sem altura resolvida produz canvas 0x0
+ * permanente, e o mapa nasce dentro de uma aba que pode estar escondida.
+ */
+.campo-mapa__canvas {
+  width: 100%;
+  height: 520px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.campo-mapa__legenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  margin-top: var(--space-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.campo-mapa__legenda-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.campo-mapa__legenda-cor {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--border-color);
+}
+
+.campo-mapa__aviso {
+  margin-top: var(--space-sm);
+  color: var(--text-secondary);
+}
+
+/* --- O formulario --------------------------------------------------------- */
+
+.campo-form__categorias {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm) var(--space-lg);
+}
+
+.campo-form__categoria {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  cursor: pointer;
+}
+
+.campo-form__area {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.campo-form__area-resumo {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.campo-form__area-resumo--vazia {
+  color: var(--color-error);
+}
+
+/* --- A ficha -------------------------------------------------------------- */
+
+.campo-detalhe__cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.campo-detalhe__cabecalho h3 {
+  margin: 0;
+}
+
+.campo-detalhe__ficha {
+  margin: 0;
+}
+
+.campo-detalhe__linha {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: var(--space-md);
+  padding: var(--space-xs) 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.campo-detalhe__linha dt {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.campo-detalhe__linha dd {
+  margin: 0;
+}
+
+.campo-detalhe__acoes {
+  margin-bottom: var(--space-md);
+}
+
+.campo-detalhe__carregando,
+.campo-detalhe__vazio {
+  color: var(--text-secondary);
+}
+
+.campo-detalhe__erro {
+  color: var(--color-error);
+}
+
+/* --- A galeria ------------------------------------------------------------ */
+
+.campo-galeria {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-md);
+}
+
+.campo-galeria__item {
+  margin: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * ALTURA FIXA na midia, com `object-fit: contain`. Foto de campo vem em
+ * orientacoes e proporcoes muito diferentes, e sem isto a grade fica um serrote.
+ * `contain`, e nao `cover`: cortar uma foto de reambulacao pode esconder
+ * justamente o detalhe que fez alguem fotografa-la.
+ */
+.campo-galeria__midia {
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+}
+
+.campo-galeria__midia img,
+.campo-galeria__midia video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.campo-galeria__carregando {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.campo-galeria__rodape {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-sm);
+  font-size: var(--font-size-sm);
+}
+
+.campo-galeria__rodape small {
+  color: var(--text-secondary);
+}
+
+.campo-galeria__remover {
+  align-self: flex-start;
+  margin: 0 var(--space-sm) var(--space-sm);
+}
+
+/* --- Os trajetos ---------------------------------------------------------- */
+
+.campo-tracks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.campo-tracks__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
+/* --- A tela cheia da foto e do video -------------------------------------- */
+
+/*
+ * FUNDO PROPRIO, e nao o `openModal` da casa. O modal tem cabecalho, rodape e
+ * largura maxima, e os tres competem com a imagem: aqui o conteudo E a tela.
+ *
+ * O z-index fica ACIMA do modal (que usa 1000 na casa) porque a tela cheia abre
+ * de DENTRO da ficha, que e um modal.
+ */
+.campo-luz {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  background: rgba(0, 0, 0, 0.92);
+  padding: var(--space-md);
+}
+
+.campo-luz__barra {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  color: #fff;
+}
+
+.campo-luz__contador {
+  font-size: var(--font-size-sm);
+  opacity: 0.85;
+}
+
+.campo-luz__fechar,
+.campo-luz__nav {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  padding: var(--space-xs);
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+}
+
+.campo-luz__fechar:hover,
+.campo-luz__nav:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.campo-luz__quadro {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  max-width: 100%;
+  /*
+   * O QUADRO CEDE ALTURA para a barra de cima e a legenda de baixo: sem o
+   * desconto, a imagem alta empurra a legenda para fora da tela.
+   */
+  max-height: calc(100vh - 140px);
+}
+
+.campo-luz__midia {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 240px;
+  min-height: 240px;
+  max-height: calc(100vh - 140px);
+}
+
+.campo-luz__midia img,
+.campo-luz__midia video {
+  max-width: calc(100vw - 160px);
+  max-height: calc(100vh - 140px);
+  /* `contain`, e nao `cover`: cortar a foto pode esconder justamente o detalhe
+   * que fez alguem fotografa-la. */
+  object-fit: contain;
+}
+
+.campo-luz__carregando,
+.campo-luz__erro {
+  color: #fff;
+  opacity: 0.85;
+}
+
+.campo-luz__legenda {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: #fff;
+  text-align: center;
+  max-width: 80vw;
+}
+
+.campo-luz__legenda small {
+  opacity: 0.7;
+}
+
+/* --- A marca de video na miniatura ---------------------------------------- */
+
+.campo-galeria__midia--clicavel {
+  cursor: pointer;
+  position: relative;
+}
+
+.campo-galeria__midia--clicavel:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+/*
+ * A MARCA existe porque a miniatura do video NAO tem controles: sem ela, um
+ * quadro parado e indistinguivel de uma foto.
+ */
+.campo-galeria__marca-video {
+  position: absolute;
+  bottom: var(--space-xs);
+  right: var(--space-xs);
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  padding: 1px var(--space-xs);
+  border-radius: var(--radius-sm);
+}

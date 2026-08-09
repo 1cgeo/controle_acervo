@@ -217,8 +217,13 @@ describe('rastreabilidade: rota, destino e filtro', () => {
     //
     // 'manutencao' já estava na lista, e é OUTRA COISA: a manutenção das visões
     // materializadas do acervo. Os consertos de equipamento não entram por ali.
+    //
+    // O schema `campo` acrescentou UMA entidade, e nao seis: as finalidades, os
+    // militares, as versoes atendidas, as fotos e os trajetos sao auditados SOB
+    // O CAMPO, com o `entidade_id` dele. Mesmo recorte da ficha que a pessoa
+    // abre, e mesma razao do equipamento acima.
     const DO_SERVIDOR = [
-      'capacitacao', 'cliente', 'dfd', 'dominio', 'edicao', 'equipamento',
+      'campo', 'capacitacao', 'cliente', 'dfd', 'dominio', 'edicao', 'equipamento',
       'exercicio', 'extra_pit', 'licitacao', 'manutencao', 'material', 'meta',
       'nota_credito', 'nota_empenho', 'pdr', 'pedido', 'plotter', 'ponto',
       'produto', 'projeto', 'rpnp', 'tipo_equipamento', 'usuario', 'volume',

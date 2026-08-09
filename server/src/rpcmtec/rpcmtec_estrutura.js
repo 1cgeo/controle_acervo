@@ -205,8 +205,23 @@ const SECOES = [
         numero: '2.5',
         modulo: 'producao',
         titulo: 'Atividades de campo',
-        origem: ORIGEM.DIGITADA,
-        fonte: 'SAP',
+        // CALCULADA desde 2026-08-08, e DIGITADA (fonte 'SAP') até ali. Todo mês
+        // alguém abria a tela do SAP e transcrevia estas linhas a mão. Com o
+        // schema `campo` no banco, elas saem do cadastro e o número do relatório
+        // deixa de poder divergir dele sem nada acusar. É o mesmo movimento que
+        // tirou a 2.2 e a 2.4 da digitação em 2026-08-05, e a 7.1 e a 3.x com o
+        // módulo `equipamento`.
+        //
+        // O RECORTE É O MÊS INTEIRO, e não um dia: campo é um INTERVALO, e a
+        // pergunta da subseção é "que atividade de campo houve em julho".
+        // Um campo que atravessa a virada do mês aparece nas DUAS edições, e é
+        // o certo -- ele estava acontecendo nos dois.
+        //
+        // O CABEÇALHO E A GRADE NÃO MUDARAM, e não é sorte: são os do modelo da
+        // Divisão. O que mudou foi de onde vem a linha.
+        origem: ORIGEM.CALCULADA,
+        fonte: 'campo.campo, pelo período que cruza o mês, exceto o cancelado',
+        pendencia: 'Nenhuma atividade de campo no mês',
         cabecalhos: ['Local', 'Data', 'Finalidade Campo', 'Efetivo'],
         grade: [2715, 2250, 2985, 1890]
       },

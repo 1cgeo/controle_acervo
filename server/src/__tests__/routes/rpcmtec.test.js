@@ -105,7 +105,12 @@ const SUBSECOES_CALCULADAS = [
   // reportam a versao Regular que ficou pronta no mes, e isso o acervo sabe
   // sozinho. Estavam digitadas com fonte 'SAP' sem precisar, e enquanto
   // estiveram o numero do relatorio e o do acervo podiam divergir calados.
-  '2.1', '2.2', '2.4', '2.6', '2.7',
+  '2.1', '2.2', '2.4',
+  // A 2.5 entrou em 2026-08-08, com o schema `campo`: ela lista a atividade de
+  // campo cujo periodo CRUZA o mes, lida de `campo.campo`. Enquanto foi
+  // digitada, as linhas eram transcritas a mao da tela do SAP e nao havia
+  // cadastro nenhum de que divergir.
+  '2.5', '2.6', '2.7',
   '3.1', '3.2', '3.3', '3.4',
   '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7',
   '6.1', '6.2',
@@ -121,16 +126,17 @@ const SUBSECOES_CALCULADAS = [
   '7.2'
 ]
 
-// As que o gestor digita. Oito vêm de outro sistema ou de fora (2.3 e 2.5 do
-// SAP, 5.1 do painel do GitHub, 8.3 do doc_dgeo) e quatro não têm cadastro em
-// lugar nenhum.
+// As que o gestor digita. Sete vêm de outro sistema ou de fora (2.3 do SAP, 5.1
+// do painel do GitHub, 8.3 do doc_dgeo) e quatro não têm cadastro em lugar
+// nenhum.
 //
-// A 2.3 (lote) e a 2.5 (campo) FICAM digitadas, e a diferença para as três que
-// saíram é real: as duas são do SAP e não têm entidade no SCA que as prove. A
-// régua não é "veio do SAP", é "o SCA sabe provar" -- e foi ganhar cadastro que
-// tirou a 7.1 desta lista em 2026-08-08.
+// A 2.3 (lote) FICA digitada, e a 2.5 (campo) SAIU em 2026-08-08. A diferença
+// entre as duas é real, e é a régua: não é "veio do SAP", é "o SCA sabe provar".
+// A 2.5 ganhou o schema `campo` e passou a ter entidade que a prove; a 2.3
+// continua sem, porque o lote de produção vive em `macrocontrole` e não
+// atravessou. Foi ganhar cadastro que tirou a 7.1 desta lista no mesmo dia.
 const SUBSECOES_DIGITADAS = [
-  '2.3', '2.5',
+  '2.3',
   '5.1', '5.2',
   '8.1', '8.2', '8.3', '8.4', '8.5',
   '9.1', '9.2', '9.3'

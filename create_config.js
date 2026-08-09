@@ -142,6 +142,10 @@ const createDatabase = async (dbUser, dbPassword, dbPort, dbServer, dbName, admi
     // modulo `equipamento`. Nao depende dos outros modulos: nenhuma chave
     // estrangeira sai dele para acervo, mapoteca, orcamento ou pit.
     await t.none(readSqlFile('./er/equipamento.sql'));
+    // Depois de pit (o ano do campo aponta pit.exercicio), de acervo (o vinculo
+    // opcional aponta acervo.versao) e de dgeo (o militar aponta dgeo.usuario).
+    // Antes de rpcmtec, que le este schema para calcular a subsecao 2.5.
+    await t.none(readSqlFile('./er/campo.sql'));
     // Depois de dgeo e de dominio, que a edicao referencia. O RPCMTec e da
     // Divisao inteira e nao depende dos tres modulos: ele os CONSULTA em tempo
     // de geracao, sem chave estrangeira para eles.

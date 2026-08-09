@@ -51,6 +51,13 @@
   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA equipamento TO $1:name;
   GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA equipamento TO $1:name;
 
+  -- `campo` guarda a atividade que a Divisao executa fora dela. CRUD porque o
+  -- campo se cadastra, se corrige e se apaga pela tela. Sem EXECUTE: a linha do
+  -- trajeto e uma VIEW comum (`campo.track_linha`), e nao uma funcao.
+  GRANT USAGE ON SCHEMA campo TO $1:name;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA campo TO $1:name;
+  GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA campo TO $1:name;
+
   -- `rpcmtec` guarda a edicao mensal do relatorio da Divisao. CRUD porque a
   -- edicao se cria, se assina e se corrige pela tela.
   GRANT USAGE ON SCHEMA rpcmtec TO $1:name;

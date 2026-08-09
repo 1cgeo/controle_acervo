@@ -64,7 +64,8 @@ const {
     TIPO_PRODUTO,
     TIPO_VERSAO,
     CLASSIFICACAO_NC,
-    TIPO_CAPACITACAO
+    TIPO_CAPACITACAO,
+    SITUACAO_CAMPO
   }
 } = require('../utils')
 const {
@@ -812,6 +813,117 @@ const montarEquipamentoIndisponivel = ({ indisponibilidades }) =>
   ])
 
 // ---------------------------------------------------------------------------
+// 2.5 - atividades de campo
+//
+// CALCULADA desde 2026-08-08. Era DIGITADA, transcrita a mão da tela do SAP.
+// ---------------------------------------------------------------------------
+
+/**
+ * As atividades de campo cujo período CRUZA o mês.
+ *
+ * O RECORTE É O INTERVALO, e não um dia. A 7.1 ao lado pergunta "quem estava
+ * parado no último dia do mês", porque indisponibilidade é um estado; aqui a
+ * pergunta é "que campo houve em julho", e um campo de 28/07 a 03/08 houve em
+ * julho E em agosto. Ele aparece nas duas edições, de propósito.
+ *
+ * O CANCELADO FICA DE FORA, e é o único que fica: campo cancelado não
+ * aconteceu, e reportá-lo diria que a Divisão fez o que não fez. O PREVISTO
+ * cujo período já passou CONTINUA SAINDO, e não é descuido -- ele é atraso de
+ * cadastro, e escondê-lo faria o relatório sair silenciosamente mais curto que
+ * o trabalho. Aparecer no documento é o que faz alguém corrigir a situação.
+ *
+ * O "LOCAL" É DERIVADO DA GEOMETRIA, por `limites.municipio`, que existe
+ * exatamente para responder onde as coisas estão. O `LIMIT 4` e o "e mais N" não
+ * são preguiça: o maior polígono do acervo do SAP cobre 12.595 km², e a lista
+ * inteira de municípios dele não caberia numa célula de 2.715 twips.
+ *
+ * O `COALESCE` PARA O NOME DO CAMPO É A REDE DE SEGURANÇA. `limites.municipio`
+ * nasce VAZIA numa instalação nova: a malha do IBGE entra por carga, e o
+ * `er/limites.sql` só cria a tabela. Sem este fallback, a coluna "Local" sairia
+ * em branco em todas as linhas de todo banco que ainda não carregou a malha, e
+ * ninguém ligaria a causa ao efeito.
+ */
+const buscarAtividadesDeCampo = async ({ ano, mes }) => {
+  return db.conn.any(
+    `SELECT c.nome,
+            c.data_inicio::text AS data_inicio,
+            c.data_fim::text AS data_fim,
+            c.militares_externos,
+            COALESCE(loc.local, c.nome) AS local,
+            COALESCE(cat.finalidades, '{}') AS finalidades,
+            COALESCE(mil.militares, '{}') AS militares
+     FROM campo.campo AS c
+     LEFT JOIN LATERAL (
+       SELECT string_agg(m.nome || '/' || m.estado_sigla, ', ' ORDER BY m.nome)
+              || CASE WHEN m.excedentes > 0
+                      THEN ' e mais ' || m.excedentes
+                      ELSE '' END AS local
+       FROM (
+         SELECT mu.nome, e.sigla AS estado_sigla,
+                (SELECT count(*) FROM limites.municipio AS mx
+                  WHERE ST_Intersects(mx.geom, c.geom)) - 4 AS excedentes
+         FROM limites.municipio AS mu
+         INNER JOIN limites.estado AS e ON e.id = mu.estado_id
+         WHERE ST_Intersects(mu.geom, c.geom)
+         ORDER BY ST_Area(ST_Intersection(mu.geom, c.geom)) DESC
+         LIMIT 4
+       ) AS m
+       GROUP BY m.excedentes
+     ) AS loc ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT array_agg(k.nome ORDER BY k.code) AS finalidades
+       FROM campo.campo_categoria AS cc
+       INNER JOIN campo.categoria AS k ON k.code = cc.categoria_id
+       WHERE cc.campo_id = c.id
+     ) AS cat ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT array_agg(pg.nome_abrev || ' ' || u.nome_guerra
+                        ORDER BY u.tipo_posto_grad_id DESC, u.nome_guerra)
+              AS militares
+       FROM campo.campo_militar AS cm
+       INNER JOIN dgeo.usuario AS u ON u.uuid = cm.usuario_uuid
+       INNER JOIN dominio.tipo_posto_grad AS pg ON pg.code = u.tipo_posto_grad_id
+       WHERE cm.campo_id = c.id
+     ) AS mil ON TRUE
+     WHERE c.data_inicio <= $<ultimoDia>::date
+       AND c.data_fim >= $<primeiroDia>::date
+       AND c.situacao_id <> $<cancelado>
+     ORDER BY c.data_inicio, c.nome`,
+    {
+      primeiroDia: `${ano}-${String(mes).padStart(2, '0')}-01`,
+      ultimoDia: ultimoDiaDoMes(ano, mes),
+      cancelado: SITUACAO_CAMPO.CANCELADO
+    }
+  )
+}
+
+// O EFETIVO SÃO AS DUAS LISTAS JUNTAS, e não só a do cadastro.
+//
+// `campo.campo_militar` traz quem tem conta no SCA; `militares_externos` traz
+// quem não tem -- gente de outra OM, motorista da guarnição e, sobretudo, quem
+// já saiu. Dos 145 nomes distintos dos 13 anos de campo do SAP, 59 casam com o
+// cadastro de hoje e 86 não. Publicar só a primeira lista faria a 2.5 de um mês
+// de 2019 sair com um terço do efetivo que foi a campo.
+const efetivoDoCampo = c => {
+  const doCadastro = c.militares || []
+  const deFora = (c.militares_externos || '').trim()
+  if (!doCadastro.length) return deFora
+  if (!deFora) return doCadastro.join(', ')
+  return `${doCadastro.join(', ')}, ${deFora}`
+}
+
+const montarAtividadesDeCampo = ({ campos }) =>
+  campos.map(c => [
+    texto(c.local),
+    // `formatPeriodo` fatia a string 'AAAA-MM-DD' em vez de passar por
+    // `new Date()`: só-data parseada assim vira meia-noite UTC, e em UTC-3 o dia
+    // vira o anterior.
+    formatPeriodo(c.data_inicio, c.data_fim),
+    texto((c.finalidades || []).join(', ')),
+    texto(efetivoDoCampo(c))
+  ])
+
+// ---------------------------------------------------------------------------
 // 7.2 - insumos de impressão
 // ---------------------------------------------------------------------------
 
@@ -1232,7 +1344,8 @@ controller.calcular = async ({ ano, mes }) => {
     efetivo,
     capacitacaoRecebida,
     estoqueAnterior,
-    equipamentoIndisponivel
+    equipamentoIndisponivel,
+    atividadesDeCampo
   ] = await Promise.all([
     buscarEstadoAcervo({ ano, mes }),
     // A 2.2 e a 2.4 saem do ACERVO desde 2026-08-05, e nao mais do SAP: as duas
@@ -1272,7 +1385,11 @@ controller.calcular = async ({ ano, mes }) => {
     // A 7.1 sai do banco desde 2026-08-08. O recorte é o ÚLTIMO DIA DO MÊS, e
     // ele mora na consulta: ver o comentário dela, com a divergência deliberada
     // em relação à 6.1.
-    buscarEquipamentoIndisponivel({ ano, mes })
+    buscarEquipamentoIndisponivel({ ano, mes }),
+    // A 2.5 sai do banco desde 2026-08-08. O recorte é o MÊS INTEIRO, e não um
+    // dia: ver o comentário da consulta, com a divergência deliberada em
+    // relação à 7.1 logo acima.
+    buscarAtividadesDeCampo({ ano, mes })
   ])
 
   // A janela de doze meses do `projetarFalta` atravessa a virada do ano, então
@@ -1288,6 +1405,9 @@ controller.calcular = async ({ ano, mes }) => {
     '2.1': montarEstadoPit({ metas: metasPit }),
     '2.2': montarTotaisProducao({ totais: totaisProducao }),
     '2.4': montarEntregasDetalhadas({ entregas: entregasDetalhadas }),
+    // CALCULADA desde 2026-08-08, e digitada do SAP até ali. O recorte é o MÊS
+    // INTEIRO, e ele diverge do da 7.1 de propósito: campo é intervalo.
+    '2.5': montarAtividadesDeCampo({ campos: atividadesDeCampo }),
     '2.6': montarCapacitacaoMinistrada({ capacitacoes: capacitacaoMinistrada }),
     '2.7': montarEstadoAcervo({ estadoAcervo }),
     '3.1': montarTotaisMapoteca({ pedidosMes, pedidosAno }),

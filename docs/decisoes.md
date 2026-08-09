@@ -107,14 +107,95 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 
 - **A fusão é por ADIÇÃO aqui, e não por remoção lá** (chefe). Na transição há duas cópias vivas de
   cada fato, e o banco não as reconcilia: a divergência é possível e esperada.
-- **O critério para trazer uma subseção é não depender de `macrocontrole`, e não "está no SAP".** Por
-  isso **a 2.5 (atividades de campo) não veio**: `controle_campo` referencia `macrocontrole.produto`.
+- **O critério para trazer uma subseção é não depender de `macrocontrole`, e não "está no SAP".** O
+  critério continua valendo; o que estava errado era o TAMANHO que se supunha do acoplamento de
+  `controle_campo`. **A 2.5 (atividades de campo) VEIO em 2026-08-08**, e a frase que morava aqui
+  ("ela não veio porque `controle_campo` referencia `macrocontrole.produto`") foi MEDIDA no mesmo
+  dia: o que aponta `macrocontrole` é UMA tabela de junção e UMA rota de apoio, e o núcleo (`campo`,
+  `imagem`, `track`, `track_p`) não o toca em lugar nenhum. Cortada a junção, o resto atravessa.
+  A régua não é "veio do SAP", é "o SCA sabe provar". A **2.3 (lote) continua digitada** pela mesma
+  régua, e por isso: o lote de produção vive em `macrocontrole` e não tem entidade aqui.
 - **A 2.1 sai INTEIRA do SCA, inclusive as metas de produção.** Meia tabela de cada sistema obrigaria
   quem a cola a descobrir todo mês quais linhas vêm de onde.
 - **Os códigos dos domínios novos e as grades de coluna do DOCX são os do SAP.** A linha migrada não
   precisa de tabela de tradução, e divergir na grade faria a mesma subseção sair de dois tamanhos.
 - **`pit.demanda_extra` não tem `lote_id`, ao contrário do SAP.** Lá ele evita a 2.1 contar duas
   vezes; aqui não há o que descontar, e apontar `acervo.lote` inventaria um vínculo que não existe.
+
+## Campo
+
+- **O schema `campo` NÃO é um módulo, e `dominio.modulo` continua com seis linhas** (chefe,
+  2026-08-08). A tela mora na seção PIT e cobra `verifyPerfil(nível, 'producao')`: campo é o trabalho
+  que o PIT promete, e não uma área própria a conceder. Um módulo novo obrigaria a conceder perfil de
+  novo a quem já responde pela Produção, só para ver o que ela prometeu.
+- **`campo.ano` REFERENCIA `pit.exercicio`, e isso contraria o precedente ao lado** (chefe,
+  2026-08-08). `rpcmtec.capacitacao.ano` é um SMALLINT solto, e o comentário dela diz por quê:
+  capacitação tem 2013, 2018, 2019 e mais, e o PIT só tem 2025 e 2026. Campo está no mesmo caso de
+  fato (os 54 do dump vão de 2013 a 2026) e a saída escolhida foi a OPOSTA: a CARGA cria os dez
+  exercícios que faltam, Encerrados e vazios, para que o ano do campo seja o ano do plano de verdade.
+  Quem os cria é `scripts/carregar_campo_sap.py`, e não a migração: um banco que nunca vai receber
+  dado do SAP não ganha dez exercícios inventados.
+- **`campo.geom` é NOT NULL** (chefe, 2026-08-08). Os 7 campos sem polígono do dump são TODOS os voos
+  de drone de 2026 -- prática de hoje, e não dado velho mal preenchido. A carga NÃO inventa um ponto
+  no meio do município: ela para e cobra o desenho, que é o que faz a coluna valer alguma coisa.
+  `--sem-geometria pular` deixa esses campos de fora em vez de bloquear o resto, nomeados no
+  relatório e no cabeçalho do SQL; nenhum dos dois caminhos inventa geometria.
+- **A área entra por ARQUIVO GeoJSON, e o desenho no mapa foi REMOVIDO** (chefe, 2026-08-09). A tela
+  tinha um editor sobre o MapLibre, com o gesto compartilhado de `components/mapa/desenho-area.js`. A
+  razão da troca é o dado: a área de um campo não nasce na tela -- ela vem do plano de voo do drone,
+  do polígono da folha ou do KML da operação, coisas que já existem em arquivo antes de alguém abrir
+  o SCA. Redesenhar a mão o que já está desenhado é transcrever, e transcrição erra.
+- **UM polígono só, e foi MEDIDO antes de decidido** (chefe, 2026-08-09). Dos 47 polígonos do dump de
+  produção do SAP, os 47 têm UMA parte (`ST_NumGeometries` = 1) e nenhum tem buraco: o MultiPolygon
+  de várias partes era defesa contra um caso que não existe, e defesa contra caso inexistente custa
+  caro na entrada -- um GeoJSON com duas partes por engano entraria calado, e a área do campo passaria
+  a ser outra. **A COLUNA CONTINUA MULTIPOLYGON**, e o estreitamento é na PORTA (`campo_schema.js` e
+  `pages/campo/campo-geojson.js`): trocar o tipo da coluna custaria uma migração de estrutura para
+  ganhar nada, e a coluna aceitar mais do que a porta deixa entrar não é incoerência. Buraco continua
+  permitido: um polígono com ilha interna ainda é UM polígono, e o corte é sobre partes, não anéis.
+- **`campo_versao` aponta `acervo.versao` (a EDIÇÃO), e é OPCIONAL** (chefe, 2026-08-08). Não aponta
+  `acervo.produto`: o que o campo alimenta é uma edição específica, e a mesma folha reambulada duas
+  vezes são duas versões e um produto só. A ausência é o caso comum -- viagem internacional, exercício
+  e apoio a outra OM não geram produto a apontar, e no dump 3 campos de 54 tinham vínculo.
+- **`militares_externos` é TEXTO ao lado da junção `campo_militar`, e não é preguiça.** Dos 145 nomes
+  distintos do dump, 37 casam com `dgeo.usuario` por posto mais nome de guerra e 59 casam só pelo nome
+  de guerra: o texto do SAP guardava a patente DA ÉPOCA ("ST Ferraz" hoje era "1º Sgt Ferraz" antes).
+  Sem a coluna de texto, o efetivo dos campos antigos se perderia em silêncio.
+- **Os códigos de `campo.situacao` são os do SAP; os de `campo.categoria` são NOVOS.** É a única
+  divergência de código desta travessia, e a razão é que no SAP a categoria era um `ENUM` do Postgres
+  (`controle_campo.categoria_campo`), que não tem número a herdar. A ordem é a da declaração do ENUM.
+- **`campo.track_linha` é VIEW COMUM, e não materializada como no SAP.** Materializar obrigaria
+  alguém a lembrar de atualizar depois de cada importação de GPX, e linha velha mente sem avisar. O
+  custo real é pequeno: são 76 trajetos, e a tela pede o de UM campo por vez.
+- **O que NÃO atravessou, e por quê.** `orgao` era '1º CGEO' em 54 linhas de 54, uma coluna que só
+  sabia repetir de quem é o banco. `track_p.x_ll` e `y_ll` eram a longitude e a latitude do MESMO
+  ponto que `geom` já guarda, e duas cópias de uma coordenada não têm como as duas estarem certas
+  depois da primeira correção.
+- **A FICHA É SÓ LEITURA, e tudo o que escreve mora em "Editar"** (chefe, 2026-08-09). Até essa data
+  a ficha tinha botão de enviar e de remover foto e trajeto, e a pessoa mudava o cadastro sem nunca
+  ter dito que ia editar -- a foto apagada por engano ali não tinha de onde voltar. O único botão da
+  ficha que leva a escrever é "Editar", e ele FECHA a ficha antes de abrir o formulário: dois modais
+  empilhados esconderiam qual dos dois está gravando.
+  **As abas de foto e de trajeto do formulário GRAVAM NA HORA**, e o botão "Salvar" não as inclui:
+  enviar uma foto é um POST próprio. Fechar sem salvar não desfaz o que já subiu, e o texto da aba
+  diz isso. Elas só existem na EDIÇÃO, e não é limitação de tela: `campo.imagem` e `campo.track`
+  referenciam `campo_id`, então não há a que pendurar o arquivo antes de o campo ter id.
+- **A régua da tela, na frase do chefe (2026-08-09):** o OPERADOR cadastra e edita campos, e "editar"
+  inclui acrescentar e remover foto, vídeo e trajeto; o VISUALIZADOR só vê; o GERENTE e o
+  ADMINISTRADOR fazem tudo, e o "tudo" a mais é APAGAR o campo.
+- **A exclusão do campo é de GERENTE, e a da foto é de operador.** Não é a escrita que pesa, é o
+  alcance: o `ON DELETE CASCADE` leva as categorias, os militares, as versões, as fotos, os vídeos,
+  os trajetos e os pontos de GPS, e apagar um campo de 2019 destrói as únicas cópias daquelas fotos.
+  Quem subiu o arquivo errado há um minuto tem de poder tirá-lo, e o alcance ali é uma linha.
+- **O SRID é 4674, e não o 4326 do SAP.** Todo o SCA guarda em SIRGAS2000; a diferença entre os dois
+  é subcentimétrica, mas sem a conversão o cruzamento com `limites.municipio` -- que é de onde sai a
+  coluna "Local" da 2.5 -- pediria um `ST_Transform` em toda consulta.
+- **Até 283 MB entram no banco quando a carga rodar**: 179 MB de foto e vídeo e 97 MB de ponto de
+  GPS, em `bytea`, que é o que `orcamento`, `mapoteca`, `pit` e `rpcmtec` já fazem com anexo. O que
+  não tem precedente aqui é o TAMANHO, e é por isso que `express.json` subiu de 50mb para 60mb: o
+  maior vídeo tem 37 MB, e base64 cresce o binário em um terço. **O teto do Joi
+  (`campo_schema.MAX_BASE64`) tem de caber no do Express**: com o do Express menor, o corpo grande
+  morre com um 413 do body parser e o Joi nunca roda.
 
 ## PIT e Extra-PIT
 
@@ -325,10 +406,10 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **A execução por ND do painel NÃO foi junto:** é `/api/orcamento/dashboard/execucao_nd`, com
   `verifyPerfil('consulta','orcamento')`. O painel pede números quebrados em PDR e Extra-PDR, e servir
   os dois da mesma rota faria a guarda mais fraca valer para as duas.
-- **O documento tem 33 blocos, e o SCA CALCULA 20** (2.1, 2.2, 2.4, 2.6, 2.7, 3.1 a 3.4, 4.1 a 4.7,
-  6.1, 6.2, 7.1 e 7.2). Os outros 13 não se calculam: 12 são DIGITADOS e um é FIXO (a 1.1). **Do SAP
-  vêm só a 2.3 e a 2.5**, que leem a PRODUÇÃO: a 2.2 e a 2.4 viraram calculadas em 2026-08-05, a 7.3
-  sumiu na fusão de 2026-08-08 e a 7.1 virou calculada em 2026-08-08.
+- **O documento tem 33 blocos, e o SCA CALCULA 21** (2.1, 2.2, 2.4, 2.5, 2.6, 2.7, 3.1 a 3.4, 4.1 a
+  4.7, 6.1, 6.2, 7.1 e 7.2). Os outros 12 não se calculam: 11 são DIGITADOS e um é FIXO (a 1.1).
+  **Do SAP vem só a 2.3**, que lê a PRODUÇÃO: a 2.2 e a 2.4 viraram calculadas em 2026-08-05, a 7.3
+  sumiu na fusão de 2026-08-08, e a 7.1 e a 2.5 viraram calculadas em 2026-08-08.
   Conte em `rpcmtec_estrutura.js` (`BLOCOS`, `NUMEROS_CALCULADOS`) antes de escrever um
   número aqui: esta linha já esteve errada por omitir a 2.2 e a 2.4 e por listar uma 7.3 que morreu.
   **As três linhas de total da 2.6 não saem**: o desenhador daqui não tem rodapé de tabela, e
@@ -357,6 +438,28 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   isso no `require`, e não na primeira requisição. `'equipamento'` só pôde entrar na estrutura depois
   de `equipamento: 6` entrar no mapa e de `(6, 'Equipamento', 'equipamento')` entrar em
   `dominio.modulo` (1.46.0).
+- **A 2.5 (Atividades de campo) virou CALCULADA em 2026-08-08, e continua do módulo `producao`.**
+  Ela era DIGITADA com `fonte: 'SAP'`: todo mês alguém abria a tela de lá e transcrevia as linhas.
+  Com o schema `campo` no banco, elas saem do cadastro. É o mesmo movimento da 7.1 no mesmo dia, e o
+  da 2.2 e da 2.4 em 2026-08-05.
+  **O cabeçalho e a grade NÃO mudaram**: são os do modelo da Divisão (`Local`, `Data`, `Finalidade
+  Campo`, `Efetivo`), e o que mudou foi de onde vem a linha.
+  **O RECORTE É O MÊS INTEIRO, e DIVERGE do da 7.1 ao lado**: são `data_inicio <= <último dia> AND
+  data_fim >= <primeiro dia>`. Campo é INTERVALO, e indisponibilidade é ESTADO: um campo de 28/07 a
+  03/08 aconteceu em julho E em agosto, e sai nas duas edições. Somar as doze edições do ano conta
+  esse campo duas vezes, e é o certo -- a pergunta da subseção é "que atividade houve no mês".
+  **O CANCELADO É O ÚNICO QUE FICA DE FORA**: campo cancelado não aconteceu. O PREVISTO cujo período
+  já passou CONTINUA SAINDO, e é deliberado: ele é atraso de cadastro, e escondê-lo faria o relatório
+  sair silenciosamente mais curto que o trabalho.
+  **O "Local" é DERIVADO da geometria**, por `limites.municipio`, no máximo quatro nomes mais "e mais
+  N". Com a malha do IBGE não carregada (ela entra por carga, e `er/limites.sql` só cria a tabela) a
+  coluna cai no NOME do campo: sem esse `COALESCE` ela sairia em branco em todo banco recém-instalado
+  e ninguém ligaria a causa ao efeito.
+  **O "Efetivo" são DUAS listas juntas**: `campo.campo_militar` (quem tem conta) mais
+  `campo.militares_externos` (quem não tem). Medido no dump do SAP: dos 145 nomes distintos em 13
+  anos, 59 casam com o cadastro de hoje e 86 não, porque o texto de lá guarda a patente DA ÉPOCA e
+  treze anos incluem muita gente que saiu. Publicar só a primeira lista faria a 2.5 de um mês de 2019
+  sair com um terço do efetivo que foi a campo.
 - **O RECORTE DA 7.1 É O ÚLTIMO DIA DO MÊS, e DIVERGE do da 6.1, que recorta por qualquer dia dele**
   (chefe, 2026-08-08). São `data_inicio <= <último dia> AND (data_fim IS NULL OR data_fim >= <último
   dia>)`. A pergunta que a 7.1 responde é "o que ESTAVA parado quando o mês fechou": o documento é

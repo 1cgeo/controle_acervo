@@ -218,6 +218,24 @@ const SISTEMA_PRODUCAO = {
       visivel: () => temPerfil('consulta', 'producao'),
     },
     { id: 'extra_pit', label: 'Extra-PIT', icon: ICONS.warning, path: '/extra_pit' },
+    // ATIVIDADES DE CAMPO: o que a Divisão faz FORA dela, e a fonte da subseção
+    // 2.5 do RPCMTec, que era digitada da tela do SAP até 2026-08-08.
+    //
+    // Mora aqui, e não num módulo próprio: campo é o trabalho que o PIT
+    // promete, `dominio.modulo` continua com seis linhas, e o `ano` do campo
+    // aponta `pit.exercicio`. Um módulo novo obrigaria a conceder perfil de
+    // novo a quem já responde pela Produção, só para ver o que ela prometeu.
+    //
+    // CONSULTA, como a execução e a capacitação ao lado: abrir a lista e o mapa
+    // é LER. O operador é quem LANÇA, e o gerente é o único que APAGA -- o
+    // CASCADE leva fotos, vídeos e trajetos junto.
+    {
+      id: 'campo',
+      label: 'Atividades de campo',
+      icon: ICONS.layers,
+      path: '/campo',
+      visivel: () => temPerfil('consulta', 'producao'),
+    },
     // A capacitação MINISTRADA é serviço que a Divisão presta, e por isso mora
     // aqui. `visivel`, e não `admin: true`: ela é rota própria, guardada pelo
     // módulo Produção.

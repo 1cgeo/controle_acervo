@@ -36,13 +36,15 @@ dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 producao, 5 efetiv
 
 > **Armadilha que já custou caro:** o default de `verifyPerfil(minimo, modulo)` é `'acervo'`. Rota de
 > outro módulo que esquece o segundo argumento passa a cobrar perfil no ACERVO, sem erro visível.
-> `server/src/__tests__/routes/modulo_em_toda_rota.test.js` varre só `orcamento` e `mapoteca`: em
-> `producao` e em `efetivo`, ninguém cobra por você.
+> `server/src/__tests__/routes/modulo_em_toda_rota.test.js` varre `orcamento`, `mapoteca`,
+> `equipamento` e `campo` (que cobra `producao`): em `efetivo` e no resto de `producao`, ninguém
+> cobra por você.
 
 - **`dominio.modulo.nome` é RÓTULO, e trocar é inocente. `nome_abrev` é IDENTIFICADOR:** o
   `verifyPerfil`, o mapa `MODULO`, o prefixo de rota e a chave dos `perfis` o comparam por igualdade
   de string, e trocá-lo derruba a autorização sem erro de sintaxe e sem teste vermelho. O rótulo do
-  MENU é uma terceira coisa: a seção **PIT** é do módulo `producao`.
+  MENU é uma terceira coisa: a seção **PIT** é do módulo `producao`, e a pasta também pode divergir
+  do módulo (`server/src/campo/` cobra `producao`).
 - **A régua, de 2026-08-08:** `consulta` LÊ as telas do módulo, `operador` LANÇA, `gerente` responde
   pela área e vê tudo dela. Rota nova escolhe o piso por essa frase, e não por costume. As duas
   exceções são deliberadas: a lista NÃO hierárquica (`perfis: ['consulta','gerente']`, lida por
@@ -107,4 +109,8 @@ dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 producao, 5 efetiv
   `docs/decisoes.md`.
 - **No orçamento não existe "exercício", "PCA" nem cabeçalho de "PDR":** tudo se amarra ao **ano**
   (coluna `ano SMALLINT`, sem FK).
+- **`campo.ano` é a EXCEÇÃO a isso, e aponta `pit.exercicio`** (chefe, 2026-08-08), ao contrário de
+  `rpcmtec.capacitacao.ano`, que é solto pelo motivo oposto. Campo de ano sem exercício é RECUSADO
+  pela FK, e é o comportamento desejado: quem cria os exercícios que faltam é a carga do SAP, e não
+  a migração. `campo.geom` é NOT NULL pela mesma decisão, e a carga PARA em vez de inventar polígono.
 - **A numeração de `pit.meta` não é estável entre anos:** guarde o `id`, nunca o código.

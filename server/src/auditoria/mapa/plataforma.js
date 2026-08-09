@@ -415,5 +415,129 @@ module.exports = {
       militares: { rotulo: 'Militares da Divisão', tipo: 'lista', sintetico: true },
       capacitacao_id: { rotulo: 'Capacitação', entidade: 'capacitacao' }
     }
+  },
+
+  // --- Agregado: campo -------------------------------------------------------
+  //
+  // UM AGREGADO SO, E SEIS TABELAS. A regra e a da casa: o agregado e a FICHA
+  // QUE A PESSOA ABRE. Ninguem abre "imagem n.o 87" nem "track n.o 12"; abre o
+  // CAMPO e olha quem foi, que folhas ele atendeu, que fotos voltaram e por onde
+  // a viatura passou.
+  //
+  // NAO E DE MODULO NENHUM, e mora aqui pela mesma razao de `pit` e `rpcmtec`:
+  // `dominio.modulo` nao tem linha para campo. A tela e da secao PIT e cobra
+  // perfil em `producao`, que ja existia.
+  //
+  // `campo.track_ponto` NAO TEM ENTRADA, e a ausencia e a regra. Um track do
+  // dump do SAP tem cerca de 6.500 pontos, e auditar ponto a ponto faria uma
+  // importacao gravar 6.500 eventos que ninguem le. O que se audita e o TRACK,
+  // com a quantidade de pontos num campo sintetico. Os pontos entram e saem
+  // junto com ele, por CASCADE.
+  //
+  // `campo.situacao` e `campo.categoria` tambem nao: as duas sao dominio de code
+  // FIXO, semeadas pelo `er/campo.sql`, e nao tem porta de escrita nenhuma.
+  // Tabela sem escrita nao gera evento, e declara-la prometeria um historico que
+  // nunca teria linha.
+
+  'campo.campo': {
+    modulo: 'plataforma',
+    entidade: 'campo',
+    agregado: (t, linha) => linha.id,
+    resumo: linha => `${linha.nome} (${linha.ano})`,
+    // A GEOMETRIA NAO ENTRA NO RASTRO. Um MULTIPOLYGON de campo tem 23 vertices
+    // em media, e o EWKT dele dentro de `auditoria.evento` seria ilegivel na
+    // ficha e pesado na tabela. Quem quer ver onde foi abre o mapa da tela.
+    omitir: ['geom'],
+    campos: {
+      nome: { rotulo: 'Nome' },
+      descricao: { rotulo: 'Descrição' },
+      // O ANO APONTA `pit.exercicio`, e nao e um SMALLINT solto. Trocá-lo move o
+      // campo de exercício, e é o vínculo com o plano do ano.
+      ano: { rotulo: 'Ano do PIT', entidade: 'exercicio' },
+      situacao_id: { rotulo: 'Situação', dominio: 'campo.situacao' },
+      data_inicio: { rotulo: 'Início', tipo: 'data' },
+      data_fim: { rotulo: 'Término', tipo: 'data' },
+      placas_vtr: { rotulo: 'Placas de viatura' },
+      // Quem foi a campo e NAO tem conta no SCA. Anda ao lado da lista de
+      // `campo.campo_militar`, e as duas juntas sao o efetivo da subseção 2.5.
+      militares_externos: { rotulo: 'Militares de fora do cadastro' }
+    }
+  },
+
+  // Cada uma das tres listas abaixo DESCREVE A LISTA, e nao a linha: o vinculo e
+  // regravado INTEIRO a cada salvamento, entao auditar linha a linha faria o
+  // historico dizer "removeu 3, acrescentou 3" toda vez que alguem abrisse e
+  // salvasse. E o mesmo desenho de `rpcmtec.capacitacao_militar` e dos itens do
+  // DFD.
+
+  'campo.campo_categoria': {
+    modulo: 'plataforma',
+    entidade: 'campo',
+    agregado: (t, linha) => linha.campo_id,
+    resumo: linha => `${(linha.categorias || []).length} finalidade(s)`,
+    campos: {
+      // SINTETICO: nao ha coluna `categorias` em `campo.campo_categoria`.
+      categorias: { rotulo: 'Finalidade do campo', tipo: 'lista', sintetico: true },
+      campo_id: { rotulo: 'Campo', entidade: 'campo' }
+    }
+  },
+
+  'campo.campo_militar': {
+    modulo: 'plataforma',
+    entidade: 'campo',
+    agregado: (t, linha) => linha.campo_id,
+    resumo: linha => `${(linha.militares || []).length} militar(es) da Divisão`,
+    campos: {
+      militares: { rotulo: 'Militares da Divisão', tipo: 'lista', sintetico: true },
+      campo_id: { rotulo: 'Campo', entidade: 'campo' }
+    }
+  },
+
+  'campo.campo_versao': {
+    modulo: 'plataforma',
+    entidade: 'campo',
+    agregado: (t, linha) => linha.campo_id,
+    resumo: linha => `${(linha.versoes || []).length} versão(ões) atendida(s)`,
+    campos: {
+      versoes: { rotulo: 'Versões atendidas', tipo: 'lista', sintetico: true },
+      campo_id: { rotulo: 'Campo', entidade: 'campo' }
+    }
+  },
+
+  'campo.imagem': {
+    modulo: 'plataforma',
+    entidade: 'campo',
+    agregado: (t, linha) => linha.campo_id,
+    resumo: linha => `${linha.tipo === 'video' ? 'Vídeo' : 'Foto'}: ${linha.descricao || 'sem descrição'}`,
+    // OS BYTES FICAM DE FORA, e nao e opcional: o maior video do acervo do SAP
+    // tem 37 MB, e grava-lo dentro de `auditoria.evento` faria a trilha crescer
+    // mais que a tabela que ela audita. O controller ja nao os traz no
+    // RETURNING; esta linha e a segunda tranca.
+    omitir: ['conteudo'],
+    campos: {
+      tipo: { rotulo: 'Tipo' },
+      descricao: { rotulo: 'Descrição' },
+      data_imagem: { rotulo: 'Data da imagem', tipo: 'data' },
+      mime_type: { rotulo: 'Tipo do arquivo' },
+      campo_id: { rotulo: 'Campo', entidade: 'campo' }
+    }
+  },
+
+  'campo.track': {
+    modulo: 'plataforma',
+    entidade: 'campo',
+    agregado: (t, linha) => linha.campo_id,
+    resumo: linha => `Trajeto da ${linha.placa_vtr} em ${linha.dia}`,
+    campos: {
+      dia: { rotulo: 'Dia', tipo: 'data' },
+      placa_vtr: { rotulo: 'Placa da viatura' },
+      chefe_vtr: { rotulo: 'Chefe da viatura' },
+      motorista: { rotulo: 'Motorista' },
+      // SINTETICO: nao ha coluna `pontos` em `campo.track`. E a QUANTIDADE de
+      // pontos importados, montada pelo controller, e o unico jeito de a ficha
+      // dizer o tamanho do que entrou -- os pontos em si nao cabem no evento.
+      pontos: { rotulo: 'Pontos importados', tipo: 'numero', sintetico: true },
+      campo_id: { rotulo: 'Campo', entidade: 'campo' }
+    }
   }
 }

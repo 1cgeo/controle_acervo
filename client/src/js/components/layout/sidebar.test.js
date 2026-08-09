@@ -299,10 +299,11 @@ describe('sidebar: a seção PIT reúne o plano anual e o que acontece com ele',
     expect(producao.getAttribute('href')).toBe('#/metas');
 
     const itens = [...sidebar.querySelectorAll(
-      '[data-id="metas"], [data-id="execucao_pit"], [data-id="extra_pit"], [data-id="capacitacao_ministrada"]'
+      '[data-id="metas"], [data-id="execucao_pit"], [data-id="extra_pit"], '
+      + '[data-id="campo"], [data-id="capacitacao_ministrada"]'
     )];
     expect(itens.map(i => i.dataset.id))
-      .toEqual(['metas', 'execucao_pit', 'extra_pit', 'capacitacao_ministrada']);
+      .toEqual(['metas', 'execucao_pit', 'extra_pit', 'campo', 'capacitacao_ministrada']);
     expect(itens[1].getAttribute('href')).toBe('#/execucao_pit');
   });
 
@@ -322,6 +323,7 @@ describe('sidebar: a seção PIT reúne o plano anual e o que acontece com ele',
     expect(lista).toContain('extra_pit');
     expect(lista).not.toContain('execucao_pit');
     expect(lista).not.toContain('capacitacao_ministrada');
+    expect(lista).not.toContain('campo');
   });
 
   // A EXECUÇÃO deixou de ser "administrador ou gerente de qualquer módulo" e
@@ -335,6 +337,9 @@ describe('sidebar: a seção PIT reúne o plano anual e o que acontece com ele',
     const lista = ids(sidebar);
     expect(lista).toContain('execucao_pit');
     expect(lista).toContain('capacitacao_ministrada');
+    // E as atividades de campo, que entraram na secao em 2026-08-08 com a mesma
+    // regua: consulta LE a lista e o mapa.
+    expect(lista).toContain('campo');
     // E NAO a recebida, que e do modulo Efetivo: as duas saem da mesma tabela e
     // so o modulo as separa.
     expect(lista).not.toContain('capacitacao_recebida');
@@ -577,6 +582,11 @@ const GUARDA_DA_ROTA = {
   '/aproveitamento': perfilLoader('efetivo', ['consulta', 'gerente']),
   '/capacitacao_ministrada': perfilLoader('producao', 'consulta'),
   '/capacitacao_recebida': perfilLoader('efetivo', 'consulta'),
+  // Atividades de campo. `producao`, e nao `acessoLoader` como '/metas' e
+  // '/extra_pit' ao lado: aqueles dois sao lidos por quem trabalha na mapoteca e
+  // no orcamento, porque cadastrar NC ou pedido obriga a escolher a meta que
+  // financia. Campo nao atravessa modulo nenhum.
+  '/campo': perfilLoader('producao', 'consulta'),
 };
 
 const PERSONAS = [

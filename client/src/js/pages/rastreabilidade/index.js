@@ -116,6 +116,15 @@ const DESTINO = {
   'plataforma:meta': { tipo: 'lista', href: () => '#/metas' },
   'plataforma:exercicio': { tipo: 'lista', href: () => '#/metas' },
   'plataforma:extra_pit': { tipo: 'lista', href: () => '#/extra_pit' },
+  // UMA ENTRADA PARA SEIS TABELAS, e não seis: as categorias, os militares, as
+  // versões, as fotos e os tracks não são agregados próprios em
+  // `server/src/auditoria/mapa/plataforma.js` -- todas são auditadas SOB
+  // `campo`, com o `entidade_id` do CAMPO. É o mesmo recorte da ficha, e é por
+  // isso que o link leva direto a ela.
+  //
+  // FICHA, e não lista: a tela de campo abre o detalhe pelo id na rota, e é lá
+  // que a foto e o trajeto do evento aparecem.
+  'plataforma:campo': { tipo: 'ficha', href: (id) => `#/campo/${id}` },
 };
 
 /** dominio.tipo_capacitacao, lido em er/dominio.sql. */
@@ -196,6 +205,10 @@ export const NOME_ENTIDADE = {
   extra_pit: 'Extra-PIT',
   capacitacao: 'Capacitações',
   edicao: 'Edições do RPCMTec',
+  // O agregado do campo reúne SEIS tabelas: o campo, as finalidades, os
+  // militares, as versões atendidas, as fotos e os trajetos. Quem pergunta "o
+  // que mudou nas atividades de campo" não quer saber em qual das seis.
+  campo: 'Atividades de campo',
 };
 
 

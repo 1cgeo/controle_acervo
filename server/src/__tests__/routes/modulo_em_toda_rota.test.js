@@ -40,7 +40,16 @@ const MODULOS = [
   // meses depois: era esta a armadilha do CLAUDE.md ("em producao e em efetivo,
   // ninguem cobra por voce"), e um módulo novo que ficasse de fora daqui a
   // herdaria inteira. São 28 rotas, todas com o segundo argumento explícito.
-  { nome: 'equipamento', piso: 28 }
+  { nome: 'equipamento', piso: 28 },
+  // CAMPO entrou em 2026-08-08, no dia em que o schema nasceu, e a PASTA nao se
+  // chama como o MODULO: os arquivos estao em `src/campo/`, e a autorizacao
+  // cobra `producao` -- campo e o trabalho que o PIT promete, e nao uma area
+  // propria a conceder, entao `dominio.modulo` continua com seis linhas.
+  //
+  // ELE E O PRIMEIRO A COBRIR `producao`, e por isso vale mais que os outros
+  // tres. O CLAUDE.md avisa ha tempos que "em producao e em efetivo, ninguem
+  // cobra por voce": esta linha e o comeco do fim daquele aviso.
+  { nome: 'campo', modulo: 'producao', piso: 16 }
 ]
 
 const arquivosDeRota = dir =>
@@ -75,6 +84,10 @@ const CHAMADA = /verifyPerfil\(\s*'([a-z]+)'\s*(?:,\s*'([a-z]+)'\s*)?\)/g
 describe.each(MODULOS.map(m => [m.nome, m]))(
   'Toda rota do modulo %s passa o modulo para o verifyPerfil',
   (nome, modulo) => {
+    // A PASTA e o MODULO podem divergir, e `campo` e o caso: os arquivos moram
+    // em `src/campo/` e a guarda cobra `producao`. Onde nao ha `modulo`
+    // declarado, os dois sao o mesmo -- que e o caso dos outros tres.
+    const esperado = modulo.modulo || nome
     const raiz = path.join(SRC, nome)
     const arquivos = arquivosDeRota(raiz)
 
@@ -92,7 +105,7 @@ describe.each(MODULOS.map(m => [m.nome, m]))(
         for (const achado of fonte.matchAll(CHAMADA)) {
           const [trecho, , mod] = achado
           if (!mod) semModulo.push(trecho)
-          else if (mod !== nome) moduloErrado.push(trecho)
+          else if (mod !== esperado) moduloErrado.push(trecho)
         }
 
         expect(semModulo).toEqual([])

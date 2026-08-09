@@ -15,6 +15,9 @@ import { join, relative } from 'node:path';
 // falha no arquivo e na linha, e a mensagem diz o que pos aquilo no lugar.
 
 const RAIZ = join(process.cwd(), 'src', 'js');
+// A pasta da mapoteca, para a varredura que precisa de recorte. Ver o comentario
+// do primeiro teste.
+const MAPOTECA = join(RAIZ, 'modules', 'mapoteca');
 
 /** Todo .js de src/js, menos os proprios testes (que citam os nomes mortos). */
 function fontes(dir = RAIZ, acc = []) {
@@ -44,10 +47,15 @@ function linhasDeCodigo(texto) {
     });
 }
 
-/** Onde a expressao aparece em CODIGO, como 'arquivo:linha'. */
-function ocorrencias(regex) {
+/**
+ * Onde a expressao aparece em CODIGO, como 'arquivo:linha'.
+ *
+ * `dir` recorta a varredura. O padrao continua sendo `src/js` inteiro: so o
+ * `categoria_id` precisa de recorte, e o porque esta no teste dele.
+ */
+function ocorrencias(regex, dir = RAIZ) {
   const achados = [];
-  for (const caminho of fontes()) {
+  for (const caminho of fontes(dir)) {
     const conteudo = readFileSync(caminho, 'utf8');
     for (const { numero, texto } of linhasDeCodigo(conteudo)) {
       if (regex.test(texto)) {
@@ -61,8 +69,21 @@ function ocorrencias(regex) {
 describe('a poda do dominio de material', () => {
   // `categoria_id` so escolhia entre a 7.2 (Papel) e a 7.3 (Tintas) do RPCMTec,
   // e o chefe fundiu as duas tabelas numa so.
-  test('nenhum fonte manda categoria_id', () => {
-    expect(ocorrencias(/\bcategoria_id\b/)).toEqual([]);
+  //
+  // A BUSCA E SO DENTRO DA MAPOTECA, e ficou assim em 2026-08-08. Ela varria
+  // `src/js` inteiro ate a tela de CAMPO entrar: `campo.campo_categoria` tem uma
+  // coluna `categoria_id` legitima, do dominio `campo.categoria` (a finalidade
+  // do campo), e o filtro da tela a manda por nome. Sao duas colunas
+  // homonimas em schemas diferentes, e a varredura ampla acusava a viva pela
+  // morta.
+  //
+  // O RECORTE NAO ENFRAQUECE A GUARDA: o que ela existe para pegar e um arquivo
+  // da MAPOTECA voltando a mandar a categoria de material, e todos eles estao
+  // aqui dentro. As outras tres varreduras deste arquivo (`meta_anual`, a
+  // escrita de estoque e as rotas mortas) seguem valendo para `src/js` inteiro,
+  // porque aqueles nomes nao existem em outro schema.
+  test('nenhum fonte da mapoteca manda categoria_id', () => {
+    expect(ocorrencias(/\bcategoria_id\b/, MAPOTECA)).toEqual([]);
   });
 
   // `meta_anual` nunca teve leitor: nenhuma tela e nenhum relatorio a liam.

@@ -23,6 +23,7 @@ const { pitRoute } = require("./pit");
 const { efetivoRoute } = require("./efetivo");
 const { auditoriaRoute } = require("./auditoria");
 const { equipamentoRoute } = require("./equipamento");
+const { campoRoute } = require("./campo");
 
 // Modulo orcamento (antigo SCO). Os nomes colidem com os do acervo (dominio,
 // relatorio, arquivo), entao entram com apelido e so sob /api/orcamento/.
@@ -124,6 +125,16 @@ router.use("/mapoteca", mapotecaRoute);
 // declarada em `equipamento/equipamento_route.js` -- toda rota literal antes de
 // `/:id`.
 router.use("/equipamento", equipamentoRoute);
+
+// CAMPO: a atividade que a Divisão executa fora dela, e a fonte da subseção 2.5
+// do RPCMTec.
+//
+// PREFIXO PRÓPRIO, MAS NÃO É MÓDULO. `/campo` não tem linha em `dominio.modulo`:
+// a autorização dela cobra `producao`, o módulo code 4, que já existia. É o
+// mesmo arranjo de `/metas` e `/extra_pit`, que também são telas da seção PIT
+// com rota de plataforma. Um módulo novo obrigaria a conceder perfil de novo a
+// quem já responde pela produção, para ver o trabalho que ela promete.
+router.use("/campo", campoRoute);
 
 // Rotas públicas de integração (read-only, sem autenticação) para o vault da DGEO
 router.use("/integracao", integracaoRoute);

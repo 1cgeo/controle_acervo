@@ -325,6 +325,29 @@ const TIPO_TRANSFERENCIA = {
   DESCARGA: 3
 }
 
+// campo.situacao: em que pé está a atividade de campo. Os códigos são os do
+// SAP, que é a regra da fusão: a linha migrada não precisa de tradução.
+const SITUACAO_CAMPO = {
+  PREVISTO: 1,
+  EM_EXECUCAO: 2,
+  FINALIZADO: 3,
+  CANCELADO: 4
+}
+
+// campo.categoria: a finalidade do campo, e a coluna "Finalidade Campo" da
+// subseção 2.5 do RPCMTec.
+//
+// OS CÓDIGOS SÃO NOVOS, ao contrário da situação ao lado: no SAP isto era um
+// `ENUM` do Postgres (`controle_campo.categoria_campo`), que não tem número a
+// herdar. A ordem é a da declaração do ENUM de lá.
+const CATEGORIA_CAMPO = {
+  REAMBULACAO: 1,
+  MODELOS_3D: 2,
+  PANORAMICAS_360: 3,
+  PONTOS_DE_CONTROLE: 4,
+  ORTOIMAGENS_DE_DRONE: 5
+}
+
 // NÃO EXISTE `TIPO_EQUIPAMENTO` aqui, e a ausência é a regra.
 // `equipamento.tipo_equipamento` é CADASTRO, com `id SERIAL` e tela de CRUD:
 // decisão do chefe em 2026-08-08, para tipo novo custar uma tela e não uma
@@ -361,5 +384,7 @@ module.exports = {
   SECAO_DETENTORA,
   SITUACAO_EQUIPAMENTO,
   SITUACAO_TRANSFERENCIA,
-  TIPO_TRANSFERENCIA
+  TIPO_TRANSFERENCIA,
+  SITUACAO_CAMPO,
+  CATEGORIA_CAMPO
 }

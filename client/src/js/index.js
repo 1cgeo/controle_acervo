@@ -22,6 +22,7 @@ import {
   renderCapacitacaoMinistrada,
   renderCapacitacaoRecebida,
 } from '@pages/capacitacao/list.js';
+import { renderCampo } from '@pages/campo/list.js';
 import { renderRpcmtec } from '@pages/rpcmtec/index.js';
 import { renderRpcmtecEdicao } from '@pages/rpcmtec/edicao.js';
 import { renderConsultarPedido } from '@modules/mapoteca/pages/consultar-pedido.js';
@@ -200,6 +201,28 @@ router.add('/capacitacao_ministrada', withLayout(renderCapacitacaoMinistrada), {
 });
 router.add('/capacitacao_recebida', withLayout(renderCapacitacaoRecebida), {
   guard: perfilLoader('efetivo', 'consulta'),
+});
+
+// ATIVIDADES DE CAMPO: o que a Divisao faz FORA dela, e a fonte da subsecao 2.5
+// do RPCMTec. Rota de PLATAFORMA, sem prefixo de modulo, como '/metas' e
+// '/extra_pit': campo NAO tem linha em `dominio.modulo`, e a autorizacao dele
+// cobra `producao`, o modulo que ja existia.
+//
+// CONSULTA em Producao, e nao `acessoLoader` como '/metas' e '/extra_pit'.
+// Aqueles dois sao lidos por quem trabalha na mapoteca e no orcamento, porque
+// cadastrar NC ou pedido obriga a escolher a meta que financia; campo nao
+// atravessa modulo nenhum, e ler onde a Divisao esteve e tela da area de
+// Producao.
+//
+// DUAS ROTAS PARA A MESMA TELA. A segunda existe porque a rastreabilidade linka
+// a FICHA de um campo (#/campo/12), e o mapa de entidades do client declara
+// `plataforma:campo` como ficha. Sem ela o link cairia em /404. A tela e a
+// mesma, e o `:id` so manda abrir o detalhe por cima da lista ja carregada.
+router.add('/campo', withLayout(renderCampo), {
+  guard: perfilLoader('producao', 'consulta'),
+});
+router.add('/campo/:id', withLayout(renderCampo), {
+  guard: perfilLoader('producao', 'consulta'),
 });
 
 // RPCMTec: o relatorio mensal da Divisao, inteiro, numa tela so. Rota de

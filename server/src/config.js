@@ -189,8 +189,14 @@ dotenv.config({
 //
 // O piso pula da 1.43.0 direto para a 1.46.0: as 1.44.0 e 1.45.0 no meio do
 // caminho não subiam (poda da grade do PIT e o livro de movimentos do material).
+//
+// A 1.49.0 SOBE, e as 1.47.0 e 1.48.0 no meio não subiam. O schema `campo`
+// nasce nela, e sem ele não é uma tela que degrada: é `/api/campo` inteira
+// respondendo 500 por relação inexistente, e a subseção 2.5 do RPCMTec, que
+// passou a ser CALCULADA, deixando de sair. Piso baixo aqui daria um servidor
+// que sobe e um relatório que não fecha.
 const VERSION = '1.38.0'
-const MIN_DATABASE_VERSION = '1.46.0'
+const MIN_DATABASE_VERSION = '1.49.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

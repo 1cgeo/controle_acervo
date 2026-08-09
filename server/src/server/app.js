@@ -54,10 +54,20 @@ const limiter = rateLimit({
   skip: () => process.env.NODE_ENV === 'test'
 })
 
-// Rate limit antes do body parser: requisição acima do limite não paga o parse de 50mb
+// Rate limit antes do body parser: requisição acima do limite não paga o parse de 60mb
 app.use(limiter)
 
-app.use(express.json({ limit: '50mb' })) // parsear POST em JSON
+// 60mb, e era 50mb até 2026-08-08. Quem levantou o teto foi o VÍDEO DE CAMPO:
+// `POST /api/campo/:id/imagem` recebe o arquivo em base64, e base64 cresce o
+// binário em um terço. O maior vídeo do acervo do SAP tem 37 MB, o que dá cerca
+// de 49,3 MiB de texto -- passava raspando no teto antigo, e qualquer campo de
+// JSON ao lado (descrição, data, tipo) o estourava.
+//
+// O TETO DO Joi (`campo_schema.MAX_BASE64`, 56 MiB) TEM DE CABER AQUI. Com o
+// teto do Express menor, o corpo grande morre com um 413 do body parser antes
+// de chegar ao schema, e a mensagem não diz qual campo excedeu -- o Joi nunca
+// roda. Mexer num dos dois sem o outro reabre exatamente esse buraco.
+app.use(express.json({ limit: '60mb' })) // parsear POST em JSON
 
 // SEM hpp (proteção contra poluição de parâmetro). Foi removido de propósito.
 // NÃO recoloque numa próxima auditoria de segurança. Duas razões, nesta ordem:
