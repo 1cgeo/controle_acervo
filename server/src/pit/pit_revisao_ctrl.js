@@ -40,7 +40,7 @@ const colunasExercicio = `e.ano, e.situacao_id, s.nome AS situacao, e.observacao
 controller.listarExercicios = async () => {
   return db.conn.any(
     `SELECT ${colunasExercicio}
-     FROM pit.exercicio AS e
+     FROM pit.pit AS e
      INNER JOIN dominio.situacao_exercicio AS s ON s.code = e.situacao_id
      ORDER BY e.ano DESC`
   )
@@ -49,7 +49,7 @@ controller.listarExercicios = async () => {
 controller.criarExercicio = async (dados, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const existe = await t.oneOrNone(
-      'SELECT ano FROM pit.exercicio WHERE ano = $<ano>', { ano: dados.ano }
+      'SELECT ano FROM pit.pit WHERE ano = $<ano>', { ano: dados.ano }
     )
     if (existe) {
       throw new AppError(
@@ -58,7 +58,7 @@ controller.criarExercicio = async (dados, usuarioUuid, contexto) => {
     }
 
     const criado = await t.one(
-      `INSERT INTO pit.exercicio (ano, situacao_id, observacao, usuario_cadastramento_uuid)
+      `INSERT INTO pit.pit (ano, situacao_id, observacao, usuario_cadastramento_uuid)
        VALUES ($<ano>, $<situacao_id>, $<observacao>, $<usuarioUuid>)
        RETURNING *`,
       {
@@ -70,7 +70,7 @@ controller.criarExercicio = async (dados, usuarioUuid, contexto) => {
     )
 
     await auditoriaCtrl.registrar(t, {
-      tabela: 'pit.exercicio',
+      tabela: 'pit.pit',
       registroId: criado.ano,
       operacao: 'I',
       depois: criado,
@@ -85,7 +85,7 @@ controller.criarExercicio = async (dados, usuarioUuid, contexto) => {
 controller.atualizarExercicio = async (ano, dados, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const antes = await auditoriaCtrl.lerAntes(
-      t, 'pit.exercicio', ano, 'Exercício do PIT', 'ano'
+      t, 'pit.pit', ano, 'Exercício do PIT', 'ano'
     )
 
     // Encerrar com rascunho aberto deixaria uma revisão sem futuro: ela nunca
@@ -106,7 +106,7 @@ controller.atualizarExercicio = async (ano, dados, usuarioUuid, contexto) => {
     }
 
     const depois = await t.one(
-      `UPDATE pit.exercicio
+      `UPDATE pit.pit
        SET situacao_id = $<situacao_id>, observacao = $<observacao>,
            data_modificacao = $<dataModificacao>, usuario_modificacao_uuid = $<usuarioUuid>
        WHERE ano = $<ano>
@@ -121,7 +121,7 @@ controller.atualizarExercicio = async (ano, dados, usuarioUuid, contexto) => {
     )
 
     await auditoriaCtrl.registrar(t, {
-      tabela: 'pit.exercicio',
+      tabela: 'pit.pit',
       registroId: ano,
       operacao: 'U',
       antes,
@@ -219,7 +219,7 @@ const paraBancoRevisao = (dados, usuarioUuid) => ({
 controller.criarRevisao = async (dados, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const exercicio = await t.oneOrNone(
-      'SELECT situacao_id FROM pit.exercicio WHERE ano = $<ano>', { ano: dados.ano }
+      'SELECT situacao_id FROM pit.pit WHERE ano = $<ano>', { ano: dados.ano }
     )
     if (!exercicio) {
       throw new AppError(

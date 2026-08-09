@@ -73,7 +73,7 @@ describe('createMainLayout', () => {
     // módulos: não estão em `dominio.modulo` e não entram no registry.
     //
     // O rótulo "PIT" não é o nome do módulo: o módulo de permissão da seção é
-    // 'producao', `dominio.modulo` code 4, e continua se chamando Produção no
+    // 'pit', `dominio.modulo` code 4, e continua se chamando Produção no
     // banco. Só o menu fala do conteúdo das telas.
     expect(rotulos.slice(4)).toEqual(['PIT', 'Efetivo']);
   });

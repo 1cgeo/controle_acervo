@@ -73,9 +73,9 @@ dotenv.config({
 // A 1.33.0 SOBE O PISO, e ela só acrescenta duas linhas de domínio
 // (`dominio.modulo` ganha 4 Produção e 5 Efetivo). Sobe porque este código passa
 // a LER esses códigos: o mapa `MODULO` de `login/verify_perfil.js` traduz
-// 'producao' para 4 e 'efetivo' para 5, e as rotas da execução do PIT, do
+// 'pit' para 4 e 'efetivo' para 5, e as rotas da execução do PIT, do
 // Extra-PIT, da capacitação e do efetivo trocaram `verifyAdmin` por
-// `verifyPerfil(..., 'producao')` e `verifyPerfil(..., 'efetivo')`.
+// `verifyPerfil(..., 'pit')` e `verifyPerfil(..., 'efetivo')`.
 //
 // Num banco 1.32.0 nada quebraria com erro, e é justamente esse o motivo de
 // cobrar o piso: sem as linhas 4 e 5, a chave estrangeira
@@ -195,8 +195,20 @@ dotenv.config({
 // respondendo 500 por relação inexistente, e a subseção 2.5 do RPCMTec, que
 // passou a ser CALCULADA, deixando de sair. Piso baixo aqui daria um servidor
 // que sobe e um relatório que não fecha.
+// A 1.50.0 SOBE O PISO, e ela SÓ RENOMEIA. É a exceção mais dura à regra do
+// parágrafo da 1.26.0: renomear não acrescenta nem remove nada, e mesmo assim
+// não há como este código servir os dois nomes.
+//
+// Ele lê `pit.pit`, e num banco 1.49.0 toda consulta do PIT falha com "relação
+// não existe" -- o plano do ano, a revisão, a execução, o Extra-PIT e o campo.
+// E o mapa `MODULO` de `login/verify_perfil.js` traduz 'pit' para 4, contra um
+// `dominio.modulo` que ainda diz 'producao': a autorização do módulo 4 recusaria
+// todo mundo, sem erro nenhum na tela.
+//
+// O contrário quebra igual: um servidor 1.49.0 contra um banco 1.50.0 procura
+// `pit.exercicio`, que já não existe.
 const VERSION = '1.38.0'
-const MIN_DATABASE_VERSION = '1.49.0'
+const MIN_DATABASE_VERSION = '1.50.0'
 
 const configSchema = Joi.object().keys({
   PORT: Joi.number()

@@ -8,7 +8,7 @@ import { getToken } from '@store/auth-store.js';
  *
  * Fica em `services/`, e não em `modules/<algum>/services/`, porque a tela é de
  * PLATAFORMA: ela mora na seção PIT, ao lado do plano do ano e da execução dele,
- * e `dominio.modulo` não tem linha para campo. A autorização cobra `producao`,
+ * e `dominio.modulo` não tem linha para campo. A autorização cobra `pit`,
  * o módulo que já existia.
  */
 

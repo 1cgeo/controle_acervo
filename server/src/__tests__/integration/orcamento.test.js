@@ -271,7 +271,7 @@ describe('Orcamento contra o banco de verdade', () => {
     // duas e nao a unica que existe: com uma so, qualquer JOIN acerta.
     const duasMetas = async () => {
       await db.conn.none(
-        `INSERT INTO pit.exercicio (ano, usuario_cadastramento_uuid)
+        `INSERT INTO pit.pit (ano, usuario_cadastramento_uuid)
          VALUES ($<ano>, $<uuid>) ON CONFLICT (ano) DO NOTHING`,
         { ano: ANO, uuid: ADMIN_UUID }
       )

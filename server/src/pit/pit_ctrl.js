@@ -210,7 +210,7 @@ const resolverMeta = async (t, { ano, numeroMeta, nome, usuarioUuid, contexto })
 // que impede alguém corrigir 2025 em 2027.
 const conferirExercicio = async (t, ano) => {
   const e = await t.oneOrNone(
-    'SELECT situacao_id FROM pit.exercicio WHERE ano = $<ano>', { ano }
+    'SELECT situacao_id FROM pit.pit WHERE ano = $<ano>', { ano }
   )
   if (!e) {
     throw new AppError(
@@ -354,11 +354,11 @@ controller.listar = async ano => {
 // O ANO É ONDE SE COMEÇA, e não um filtro do que já aconteceu. O exercício é o
 // primeiro passo do fluxo, e ele nasce vazio por construção.
 //
-// A meta continua na união porque o histórico é anterior a `pit.exercicio`: um
+// A meta continua na união porque o histórico é anterior a `pit.pit`: um
 // ano com meta e sem linha de exercício sumiria da lista.
 controller.anos = async () => {
   const linhas = await db.conn.any(
-    `SELECT ano FROM pit.exercicio
+    `SELECT ano FROM pit.pit
      UNION
      SELECT ano FROM pit.meta
      ORDER BY ano DESC`

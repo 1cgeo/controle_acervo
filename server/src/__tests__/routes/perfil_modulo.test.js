@@ -36,7 +36,7 @@ beforeAll(async () => {
 const devolverAoSemeado = async () => {
   // APAGA TODAS as linhas e recria as DUAS semeadas, em vez de devolver modulo a
   // modulo. A versao anterior listava acervo, mapoteca e orcamento, e por isso
-  // nao limpava `producao` nem `efetivo`: os dois nasceram na 1.33.0, e as
+  // nao limpava `pit` nem `efetivo`: os dois nasceram na 1.33.0, e as
   // suites que os concedem a este mesmo usuario semeado chegaram depois. O
   // sintoma foi o caso `GET /api/usuarios devolve o perfil por modulo`, que
   // compara o mapa INTEIRO com `{ acervo: 1, mapoteca: 2 }` e passou a ver um
@@ -348,7 +348,7 @@ describe('Concessao de perfil pela API de usuarios', () => {
       .send({ administrador: false, ativo: true, perfis: { acervo: 9 } })
     expect(nivelInvalido.status).toBe(400)
 
-    // 'producao' era o exemplo de modulo inexistente aqui, e virou modulo de
+    // 'pit' era o exemplo de modulo inexistente aqui, e virou modulo de
     // verdade na 1.33.0. O exemplo passa a ser um nome que nao descreve trabalho
     // nenhum da Divisao, para nao virar modulo amanha e apagar este caso.
     const moduloInvalido = await request(app)
@@ -370,7 +370,7 @@ describe('Concessao de perfil pela API de usuarios', () => {
       'acervo',
       'mapoteca',
       'orcamento',
-      'producao',
+      'pit',
       'efetivo',
       'equipamento'
     ])

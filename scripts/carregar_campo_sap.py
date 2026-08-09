@@ -51,7 +51,7 @@ e argumento: argumento aparece na lista de processos da maquina.
 
 AS TRES DECISOES DO CHEFE QUE ESTA CARGA EXECUTA (2026-08-08)
 -------------------------------------------------------------
-1. O ANO APONTA `pit.exercicio` DE VERDADE. Os campos do SAP vao de 2013 a 2026 e
+1. O ANO APONTA `pit.pit` DE VERDADE. Os campos do SAP vao de 2013 a 2026 e
    o PIT so tem 2025 e 2026, entao a carga CRIA os exercicios que faltam, como
    Encerrados. Sem eles a chave estrangeira recusa 44 dos 54 campos.
 2. A GEOMETRIA E OBRIGATORIA. Os 7 campos sem poligono (todos voos de drone de
@@ -300,7 +300,7 @@ def montar_plano(conexao, geometrias_fornecidas, anos=None):
     exato, por_guerra, ambiguos = ler_usuarios_do_sca(conexao)
 
     anos_do_sap = sorted({c['ano'] for c in campos})
-    anos_do_pit = {int(l[0]) for l in psql(conexao, 'SELECT ano FROM pit.exercicio')}
+    anos_do_pit = {int(l[0]) for l in psql(conexao, 'SELECT ano FROM pit.pit')}
     anos_a_criar = [a for a in anos_do_sap if a not in anos_do_pit]
 
     bloqueados = []
@@ -400,7 +400,7 @@ def imprimir_relatorio(plano):
     print('EXERCICIOS DO PIT A CRIAR (Encerrados)')
     if plano['anos_a_criar']:
         print('  ' + ', '.join(str(a) for a in plano['anos_a_criar']))
-        print('  Sem eles a chave estrangeira `campo.ano -> pit.exercicio` recusa os campos')
+        print('  Sem eles a chave estrangeira `campo.ano -> pit.pit` recusa os campos')
         print('  desses anos. Eles nascem vazios: nenhuma meta, nenhuma execucao.')
     else:
         print('  nenhum: todo ano do SAP ja tem exercicio no PIT.')
@@ -545,7 +545,7 @@ def gerar_sql(plano, usuario_uuid):
             f'({ano}, {EXERCICIO_ENCERRADO}, {literal(usuario_uuid)})'
             for ano in plano['anos_a_criar']
         )
-        escrever('INSERT INTO pit.exercicio (ano, situacao_id, usuario_cadastramento_uuid)')
+        escrever('INSERT INTO pit.pit (ano, situacao_id, usuario_cadastramento_uuid)')
         escrever(f'VALUES {valores}')
         escrever('ON CONFLICT (ano) DO NOTHING;')
         escrever('')

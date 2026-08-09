@@ -95,7 +95,7 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   que existe o papel somente leitura (`DB_USER_READONLY`).
 - **A LEITURA do RPCMTec usa `verifyGerente`, e `#/rastreabilidade` usa `verifyRastreabilidade`.**
   (O `verifyGerente` era da grade do PIT, que em 2026-08-08 desceu para
-  `verifyPerfil('consulta', 'producao')`, porque tem módulo próprio; ele foi REAPROVEITADO no
+  `verifyPerfil('consulta', 'pit')`, porque tem módulo próprio; ele foi REAPROVEITADO no
   RPCMTec, e não recriado.) Não é
   `verifyPerfil`, que lê um módulo por vez e estas telas não são de módulo nenhum; nem `verifyLogin`,
   que lê o `administrador` do TOKEN, envelhecido até o `JWT_EXPIRACAO`. O recorte é do SERVIDOR: no
@@ -122,10 +122,44 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **`pit.demanda_extra` não tem `lote_id`, ao contrário do SAP.** Lá ele evita a 2.1 contar duas
   vezes; aqui não há o que descontar, e apontar `acervo.lote` inventaria um vínculo que não existe.
 
+## O SCA abre espaço para o core do SAP
+
+- **O módulo 4 devolveu o nome "Produção" em 2026-08-09** (chefe). Ele passou a se chamar `PIT` /
+  `pit`. O code NÃO mudou, então nenhuma concessão de `dgeo.usuario_perfil` foi tocada e ninguém
+  perdeu acesso. O que forçou a troca é o core de produção do SAP (`macrocontrole`, 45 tabelas), que
+  vai entrar num módulo, e esse módulo é que se chama Produção. O descompasso já existia e era
+  visível: o menu diz "PIT" desde que a seção nasceu, e o `nome_abrev` dizia outra coisa.
+  **`nome_abrev` é IDENTIFICADOR**, comparado por igualdade em `verifyPerfil`, no mapa `MODULO`, no
+  `modulo` de cada subseção do RPCMTec, no `visivel` da sidebar e no `perfilLoader` do client: foram
+  94 ocorrências de código em 22 arquivos, e o piso do banco subiu para 1.50.0 porque um servidor
+  velho contra este banco recusa toda concessão do módulo 4 sem erro nenhum na tela.
+- **`pit.exercicio` virou `pit.pit` no mesmo dia** (chefe). O PIT é o documento do ANO: `pit.pit` é a
+  linha do documento, e `pit.meta` é o que ele promete. **O homônimo do SAP é real e foi aceito
+  antes da troca**: lá, `macrocontrole.pit` é a META, e corresponde ao `pit.meta` daqui. Quando o
+  core atravessar, duas tabelas chamadas `pit` vão existir no mesmo banco querendo dizer coisas
+  diferentes.
+- **A entidade de auditoria NÃO acompanhou a tabela, e continua `exercicio`.** `auditoria.evento`
+  guarda `entidade` como TEXTO, e a trilha é append-only. Medido no dump de produção de 2026-08-08:
+  15 eventos com `exercicio`, e ZERO com o módulo `producao` (o `pit` sempre foi auditado sob
+  `plataforma`). Renomear a entidade os deixaria órfãos de ficha, e reescrevê-los seria a aplicação
+  corrigindo a própria prova. A chave do mapa é `schema.tabela` e a entidade é o AGREGADO: as duas
+  divergirem já era normal (`campo.campo_militar` tem entidade `campo`).
+- **O corpo do `INSERT` de `dominio.modulo` não aceita prosa.**
+  `__tests__/routes/orcamento/verify_perfil.test.js` lê aquele bloco do DDL com um `[\s\S]*?;` não
+  guloso, para provar que o mapa `MODULO` do código espelha o banco. Um ponto e vírgula dentro de um
+  comentário ali corta a captura no meio, e o teste passa a ver três módulos em vez de seis. Custou
+  uma suíte vermelha em 2026-08-09, e o comentário do code 4 mora ACIMA do `INSERT` por isso.
+- **O que a análise da fusão mediu, e que ainda não foi resolvido** (2026-08-09). `dominio.tipo_produto`
+  existe nos dois sistemas com os mesmos códigos e significados diferentes: o do SAP é, código a
+  código, o `subtipo_produto` do SCA. O código 9 é 'Modelo 3D' aqui e 'Fototriangulação' lá; o 13 é
+  'Levantamento topográfico' aqui e 'Carta Temática' lá. Quem juntar por código reclassifica o
+  acervo inteiro sem erro nenhum. **O chefe decidiu em 2026-08-09 que o SAP é que se adapta ao SCA**,
+  e não o contrário: tipo de produto, produto e usuário mudam lá.
+
 ## Campo
 
 - **O schema `campo` NÃO é um módulo, e `dominio.modulo` continua com seis linhas** (chefe,
-  2026-08-08). A tela mora na seção PIT e cobra `verifyPerfil(nível, 'producao')`: campo é o trabalho
+  2026-08-08). A tela mora na seção PIT e cobra `verifyPerfil(nível, 'pit')`: campo é o trabalho
   que o PIT promete, e não uma área própria a conceder. Um módulo novo obrigaria a conceder perfil de
   novo a quem já responde pela Produção, só para ver o que ela prometeu.
 - **`campo.ano` REFERENCIA `pit.exercicio`, e isso contraria o precedente ao lado** (chefe,
@@ -438,7 +472,8 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   isso no `require`, e não na primeira requisição. `'equipamento'` só pôde entrar na estrutura depois
   de `equipamento: 6` entrar no mapa e de `(6, 'Equipamento', 'equipamento')` entrar em
   `dominio.modulo` (1.46.0).
-- **A 2.5 (Atividades de campo) virou CALCULADA em 2026-08-08, e continua do módulo `producao`.**
+- **A 2.5 (Atividades de campo) virou CALCULADA em 2026-08-08, e é do módulo `pit`** (chamado
+  `producao` até 2026-08-09).
   Ela era DIGITADA com `fonte: 'SAP'`: todo mês alguém abria a tela de lá e transcrevia as linhas.
   Com o schema `campo` no banco, elas saem do cadastro. É o mesmo movimento da 7.1 no mesmo dia, e o
   da 2.2 e da 2.4 em 2026-08-05.

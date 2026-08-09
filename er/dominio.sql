@@ -358,11 +358,27 @@ CREATE TABLE dominio.modulo(
   nome_abrev VARCHAR(255) UNIQUE NOT NULL
 );
 
+-- O CODE 4 CHAMAVA-SE 'Produção' / 'producao' ATÉ 2026-08-09.
+--
+-- Ele nunca guardou a produção de verdade: o que mora nele é o PIT (a execução
+-- do plano, o Extra-PIT, a capacitação ministrada e as atividades de campo). O
+-- menu já dizia "PIT" desde que a seção nasceu, e o `nome_abrev` dizia outra
+-- coisa. O CLAUDE.md carregava um parágrafo só para explicar a divergência.
+--
+-- O QUE FORÇOU A TROCA foi o SAP. O core de produção dele (`macrocontrole`, 45
+-- tabelas) entra num módulo, e esse módulo é que se chama Produção. Com o nome
+-- ocupado por quem não é produção, o módulo novo nasceria com um nome de
+-- segunda ou herdaria as telas do PIT por engano.
+--
+-- O CORPO DESTE INSERT NÃO ACEITA PROSA, e o comentário mora aqui em cima por
+-- isso: `__tests__/routes/orcamento/verify_perfil.test.js` lê este bloco com um
+-- `[\s\S]*?;` não guloso, e um ponto e vírgula dentro dele corta a captura no
+-- meio. Custou uma suíte vermelha em 2026-08-09.
 INSERT INTO dominio.modulo (code, nome, nome_abrev) VALUES
 (1, 'Acervo', 'acervo'),
 (2, 'Mapoteca', 'mapoteca'),
 (3, 'Orçamento', 'orcamento'),
-(4, 'Produção', 'producao'),
+(4, 'PIT', 'pit'),
 (5, 'Efetivo', 'efetivo'),
 (6, 'Equipamento', 'equipamento');
 

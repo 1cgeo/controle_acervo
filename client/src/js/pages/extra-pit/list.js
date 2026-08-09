@@ -36,7 +36,7 @@ export async function renderExtraPitList(container, _ctx) {
   // /metas/extra. LIGAR uma VERSÃO do acervo à demanda continua do
   // administrador, e por isso `versoes-dialog.js` segue com `isAdmin`: aquilo
   // grava em `acervo.versao`, e quem manda no acervo é o módulo acervo.
-  const podeEscrever = temPerfil('operador', 'producao');
+  const podeEscrever = temPerfil('operador', 'pit');
   let anoSelecionado = new Date().getFullYear();
 
   const newBtn = el('button', {

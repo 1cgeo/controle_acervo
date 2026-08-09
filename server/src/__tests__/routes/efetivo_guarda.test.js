@@ -28,7 +28,7 @@
 //
 // O RECORTE DE CAMPO de `/militares` NÃO se prova aqui, e é de propósito: com o
 // banco dublê a rota devolveria o que o dublê inventasse. Quem prova qual coluna
-// sai é `producao_efetivo_permissao.test.js`, contra o banco de verdade.
+// sai é `pit_efetivo_permissao.test.js`, contra o banco de verdade.
 
 const jwt = require('jsonwebtoken')
 const request = require('supertest')

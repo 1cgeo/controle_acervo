@@ -150,13 +150,13 @@ router.add('/revisoes_pit', withLayout(renderPitAno), {
 // modulo le as telas do modulo. Ler a grade nao move nada; escrever continua
 // sendo do administrador, e quem barra e o servidor.
 router.add('/execucao_pit', withLayout(renderExecucaoPit), {
-  guard: perfilLoader('producao', 'consulta'),
+  guard: perfilLoader('pit', 'consulta'),
 });
 
 // Extra-PIT: a excecao AUTORIZADA ao plano anual (subsecao 3.3).
 //
 // `acessoLoader`, o MESMO de '/metas' e pela mesma razao. As duas NAO desceram
-// para `perfilLoader('producao', ...)` quando o resto da regua mudou, e e
+// para `perfilLoader('pit', ...)` quando o resto da regua mudou, e e
 // deliberado: cadastrar NC, item de PDR ou pedido de impressao obriga a escolher
 // a meta que financia ou cumpre, entao quem trabalha na mapoteca ou no orcamento
 // precisa ler o plano do ano sem ter perfil em Producao.
@@ -197,7 +197,7 @@ router.add('/aproveitamento', withLayout(renderAproveitamento), {
 // continua sendo o unico que LANCA, e isso e recorte de botao e de rota de
 // escrita, nao da porta da tela.
 router.add('/capacitacao_ministrada', withLayout(renderCapacitacaoMinistrada), {
-  guard: perfilLoader('producao', 'consulta'),
+  guard: perfilLoader('pit', 'consulta'),
 });
 router.add('/capacitacao_recebida', withLayout(renderCapacitacaoRecebida), {
   guard: perfilLoader('efetivo', 'consulta'),
@@ -206,7 +206,7 @@ router.add('/capacitacao_recebida', withLayout(renderCapacitacaoRecebida), {
 // ATIVIDADES DE CAMPO: o que a Divisao faz FORA dela, e a fonte da subsecao 2.5
 // do RPCMTec. Rota de PLATAFORMA, sem prefixo de modulo, como '/metas' e
 // '/extra_pit': campo NAO tem linha em `dominio.modulo`, e a autorizacao dele
-// cobra `producao`, o modulo que ja existia.
+// cobra `pit`, o modulo que ja existia.
 //
 // CONSULTA em Producao, e nao `acessoLoader` como '/metas' e '/extra_pit'.
 // Aqueles dois sao lidos por quem trabalha na mapoteca e no orcamento, porque
@@ -219,10 +219,10 @@ router.add('/capacitacao_recebida', withLayout(renderCapacitacaoRecebida), {
 // `plataforma:campo` como ficha. Sem ela o link cairia em /404. A tela e a
 // mesma, e o `:id` so manda abrir o detalhe por cima da lista ja carregada.
 router.add('/campo', withLayout(renderCampo), {
-  guard: perfilLoader('producao', 'consulta'),
+  guard: perfilLoader('pit', 'consulta'),
 });
 router.add('/campo/:id', withLayout(renderCampo), {
-  guard: perfilLoader('producao', 'consulta'),
+  guard: perfilLoader('pit', 'consulta'),
 });
 
 // RPCMTec: o relatorio mensal da Divisao, inteiro, numa tela so. Rota de

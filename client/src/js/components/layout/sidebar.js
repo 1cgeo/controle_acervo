@@ -178,11 +178,11 @@ const SISTEMA_EFETIVO = {
  * a seção como se fosse dela, que é a única coisa que sobrava na tela.
  */
 const SISTEMA_PRODUCAO = {
-  id: 'producao-area',
+  id: 'pit-area',
   // SÓ O RÓTULO é "PIT". O `id`, a home '/metas' e o módulo de permissão
-  // 'producao' NÃO acompanham, e não é descuido: 'producao' é `dominio.modulo`
+  // 'pit' NÃO acompanham, e não é descuido: 'pit' é `dominio.modulo`
   // code 4, continua se chamando Produção no banco, e é o nome que o servidor
-  // cobra em `verifyPerfil(..., 'producao')`. O rótulo fala do CONTEÚDO das
+  // cobra em `verifyPerfil(..., 'pit')`. O rótulo fala do CONTEÚDO das
   // telas, que é o PIT do ano; o módulo fala de QUEM pode escrever nelas.
   // "Corrigir" a simetria trocando o id quebra a chave do item ativo
   // (`activeIdFromPath`), trocando a home quebra link guardado, e trocando o
@@ -207,7 +207,7 @@ const SISTEMA_PRODUCAO = {
     // A execução do PIT é do MÓDULO PRODUÇÃO, e não de qualquer pessoa logada
     // como as metas ao lado. O recorte deixou de ser "administrador ou gerente
     // de qualquer módulo" e passou a ser consulta em Produção, que é quem
-    // escreve a grade: a rota virou `perfilLoader('producao', 'consulta')`. Ler
+    // escreve a grade: a rota virou `perfilLoader('pit', 'consulta')`. Ler
     // a grade não move nada; escrever continua sendo do administrador, e quem
     // barra é o servidor.
     {
@@ -215,7 +215,7 @@ const SISTEMA_PRODUCAO = {
       label: 'Execução do PIT',
       icon: ICONS.dataUsage,
       path: '/execucao_pit',
-      visivel: () => temPerfil('consulta', 'producao'),
+      visivel: () => temPerfil('consulta', 'pit'),
     },
     { id: 'extra_pit', label: 'Extra-PIT', icon: ICONS.warning, path: '/extra_pit' },
     // ATIVIDADES DE CAMPO: o que a Divisão faz FORA dela, e a fonte da subseção
@@ -223,7 +223,7 @@ const SISTEMA_PRODUCAO = {
     //
     // Mora aqui, e não num módulo próprio: campo é o trabalho que o PIT
     // promete, `dominio.modulo` continua com seis linhas, e o `ano` do campo
-    // aponta `pit.exercicio`. Um módulo novo obrigaria a conceder perfil de
+    // aponta `pit.pit`. Um módulo novo obrigaria a conceder perfil de
     // novo a quem já responde pela Produção, só para ver o que ela prometeu.
     //
     // CONSULTA, como a execução e a capacitação ao lado: abrir a lista e o mapa
@@ -234,7 +234,7 @@ const SISTEMA_PRODUCAO = {
       label: 'Atividades de campo',
       icon: ICONS.layers,
       path: '/campo',
-      visivel: () => temPerfil('consulta', 'producao'),
+      visivel: () => temPerfil('consulta', 'pit'),
     },
     // A capacitação MINISTRADA é serviço que a Divisão presta, e por isso mora
     // aqui. `visivel`, e não `admin: true`: ela é rota própria, guardada pelo
@@ -247,7 +247,7 @@ const SISTEMA_PRODUCAO = {
       label: 'Capacitação ministrada',
       icon: ICONS.description,
       path: '/capacitacao_ministrada',
-      visivel: () => temPerfil('consulta', 'producao'),
+      visivel: () => temPerfil('consulta', 'pit'),
     },
   ],
 };

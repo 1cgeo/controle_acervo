@@ -115,7 +115,7 @@ const SECOES = [
     subsecoes: [
       {
         numero: '2.1',
-        modulo: 'producao',
+        modulo: 'pit',
         titulo: 'Estado Atual do PIT',
         origem: ORIGEM.CALCULADA,
         fonte: 'pit.meta_vigente e pit.execucao',
@@ -174,7 +174,7 @@ const SECOES = [
       },
       {
         numero: '2.3',
-        modulo: 'producao',
+        modulo: 'pit',
         titulo: 'Execução por Lote de Produção',
         origem: ORIGEM.DIGITADA,
         fonte: 'SAP',
@@ -203,7 +203,7 @@ const SECOES = [
       },
       {
         numero: '2.5',
-        modulo: 'producao',
+        modulo: 'pit',
         titulo: 'Atividades de campo',
         // CALCULADA desde 2026-08-08, e DIGITADA (fonte 'SAP') até ali. Todo mês
         // alguém abria a tela do SAP e transcrevia estas linhas a mão. Com o
@@ -227,7 +227,7 @@ const SECOES = [
       },
       {
         numero: '2.6',
-        modulo: 'producao',
+        modulo: 'pit',
         titulo: 'Capacitações externas',
         origem: ORIGEM.CALCULADA,
         fonte: 'rpcmtec.capacitacao, tipo Ministrada',
@@ -276,7 +276,7 @@ const SECOES = [
       },
       {
         numero: '3.3',
-        modulo: 'producao',
+        modulo: 'pit',
         titulo: 'Extra-PIT',
         origem: ORIGEM.CALCULADA,
         fonte: 'pit.demanda_extra',

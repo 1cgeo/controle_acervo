@@ -63,7 +63,7 @@ const hashesDaSemente = () => {
  * `equipamento.tipo_equipamento` ENTRA, e ela e SEMEADA pelo `er/equipamento.sql`
  * com os 9 tipos do QDMP. E deliberado, e tem consequencia: depois do primeiro
  * `cleanTestData` os 9 nao estao mais la, e todo teste que precise de um tipo
- * cria o dele. A alternativa -- deixa-la de fora, como `pit.exercicio` e
+ * cria o dele. A alternativa -- deixa-la de fora, como `pit.pit` e
  * `acervo.volume_armazenamento` -- daria o defeito oposto: um teste que cadastre
  * tipo novo (a tela de cadastro existe, e e de operador) deixaria a linha para
  * tras, e a contagem de tipos do painel passaria a depender da ordem dos
@@ -72,7 +72,7 @@ const hashesDaSemente = () => {
  * NAO ENTRAM aqui, e cada uma por um motivo:
  *   - as tabelas de dominio, que sao carga do `er/`;
  *   - `orcamento.configuracao`, singleton criada pelo `er/orcamento.sql`;
- *   - `pit.exercicio` e `acervo.volume_armazenamento`, que sao SEMENTE (o
+ *   - `pit.pit` e `acervo.volume_armazenamento`, que sao SEMENTE (o
  *     volume perde so as linhas que o teste acrescentou, logo abaixo);
  *   - `dgeo.usuario`, que volta ao estado da semente em vez de sumir.
  */

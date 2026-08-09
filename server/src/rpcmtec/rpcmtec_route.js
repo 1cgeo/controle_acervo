@@ -316,8 +316,8 @@ const rotasDeCapacitacao = (caminho, tipoId, leitura, escrita) => {
 rotasDeCapacitacao(
   'ministrada',
   TIPO_CAPACITACAO.MINISTRADA,
-  verifyPerfil('consulta', 'producao'),
-  verifyPerfil('operador', 'producao')
+  verifyPerfil('consulta', 'pit'),
+  verifyPerfil('operador', 'pit')
 )
 
 // RECEBIDA é gente nossa EM CURSO, e alimenta a 6.2: é dado de pessoal, e o

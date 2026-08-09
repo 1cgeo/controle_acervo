@@ -6,7 +6,7 @@
 // fonte da subsecao 2.5 do RPCMTec, que ate 2026-08-08 era DIGITADA a partir da
 // tela do SAP.
 //
-// O MODULO E `producao`, E NAO UM MODULO NOVO. A tela mora na secao PIT, e
+// O MODULO E `pit`, E NAO UM MODULO NOVO. A tela mora na secao PIT, e
 // `dominio.modulo` continua com seis linhas: campo e o trabalho que o PIT
 // promete, e nao uma area propria a conceder. Quem tem perfil em Producao
 // alcanca esta rota.
@@ -58,13 +58,13 @@ const router = express.Router()
 // de sintaxe, sem teste vermelho e sem nada na tela. E aqui isso e mais
 // perigoso que no equipamento, porque
 // `__tests__/routes/modulo_em_toda_rota.test.js` varre so `orcamento` e
-// `mapoteca`: em `producao`, ninguem cobra por voce.
+// `mapoteca`: em `pit`, ninguem cobra por voce.
 
 // --- Dominio -----------------------------------------------------------------
 
 router.get(
   '/dominio',
-  verifyPerfil('consulta', 'producao'),
+  verifyPerfil('consulta', 'pit'),
   asyncHandler(async (req, res, next) => {
     const dados = await campoCtrl.getDominio()
     return res.sendJsonAndLog(
@@ -80,7 +80,7 @@ router.get(
 // e o mapa discordarem sobre quantos campos existem.
 router.get(
   '/geojson',
-  verifyPerfil('consulta', 'producao'),
+  verifyPerfil('consulta', 'pit'),
   schemaValidation({ query: campoSchema.campoQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await campoCtrl.geojson(req.query)
@@ -102,7 +102,7 @@ router.get(
 // tabela de nomes seria pagar o arquivo inteiro por engano.
 router.get(
   '/imagem/:imagemId/arquivo',
-  verifyPerfil('consulta', 'producao'),
+  verifyPerfil('consulta', 'pit'),
   schemaValidation({ params: campoSchema.imagemIdParams }),
   asyncHandler(async (req, res, next) => {
     const imagem = await campoCtrl.lerImagem(req.params.imagemId)
@@ -119,7 +119,7 @@ router.get(
 
 router.put(
   '/imagem/:imagemId',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({
     params: campoSchema.imagemIdParams,
     body: campoSchema.imagemUpdate
@@ -136,7 +136,7 @@ router.put(
 
 router.delete(
   '/imagem/:imagemId',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({ params: campoSchema.imagemIdParams }),
   asyncHandler(async (req, res, next) => {
     await campoCtrl.apagarImagem(
@@ -150,7 +150,7 @@ router.delete(
 
 router.put(
   '/track/:trackId',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({
     params: campoSchema.trackIdParams,
     body: campoSchema.trackUpdate
@@ -167,7 +167,7 @@ router.put(
 
 router.delete(
   '/track/:trackId',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({ params: campoSchema.trackIdParams }),
   asyncHandler(async (req, res, next) => {
     await campoCtrl.apagarTrack(
@@ -181,7 +181,7 @@ router.delete(
 
 router.get(
   '/',
-  verifyPerfil('consulta', 'producao'),
+  verifyPerfil('consulta', 'pit'),
   schemaValidation({ query: campoSchema.campoQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await campoCtrl.listar(req.query)
@@ -193,7 +193,7 @@ router.get(
 
 router.post(
   '/',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({ body: campoSchema.campo }),
   asyncHandler(async (req, res, next) => {
     const dados = await campoCtrl.criar(req.body, req.usuarioUuid, req.contexto)
@@ -208,7 +208,7 @@ router.post(
 
 router.get(
   '/:id/imagem',
-  verifyPerfil('consulta', 'producao'),
+  verifyPerfil('consulta', 'pit'),
   schemaValidation({ params: campoSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await campoCtrl.listarImagens(req.params.id)
@@ -220,7 +220,7 @@ router.get(
 
 router.post(
   '/:id/imagem',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({ params: campoSchema.idParams, body: campoSchema.imagem }),
   asyncHandler(async (req, res, next) => {
     const dados = await campoCtrl.criarImagem(
@@ -234,7 +234,7 @@ router.post(
 
 router.get(
   '/:id/track',
-  verifyPerfil('consulta', 'producao'),
+  verifyPerfil('consulta', 'pit'),
   schemaValidation({ params: campoSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await campoCtrl.listarTracks(req.params.id)
@@ -246,7 +246,7 @@ router.get(
 
 router.post(
   '/:id/track',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({ params: campoSchema.idParams, body: campoSchema.track }),
   asyncHandler(async (req, res, next) => {
     const dados = await campoCtrl.criarTrack(
@@ -260,7 +260,7 @@ router.post(
 
 router.get(
   '/:id',
-  verifyPerfil('consulta', 'producao'),
+  verifyPerfil('consulta', 'pit'),
   schemaValidation({ params: campoSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await campoCtrl.buscarPorId(req.params.id)
@@ -272,7 +272,7 @@ router.get(
 
 router.put(
   '/:id',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({ params: campoSchema.idParams, body: campoSchema.campo }),
   asyncHandler(async (req, res, next) => {
     const dados = await campoCtrl.atualizar(
@@ -288,7 +288,7 @@ router.put(
 // fotos e os trajetos junto.
 router.delete(
   '/:id',
-  verifyPerfil('gerente', 'producao'),
+  verifyPerfil('gerente', 'pit'),
   schemaValidation({ params: campoSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     await campoCtrl.apagar(req.params.id, req.usuarioUuid, req.contexto)

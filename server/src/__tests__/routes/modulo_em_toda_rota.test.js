@@ -43,13 +43,13 @@ const MODULOS = [
   { nome: 'equipamento', piso: 28 },
   // CAMPO entrou em 2026-08-08, no dia em que o schema nasceu, e a PASTA nao se
   // chama como o MODULO: os arquivos estao em `src/campo/`, e a autorizacao
-  // cobra `producao` -- campo e o trabalho que o PIT promete, e nao uma area
+  // cobra `pit` -- campo e o trabalho que o PIT promete, e nao uma area
   // propria a conceder, entao `dominio.modulo` continua com seis linhas.
   //
-  // ELE E O PRIMEIRO A COBRIR `producao`, e por isso vale mais que os outros
+  // ELE E O PRIMEIRO A COBRIR `pit`, e por isso vale mais que os outros
   // tres. O CLAUDE.md avisa ha tempos que "em producao e em efetivo, ninguem
   // cobra por voce": esta linha e o comeco do fim daquele aviso.
-  { nome: 'campo', modulo: 'producao', piso: 16 }
+  { nome: 'campo', modulo: 'pit', piso: 16 }
 ]
 
 const arquivosDeRota = dir =>
@@ -85,7 +85,7 @@ describe.each(MODULOS.map(m => [m.nome, m]))(
   'Toda rota do modulo %s passa o modulo para o verifyPerfil',
   (nome, modulo) => {
     // A PASTA e o MODULO podem divergir, e `campo` e o caso: os arquivos moram
-    // em `src/campo/` e a guarda cobra `producao`. Onde nao ha `modulo`
+    // em `src/campo/` e a guarda cobra `pit`. Onde nao ha `modulo`
     // declarado, os dois sao o mesmo -- que e o caso dos outros tres.
     const esperado = modulo.modulo || nome
     const raiz = path.join(SRC, nome)

@@ -490,7 +490,7 @@ describe('pit_ctrl', () => {
 
     expect(r).toEqual([2027, 2026])
     const [sql] = mockDb.conn.any.mock.calls[0]
-    expect(String(sql)).toContain('FROM pit.exercicio')
+    expect(String(sql)).toContain('FROM pit.pit')
     expect(String(sql)).toContain('UNION')
   })
 })

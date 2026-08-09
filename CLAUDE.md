@@ -31,20 +31,21 @@ alternativa: `docs/decisoes.md`, que é também onde uma decisão nova se regist
 dgeo.usuario.administrador BOOLEAN   -- administrador de TUDO, global e unico
 dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id)
 dominio.tipo_perfil   -- 1 consulta, 2 operador, 3 gerente (hierarquicos)
-dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 producao, 5 efetivo
+dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 pit, 5 efetivo, 6 equipamento
 ```
 
 > **Armadilha que já custou caro:** o default de `verifyPerfil(minimo, modulo)` é `'acervo'`. Rota de
 > outro módulo que esquece o segundo argumento passa a cobrar perfil no ACERVO, sem erro visível.
 > `server/src/__tests__/routes/modulo_em_toda_rota.test.js` varre `orcamento`, `mapoteca`,
-> `equipamento` e `campo` (que cobra `producao`): em `efetivo` e no resto de `producao`, ninguém
-> cobra por você.
+> `equipamento` e `campo` (que cobra `pit`): em `efetivo` e no resto de `pit`, ninguém cobra por
+> você.
 
 - **`dominio.modulo.nome` é RÓTULO, e trocar é inocente. `nome_abrev` é IDENTIFICADOR:** o
   `verifyPerfil`, o mapa `MODULO`, o prefixo de rota e a chave dos `perfis` o comparam por igualdade
   de string, e trocá-lo derruba a autorização sem erro de sintaxe e sem teste vermelho. O rótulo do
-  MENU é uma terceira coisa: a seção **PIT** é do módulo `producao`, e a pasta também pode divergir
-  do módulo (`server/src/campo/` cobra `producao`).
+  MENU já não é uma terceira coisa: o code 4 se chamava `producao` até 2026-08-09, e virou `pit`
+  para devolver o nome ao core do SAP, que vai entrar como Produção. A **pasta** ainda pode divergir
+  do módulo (`server/src/campo/` cobra `pit`).
 - **A régua, de 2026-08-08:** `consulta` LÊ as telas do módulo, `operador` LANÇA, `gerente` responde
   pela área e vê tudo dela. Rota nova escolhe o piso por essa frase, e não por costume. As duas
   exceções são deliberadas: a lista NÃO hierárquica (`perfis: ['consulta','gerente']`, lida por
@@ -59,6 +60,12 @@ dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 producao, 5 efetiv
   em ALGUM módulo), `verifyGerente` (gerente de qualquer módulo, mais `verifyModuloSubsecao()` para
   ESCREVER subseção do RPCMTec) e `verifyAdmin` (usuários, meta e revisão do PIT, fechar o RPCMTec,
   views materializadas, limpeza de download).
+
+- **`pit.pit` é o ANO, e `macrocontrole.pit` do SAP é a META.** A tabela se chamava `pit.exercicio`
+  até 2026-08-09. Quando o core de produção atravessar, as duas vão existir no mesmo banco com o
+  mesmo nome e sentidos diferentes: a de lá corresponde ao `pit.meta` daqui.
+- **A entidade de auditoria de `pit.pit` continua `exercicio`**, e não acompanhou o nome da tabela:
+  `auditoria.evento.entidade` é texto gravado no evento, e a trilha é append-only.
 
 ## Ao escrever código
 
@@ -109,7 +116,7 @@ dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 producao, 5 efetiv
   `docs/decisoes.md`.
 - **No orçamento não existe "exercício", "PCA" nem cabeçalho de "PDR":** tudo se amarra ao **ano**
   (coluna `ano SMALLINT`, sem FK).
-- **`campo.ano` é a EXCEÇÃO a isso, e aponta `pit.exercicio`** (chefe, 2026-08-08), ao contrário de
+- **`campo.ano` é a EXCEÇÃO a isso, e aponta `pit.pit`** (chefe, 2026-08-08), ao contrário de
   `rpcmtec.capacitacao.ano`, que é solto pelo motivo oposto. Campo de ano sem exercício é RECUSADO
   pela FK, e é o comportamento desejado: quem cria os exercícios que faltam é a carga do SAP, e não
   a migração. `campo.geom` é NOT NULL pela mesma decisão, e a carga PARA em vez de inventar polígono.

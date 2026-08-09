@@ -22,7 +22,7 @@
 //
 // O RECORTE POR TIPO (o operador de Efetivo não apaga uma ministrada mandando o
 // id dela para o caminho da recebida) NÃO se prova aqui: ele é do CONTROLADOR, e
-// quem o prova é `producao_efetivo_permissao.test.js`, contra o banco.
+// quem o prova é `pit_efetivo_permissao.test.js`, contra o banco.
 
 const jwt = require('jsonwebtoken')
 const request = require('supertest')
@@ -60,7 +60,7 @@ const quemEntra = ({ administrador = false, perfil = null } = {}) => {
 // teste que só olhasse a ministrada deixaria a recebida livre para herdar a
 // guarda errada do molde.
 const TIPOS = [
-  ['ministrada', 'producao'],
+  ['ministrada', 'pit'],
   ['recebida', 'efetivo']
 ]
 

@@ -18,7 +18,7 @@ const SITUACOES = [
  *
  * É o PRIMEIRO passo do fluxo, e sem ele o ano é um beco sem saída: `pit.meta`,
  * `pit.revisao` e `pit.demanda_extra` têm chave estrangeira para
- * `pit.exercicio(ano)`, e o `criarRevisao` recusa com "o exercício de AAAA não
+ * `pit.pit(ano)`, e o `criarRevisao` recusa com "o exercício de AAAA não
  * existe" antes de qualquer coisa.
  *
  * O ANO NÃO SE EDITA depois de criado: ele é a chave que os três schemas

@@ -83,7 +83,7 @@ const volumePrimario = async () => {
 /** Um item de meta do PIT, para provar que o vínculo atravessa o rascunho. */
 const itemDoPit = async () => {
   await conn.none(
-    `INSERT INTO pit.exercicio (ano, usuario_cadastramento_uuid)
+    `INSERT INTO pit.pit (ano, usuario_cadastramento_uuid)
      VALUES ($1, $2) ON CONFLICT (ano) DO NOTHING`,
     [ANO, ADMIN_UUID]
   )

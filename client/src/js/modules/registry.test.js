@@ -39,7 +39,7 @@ describe('registry: manifestos', () => {
 
   test('getModulo acha pelo id e devolve null no desconhecido', () => {
     expect(getModulo('orcamento').id).toBe('orcamento');
-    expect(getModulo('producao')).toBeNull();
+    expect(getModulo('pit')).toBeNull();
   });
 
   test('modulo esqueleto (sem rota) nao conta como portado', () => {
@@ -66,8 +66,8 @@ describe('registry: o que a pessoa ve', () => {
     //
     // O caso não procura um esqueleto no MODULOS: quando não houvesse nenhum,
     // ele saía sem asserção nenhuma e passava sem provar coisa alguma.
-    expect(MODULOS.map(m => m.id)).not.toContain('producao');
-    logar({ perfis: { producao: 3 } });
+    expect(MODULOS.map(m => m.id)).not.toContain('pit');
+    logar({ perfis: { pit: 3 } });
     expect(modulosAcessiveis()).toEqual([]);
     expect(primeiroModuloAcessivel()).toBeNull();
   });

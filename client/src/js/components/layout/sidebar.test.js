@@ -282,7 +282,7 @@ describe('sidebar: Efetivo e uma seção de sistema, como os modulos', () => {
 // ano" é a primeira tela dela, e não um item solto de plataforma, porque as
 // quatro se leem JUNTAS.
 //
-// O RÓTULO é "PIT" e o MÓDULO de permissão continua 'producao': o módulo é
+// O RÓTULO é "PIT" e o MÓDULO de permissão continua 'pit': o módulo é
 // `dominio.modulo` code 4 e se chama Produção no banco. Os casos abaixo asserem
 // os dois lados de propósito, para o rótulo não arrastar o módulo junto.
 describe('sidebar: a seção PIT reúne o plano anual e o que acontece com ele', () => {
@@ -290,13 +290,13 @@ describe('sidebar: a seção PIT reúne o plano anual e o que acontece com ele',
     logar({ administrador: true });
     const { sidebar } = createSidebar({ modulo: null });
 
-    const producao = [...sidebar.querySelectorAll('.sidebar__module-header')]
+    const secaoPit = [...sidebar.querySelectorAll('.sidebar__module-header')]
       .find(h => h.textContent.includes('PIT'));
-    expect(producao).toBeTruthy();
+    expect(secaoPit).toBeTruthy();
     // O rótulo é EXATAMENTE "PIT", e a rota da home NÃO acompanhou: '#/metas' é
     // o endereço que a execução e a rastreabilidade apontam.
-    expect(producao.querySelector('.sidebar__item-label').textContent).toBe('PIT');
-    expect(producao.getAttribute('href')).toBe('#/metas');
+    expect(secaoPit.querySelector('.sidebar__item-label').textContent).toBe('PIT');
+    expect(secaoPit.getAttribute('href')).toBe('#/metas');
 
     const itens = [...sidebar.querySelectorAll(
       '[data-id="metas"], [data-id="execucao_pit"], [data-id="extra_pit"], '
@@ -331,7 +331,7 @@ describe('sidebar: a seção PIT reúne o plano anual e o que acontece com ele',
   // poderia ter apenas escondido a grade de todo mundo e o caso acima
   // continuaria verde.
   test('consulta em Producao ve a execução e a capacitação ministrada', () => {
-    logar({ perfis: { producao: 1 } });
+    logar({ perfis: { pit: 1 } });
     const { sidebar } = createSidebar({ modulo: null });
 
     const lista = ids(sidebar);
@@ -540,9 +540,9 @@ describe('sidebar: o menu de cada seção e plano, sem grupo colapsavel', () => 
   test('a sidebar nao desenha grupo nenhum, em perfil nenhum', () => {
     for (const cenario of [
       { administrador: true },
-      { perfis: { acervo: 3, mapoteca: 3, orcamento: 3, producao: 3, efetivo: 3 } },
-      { perfis: { acervo: 2, mapoteca: 2, orcamento: 2, producao: 2, efetivo: 2 } },
-      { perfis: { acervo: 1, mapoteca: 1, orcamento: 1, producao: 1, efetivo: 1 } },
+      { perfis: { acervo: 3, mapoteca: 3, orcamento: 3, pit: 3, efetivo: 3 } },
+      { perfis: { acervo: 2, mapoteca: 2, orcamento: 2, pit: 2, efetivo: 2 } },
+      { perfis: { acervo: 1, mapoteca: 1, orcamento: 1, pit: 1, efetivo: 1 } },
     ]) {
       localStorage.clear();
       logar(cenario);
@@ -577,23 +577,23 @@ const GUARDA_DA_ROTA = {
   '/rastreabilidade': gerenteLoader,
   '/rpcmtec': gerenteLoader,
   '/metas': acessoLoader,
-  '/execucao_pit': perfilLoader('producao', 'consulta'),
+  '/execucao_pit': perfilLoader('pit', 'consulta'),
   '/extra_pit': acessoLoader,
   '/aproveitamento': perfilLoader('efetivo', ['consulta', 'gerente']),
-  '/capacitacao_ministrada': perfilLoader('producao', 'consulta'),
+  '/capacitacao_ministrada': perfilLoader('pit', 'consulta'),
   '/capacitacao_recebida': perfilLoader('efetivo', 'consulta'),
-  // Atividades de campo. `producao`, e nao `acessoLoader` como '/metas' e
+  // Atividades de campo. `pit`, e nao `acessoLoader` como '/metas' e
   // '/extra_pit' ao lado: aqueles dois sao lidos por quem trabalha na mapoteca e
   // no orcamento, porque cadastrar NC ou pedido obriga a escolher a meta que
   // financia. Campo nao atravessa modulo nenhum.
-  '/campo': perfilLoader('producao', 'consulta'),
+  '/campo': perfilLoader('pit', 'consulta'),
 };
 
 const PERSONAS = [
   { nome: 'administrador', auth: { administrador: true } },
-  { nome: 'gerente em tudo', auth: { perfis: { acervo: 3, mapoteca: 3, orcamento: 3, producao: 3, efetivo: 3 } } },
-  { nome: 'operador em tudo', auth: { perfis: { acervo: 2, mapoteca: 2, orcamento: 2, producao: 2, efetivo: 2 } } },
-  { nome: 'consulta em tudo', auth: { perfis: { acervo: 1, mapoteca: 1, orcamento: 1, producao: 1, efetivo: 1 } } },
+  { nome: 'gerente em tudo', auth: { perfis: { acervo: 3, mapoteca: 3, orcamento: 3, pit: 3, efetivo: 3 } } },
+  { nome: 'operador em tudo', auth: { perfis: { acervo: 2, mapoteca: 2, orcamento: 2, pit: 2, efetivo: 2 } } },
+  { nome: 'consulta em tudo', auth: { perfis: { acervo: 1, mapoteca: 1, orcamento: 1, pit: 1, efetivo: 1 } } },
 ];
 
 /** So as rotas de PLATAFORMA: as de modulo ja tem `podeAbrirRota` cobrando. */

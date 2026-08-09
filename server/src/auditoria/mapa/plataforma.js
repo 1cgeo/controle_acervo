@@ -166,7 +166,15 @@ module.exports = {
   // o anexo (a pergunta e "o que mudou no PIT de 2026"), e a META para a linha
   // de declaracao (a pergunta e "por que a 4.2 virou 252").
 
-  'pit.exercicio': {
+  // A TABELA VIROU `pit.pit` em 2026-08-09, e a ENTIDADE continua 'exercicio'.
+  //
+  // Nao e descuido, e a chave e a entidade sao coisas diferentes de proposito:
+  // a chave e `schema.tabela`, e a entidade e o AGREGADO que a pessoa abre.
+  // `auditoria.evento.entidade` grava esse texto em cada evento, e a trilha e
+  // append-only -- medido no dump de producao de 2026-08-08, sao 15 eventos com
+  // 'exercicio'. Renomear a entidade os deixaria orfaos de ficha, e reescreve-los
+  // seria a aplicacao corrigindo a propria prova.
+  'pit.pit': {
     modulo: 'plataforma',
     entidade: 'exercicio',
     agregado: (t, linha) => linha.ano,
@@ -426,7 +434,7 @@ module.exports = {
   //
   // NAO E DE MODULO NENHUM, e mora aqui pela mesma razao de `pit` e `rpcmtec`:
   // `dominio.modulo` nao tem linha para campo. A tela e da secao PIT e cobra
-  // perfil em `producao`, que ja existia.
+  // perfil em `pit`, que ja existia.
   //
   // `campo.track_ponto` NAO TEM ENTRADA, e a ausencia e a regra. Um track do
   // dump do SAP tem cerca de 6.500 pontos, e auditar ponto a ponto faria uma
@@ -451,7 +459,7 @@ module.exports = {
     campos: {
       nome: { rotulo: 'Nome' },
       descricao: { rotulo: 'Descrição' },
-      // O ANO APONTA `pit.exercicio`, e nao e um SMALLINT solto. Trocá-lo move o
+      // O ANO APONTA `pit.pit`, e nao e um SMALLINT solto. Trocá-lo move o
       // campo de exercício, e é o vínculo com o plano do ano.
       ano: { rotulo: 'Ano do PIT', entidade: 'exercicio' },
       situacao_id: { rotulo: 'Situação', dominio: 'campo.situacao' },

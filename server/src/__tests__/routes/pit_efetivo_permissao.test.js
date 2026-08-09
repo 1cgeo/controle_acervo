@@ -38,7 +38,7 @@ const {
   generateAdminToken, generateUserToken, USER_UUID, ADMIN_UUID
 } = require('../helpers/auth')
 
-const MODULO = { acervo: 1, mapoteca: 2, orcamento: 3, producao: 4, efetivo: 5 }
+const MODULO = { acervo: 1, mapoteca: 2, orcamento: 3, pit: 4, efetivo: 5 }
 const NIVEL = { consulta: 1, operador: 2, gerente: 3 }
 
 const TIPO = { MINISTRADA: 1, RECEBIDA: 2 }
@@ -72,7 +72,7 @@ afterEach(async () => {
   await definePerfil(MODULO.acervo, NIVEL.consulta)
   await definePerfil(MODULO.mapoteca, NIVEL.operador)
   await removePerfil(MODULO.orcamento)
-  await removePerfil(MODULO.producao)
+  await removePerfil(MODULO.pit)
   await removePerfil(MODULO.efetivo)
 })
 
@@ -101,40 +101,40 @@ const ROTAS = [
   // erros de uma vez: elas exigiam GERENTE para OLHAR o que o operador LANCA, e
   // aceitavam o gerente de QUALQUER modulo (o da mapoteca lia a grade da
   // producao). Agora e consulta, no compartimento PRODUCAO.
-  ['get', '/api/metas/execucao?ano=2026', 'producao', 'consulta', null],
-  ['get', '/api/metas/execucao/resumo?ano=2026', 'producao', 'consulta', null],
-  ['get', '/api/metas/execucao/meta/1', 'producao', 'consulta', null],
-  ['get', '/api/metas/execucao/diagnostico?ano=2026', 'producao', 'consulta', null],
+  ['get', '/api/metas/execucao?ano=2026', 'pit', 'consulta', null],
+  ['get', '/api/metas/execucao/resumo?ano=2026', 'pit', 'consulta', null],
+  ['get', '/api/metas/execucao/meta/1', 'pit', 'consulta', null],
+  ['get', '/api/metas/execucao/diagnostico?ano=2026', 'pit', 'consulta', null],
   // O ENSAIO acompanha, e nao por simetria: ele devolve o planejado e o
   // realizado meta a meta, que e o dado de `/execucao`. Deixado no
   // `verifyGerente`, seria a porta pela qual o gerente da mapoteca leria a grade
   // que acabou de perder.
-  ['get', '/api/metas/execucao/ensaio?ano=2026', 'producao', 'consulta', null],
-  ['post', '/api/metas/execucao', 'producao', 'operador', { meta_id: 1, mes: 3 }],
-  ['delete', '/api/metas/execucao/1', 'producao', 'operador', null],
+  ['get', '/api/metas/execucao/ensaio?ano=2026', 'pit', 'consulta', null],
+  ['post', '/api/metas/execucao', 'pit', 'operador', { meta_id: 1, mes: 3 }],
+  ['delete', '/api/metas/execucao/1', 'pit', 'operador', null],
 
   // --- PRODUCAO: a demanda Extra-PIT (subsecao 3.3) ---
-  ['post', '/api/metas/extra', 'producao', 'operador', {}],
-  ['put', '/api/metas/extra/1', 'producao', 'operador', {}],
-  ['delete', '/api/metas/extra/1', 'producao', 'operador', null],
+  ['post', '/api/metas/extra', 'pit', 'operador', {}],
+  ['put', '/api/metas/extra/1', 'pit', 'operador', {}],
+  ['delete', '/api/metas/extra/1', 'pit', 'operador', null],
   // O VINCULO com a folha do acervo entra AQUI desde 2026-08-06. A 1.33.0 o
   // deixou com o administrador global, e o resultado era meia tarefa: quem
   // cadastrava a demanda nao podia dizer quais folhas a cumprem, e demanda sem
   // folha ligada nao conta nada na grade do PIT.
-  ['post', '/api/metas/extra/1/versoes', 'producao', 'operador', { versao_id: 1 }],
-  ['delete', '/api/metas/extra/1/versoes/1', 'producao', 'operador', null],
+  ['post', '/api/metas/extra/1/versoes', 'pit', 'operador', { versao_id: 1 }],
+  ['delete', '/api/metas/extra/1/versoes/1', 'pit', 'operador', null],
 
   // --- PRODUCAO: a capacitacao MINISTRADA (subsecao 2.6) ---
   //
   // LER desceu para CONSULTA em 2026-08-08. As seis rotas saiam do MESMO molde
   // com UMA guarda, e por isso quem pudesse LISTAR podia tambem APAGAR. O molde
   // passou a receber duas.
-  ['get', '/api/rpcmtec/capacitacao/ministrada', 'producao', 'consulta', null],
-  ['get', '/api/rpcmtec/capacitacao/ministrada/anos', 'producao', 'consulta', null],
-  ['get', '/api/rpcmtec/capacitacao/ministrada/1', 'producao', 'consulta', null],
-  ['post', '/api/rpcmtec/capacitacao/ministrada', 'producao', 'operador', {}],
-  ['put', '/api/rpcmtec/capacitacao/ministrada/1', 'producao', 'operador', {}],
-  ['delete', '/api/rpcmtec/capacitacao/ministrada/1', 'producao', 'operador', null],
+  ['get', '/api/rpcmtec/capacitacao/ministrada', 'pit', 'consulta', null],
+  ['get', '/api/rpcmtec/capacitacao/ministrada/anos', 'pit', 'consulta', null],
+  ['get', '/api/rpcmtec/capacitacao/ministrada/1', 'pit', 'consulta', null],
+  ['post', '/api/rpcmtec/capacitacao/ministrada', 'pit', 'operador', {}],
+  ['put', '/api/rpcmtec/capacitacao/ministrada/1', 'pit', 'operador', {}],
+  ['delete', '/api/rpcmtec/capacitacao/ministrada/1', 'pit', 'operador', null],
 
   // --- EFETIVO: a capacitacao RECEBIDA (subsecao 6.2) ---
   ['get', '/api/rpcmtec/capacitacao/recebida', 'efetivo', 'consulta', null],
@@ -182,7 +182,7 @@ describe('As rotas que trocaram de guarda: sem o perfil novo, 403', () => {
     const [metodo, caminho, modulo, nivel, corpo] = rota
 
     // Sem NENHUMA linha nos dois modulos novos: e o estado de toda conta hoje.
-    await removePerfil(MODULO.producao)
+    await removePerfil(MODULO.pit)
     await removePerfil(MODULO.efetivo)
 
     const res = await comoUsuario(metodo, caminho, corpo)
@@ -218,7 +218,7 @@ describe('As rotas que trocaram de guarda: com o perfil novo, entra', () => {
 // ---------------------------------------------------------------------------
 describe('Producao e Efetivo sao compartimentos', () => {
   it('operador de Producao NAO entra na capacitacao recebida nem no efetivo', async () => {
-    await definePerfil(MODULO.producao, NIVEL.operador)
+    await definePerfil(MODULO.pit, NIVEL.operador)
 
     // Controle positivo: no que e dele, ele entra. Sem esta linha, um 403 em
     // toda parte passaria por aprovacao.
@@ -242,11 +242,11 @@ describe('Producao e Efetivo sao compartimentos', () => {
 
     const ministrada = await comoUsuario('get', '/api/rpcmtec/capacitacao/ministrada')
     expect(ministrada.status).toBe(403)
-    expect(ministrada.body.message).toMatch(/módulo producao/i)
+    expect(ministrada.body.message).toMatch(/módulo pit/i)
 
     const execucao = await comoUsuario('post', '/api/metas/execucao', { meta_id: 1, mes: 3 })
     expect(execucao.status).toBe(403)
-    expect(execucao.body.message).toMatch(/módulo producao/i)
+    expect(execucao.body.message).toMatch(/módulo pit/i)
   })
 
   // A HIERARQUIA, no sentido em que ela passou a valer depois de 2026-08-08. O
@@ -400,7 +400,7 @@ describe('O operador de Producao NAO alcanca o que continua sendo do administrad
     async (_nome, [metodo, caminho, corpo]) => {
       // GERENTE em Producao, e nao operador: o nivel mais alto do modulo novo.
       // Provar com o mais baixo deixaria a pergunta em aberto.
-      await definePerfil(MODULO.producao, NIVEL.gerente)
+      await definePerfil(MODULO.pit, NIVEL.gerente)
 
       const res = await comoUsuario(metodo, caminho, corpo)
 
@@ -430,7 +430,7 @@ describe('O caminho fixa o tipo da capacitacao, e o banco confirma', () => {
     conn.none('DELETE FROM rpcmtec.capacitacao WHERE id = $1', [id])
 
   it('POST /ministrada grava tipo 1, sem tipo_id no corpo', async () => {
-    await definePerfil(MODULO.producao, NIVEL.operador)
+    await definePerfil(MODULO.pit, NIVEL.operador)
 
     const res = await comoUsuario(
       'post', '/api/rpcmtec/capacitacao/ministrada', corpo('Curso da rota ministrada')
@@ -518,7 +518,7 @@ describe('O caminho fixa o tipo da capacitacao, e o banco confirma', () => {
     const idM = await semear('/api/rpcmtec/capacitacao/ministrada', 'So na ministrada')
     const idR = await semear('/api/rpcmtec/capacitacao/recebida', 'So na recebida')
 
-    await definePerfil(MODULO.producao, NIVEL.operador)
+    await definePerfil(MODULO.pit, NIVEL.operador)
     const lista = await comoUsuario('get', '/api/rpcmtec/capacitacao/ministrada?ano=2026')
     expect(lista.status).toBe(200)
 

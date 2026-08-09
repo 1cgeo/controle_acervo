@@ -35,7 +35,7 @@ import './pit.css';
  *
  * AS TRÊS CAMADAS, de cima para baixo, na ordem do fluxo:
  *
- *   EXERCÍCIO   o ano (`pit.exercicio`). Primeiro passo: sem ele o ano não
+ *   EXERCÍCIO   o ano (`pit.pit`). Primeiro passo: sem ele o ano não
  *               aceita meta nem revisão. Em elaboração já aceita alteração, e é
  *               isso que permite montar o PIT de 2027 durante 2026.
  *   REVISÕES    R0, R1, e no máximo um rascunho (índice único no banco). A que
@@ -284,7 +284,7 @@ export async function renderPitAno(container, _ctx) {
 
     if (!exercicio) {
       // SEM EXERCÍCIO o ano é um beco sem saída: `pit.meta` e `pit.revisao` têm
-      // chave estrangeira para `pit.exercicio(ano)`. A frase diz o que fazer, em
+      // chave estrangeira para `pit.pit(ano)`. A frase diz o que fazer, em
       // vez de deixar a pessoa descobrir pelo 400.
       blocoExercicio.replaceChildren(
         el('h2', { className: 'pit-exercicio__titulo', textContent: `Exercício ${ano}` }),

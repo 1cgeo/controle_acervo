@@ -118,8 +118,8 @@ describe('verifyPerfil: erro de programacao falha cedo', () => {
 
   test('modulo desconhecido estoura do mesmo jeito', () => {
     // O EXEMPLO JA MUDOU DUAS VEZES, e isso conta uma historia: era 'acervo' no
-    // repo de origem (onde so havia orcamento), virou 'producao' na fusao, e
-    // 'producao' virou modulo de verdade na 1.33.0. O exemplo agora e um nome
+    // repo de origem (onde so havia orcamento), virou 'pit' na fusao, e
+    // 'pit' virou modulo de verdade na 1.33.0. O exemplo agora e um nome
     // que nao descreve nenhum trabalho da Divisao, para nao virar modulo amanha.
     expect(() => verifyPerfil('consulta', 'jabuticaba')).toThrow(/Módulo desconhecido/)
   })
@@ -128,11 +128,11 @@ describe('verifyPerfil: erro de programacao falha cedo', () => {
     expect(() => verifyPerfil('consulta', 'acervo')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'mapoteca')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'orcamento')).not.toThrow()
-    expect(() => verifyPerfil('consulta', 'producao')).not.toThrow()
+    expect(() => verifyPerfil('consulta', 'pit')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'efetivo')).not.toThrow()
     expect(() => verifyPerfil('consulta', 'equipamento')).not.toThrow()
     expect(verifyPerfil.MODULO).toEqual({
-      acervo: 1, mapoteca: 2, orcamento: 3, producao: 4, efetivo: 5, equipamento: 6
+      acervo: 1, mapoteca: 2, orcamento: 3, pit: 4, efetivo: 5, equipamento: 6
     })
   })
 })

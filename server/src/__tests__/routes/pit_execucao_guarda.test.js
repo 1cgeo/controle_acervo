@@ -18,8 +18,8 @@
 //              Produção não lia.
 //
 // A régua nova é a dos três módulos: CONSULTA lê, OPERADOR lança, GERENTE
-// responde pela área. Aqui isso vira `verifyPerfil('consulta', 'producao')` na
-// leitura, com a escrita intocada em `verifyPerfil('operador', 'producao')`.
+// responde pela área. Aqui isso vira `verifyPerfil('consulta', 'pit')` na
+// leitura, com a escrita intocada em `verifyPerfil('operador', 'pit')`.
 //
 // O QUE ESTE ARQUIVO PROVA, e por que ele não mocka o login: quem decide é o
 // `verifyPerfil`, e ele lê o perfil do BANCO a cada requisição, e não do token.
@@ -44,7 +44,7 @@ const { pitRoute } = require('../../pit')
 
 const UUID = '11111111-1111-1111-1111-111111111111'
 
-// dominio.modulo: 4 é producao. O número aparece aqui de propósito, e não vem de
+// dominio.modulo: 4 é pit. O número aparece aqui de propósito, e não vem de
 // `verify_perfil.js`: importar o mapa de lá faria o teste concordar com o fonte
 // mesmo se o fonte trocasse de módulo.
 const MODULO_PRODUCAO = 4
@@ -94,7 +94,7 @@ describe('Leitura da grade do PIT: sem perfil em Produção, não entra', () => 
       // A mensagem NOMEIA o nível e o módulo que faltaram. Sem checar o nome, um
       // 403 vindo de outro middleware (ou do módulo errado, que é a armadilha do
       // default 'acervo' do verifyPerfil) satisfaria o caso.
-      expect(res.body.message).toMatch(/perfil consulta no módulo producao/i)
+      expect(res.body.message).toMatch(/perfil consulta no módulo pit/i)
     }
   )
 
@@ -202,6 +202,6 @@ describe('A ESCRITA da execução continua sendo do operador', () => {
     const res = await request(app)[metodo](caminho).set('Authorization', token())
 
     expect(res.status).toBe(403)
-    expect(res.body.message).toMatch(/perfil operador no módulo producao/i)
+    expect(res.body.message).toMatch(/perfil operador no módulo pit/i)
   })
 })

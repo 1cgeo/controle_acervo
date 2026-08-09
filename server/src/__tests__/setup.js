@@ -115,14 +115,14 @@ const montarTemplate = async (master) => {
   `)
 
   // Os EXERCICIOS do PIT entram na semente, quando `pit.meta` e
-  // `pit.demanda_extra` passaram a apontar `pit.exercicio`. Sem eles, qualquer
+  // `pit.demanda_extra` passaram a apontar `pit.pit`. Sem eles, qualquer
   // teste que cadastre meta ou demanda em 2025/2026 morre na chave estrangeira,
   // e o defeito aparece como 500 num teste que nao fala de exercicio nenhum.
   //
   // Nao entram em `cleanTestData`: como o usuario e o volume, sao semente, e o
   // teste que quiser exercicio ENCERRADO cria o proprio ano.
   await client.query(`
-    INSERT INTO pit.exercicio (ano, situacao_id, usuario_cadastramento_uuid)
+    INSERT INTO pit.pit (ano, situacao_id, usuario_cadastramento_uuid)
     VALUES (2025, 2, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'),
            (2026, 2, 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
   `)

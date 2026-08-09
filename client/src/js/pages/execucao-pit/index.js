@@ -62,7 +62,7 @@ export async function renderExecucaoPit(container, _ctx) {
   // do administrador global. `temPerfil` já devolve true para o administrador.
   // O servidor cobra o mesmo em POST e DELETE /metas/execucao; aqui é só
   // ergonomia, para o botão não existir só para levar 403.
-  const podeEscrever = temPerfil('operador', 'producao');
+  const podeEscrever = temPerfil('operador', 'pit');
 
   const hoje = new Date();
   let anoSelecionado = hoje.getFullYear();

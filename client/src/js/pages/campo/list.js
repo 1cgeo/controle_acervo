@@ -58,11 +58,11 @@ export async function renderCampo(container, ctx) {
   // ISTO É ERGONOMIA, e não a guarda: quem barra escrita é o `verifyPerfil` no
   // servidor, que lê o perfil do BANCO a cada requisição. Estes dois só escondem
   // botão que responderia 403.
-  const podeEscrever = temPerfil('operador', 'producao');
+  const podeEscrever = temPerfil('operador', 'pit');
   // GERENTE para apagar, e não operador. O `ON DELETE CASCADE` leva as fotos,
   // os vídeos, os trajetos e os vínculos junto: apagar um campo de 2019 destrói
   // as únicas cópias daquelas fotos.
-  const podeApagar = temPerfil('gerente', 'producao');
+  const podeApagar = temPerfil('gerente', 'pit');
 
   // A ROTA MANDA. A rastreabilidade aponta uma ficha (#/campo/12), e a tela
   // chega com ela aberta.

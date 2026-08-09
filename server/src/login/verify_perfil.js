@@ -45,7 +45,7 @@ const MODULO = {
   acervo: 1,
   mapoteca: 2,
   orcamento: 3,
-  producao: 4,
+  pit: 4,
   efetivo: 5,
   equipamento: 6
 };

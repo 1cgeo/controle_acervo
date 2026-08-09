@@ -107,12 +107,12 @@ describe('router: guardas', () => {
   // A consulta em Producao LE a execucao do PIT e a capacitacao ministrada, que
   // ate a regua nova pediam gerente e operador. Ler a grade nao move nada.
   test('consulta em Producao abre as telas de leitura do modulo', () => {
-    logar({ perfis: { producao: 1 } });
-    expect(perfilLoader('producao', 'consulta')()).toBe(true);
+    logar({ perfis: { pit: 1 } });
+    expect(perfilLoader('pit', 'consulta')()).toBe(true);
   });
 
   test('consulta em Producao nao vira acesso ao Efetivo', () => {
-    logar({ perfis: { producao: 1 } });
+    logar({ perfis: { pit: 1 } });
     expect(perfilLoader('efetivo', 'consulta')()).toBe('/unauthorized');
   });
 
@@ -124,7 +124,7 @@ describe('router: guardas', () => {
     logar({ perfis: { mapoteca: 3 } });
     expect(gerenteLoader()).toBe(true);
 
-    logar({ perfis: { producao: 3 } });
+    logar({ perfis: { pit: 3 } });
     expect(gerenteLoader()).toBe(true);
   });
 
@@ -163,7 +163,7 @@ describe('router: rota raiz', () => {
   // tivesse perfil SO num deles entraria e cairia em /unauthorized, com o perfil
   // novo funcionando em toda rota menos na porta de entrada.
   test('so com perfil em Producao, a raiz abre o plano anual', () => {
-    logar({ perfis: { producao: 2 } });
+    logar({ perfis: { pit: 2 } });
     expect(rotaRaiz()).toBe('/metas');
   });
 
@@ -187,7 +187,7 @@ describe('router: rota raiz', () => {
   // O modulo do registry VENCE: quem tem os dois entra pelo modulo, que e onde
   // ele tem tela propria com dashboard.
   test('com modulo do registry E perfil em Producao, o modulo ganha', () => {
-    logar({ perfis: { orcamento: 1, producao: 2 } });
+    logar({ perfis: { orcamento: 1, pit: 2 } });
     expect(rotaRaiz()).toBe('/orcamento/dashboard');
   });
 });

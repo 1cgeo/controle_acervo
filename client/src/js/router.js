@@ -204,7 +204,7 @@ export function rotaRaiz() {
   if (modulo) return rotaInicial(modulo);
   // '/metas' abre para qualquer pessoa logada, entao qualquer nivel em Producao
   // basta para entrar por ela.
-  if (temPerfil('consulta', 'producao')) return '/metas';
+  if (temPerfil('consulta', 'pit')) return '/metas';
   // Em Efetivo, QUALQUER NIVEL entra pelo dashboard. Ele e a tela de leitura da
   // secao, e '#/acessos' cobra so consulta desde que a regua nova valeu.
   //

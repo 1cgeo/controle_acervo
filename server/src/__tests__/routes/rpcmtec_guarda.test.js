@@ -132,7 +132,7 @@ describe('LER o RPCMTec é de QUALQUER gerente', () => {
 // escrita à mão, e não derivada da estrutura, porque é justamente o mapa que se
 // quer provar: derivá-la dele faria o teste concordar com qualquer troca.
 const SUBSECOES = [
-  ['2.1', 'producao'],
+  ['2.1', 'pit'],
   ['2.7', 'acervo'],
   ['3.1', 'mapoteca'],
   ['4.2', 'orcamento'],

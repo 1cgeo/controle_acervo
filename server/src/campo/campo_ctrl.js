@@ -25,7 +25,7 @@ const FK_VIOLATION = '23503'
  *           `usuario_uuid` que nao existe ou uma `versao_id` que nao existe
  *
  * O DO ANO E O QUE MAIS VAI APARECER, e e deliberado. `campo.ano` referencia
- * `pit.exercicio`, e o dump do SAP tem campo de 2013 a 2026 enquanto o PIT so
+ * `pit.pit`, e o dump do SAP tem campo de 2013 a 2026 enquanto o PIT so
  * tem 2025 e 2026: sem o exercicio cadastrado, o campo daquele ano e RECUSADO.
  * A mensagem abaixo e o que transforma essa recusa num pedido claro em vez de
  * um 500.
@@ -67,7 +67,7 @@ controller.getDominio = async () => {
     // oferecer o exercicio vigente mesmo antes do primeiro campo dele.
     await t.any(
       `SELECT e.ano, s.nome AS situacao
-         FROM pit.exercicio AS e
+         FROM pit.pit AS e
          INNER JOIN dominio.situacao_exercicio AS s ON s.code = e.situacao_id
         ORDER BY e.ano DESC`
     )

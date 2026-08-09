@@ -25,7 +25,7 @@ const AREA = 'POLYGON((-53.5 -29.5,-52.5 -29.5,-52.5 -29.2,-53.5 -29.2,-53.5 -29
 
 const criarExercicio = (ano = ANO) =>
   conn.none(
-    `INSERT INTO pit.exercicio (ano, situacao_id, usuario_cadastramento_uuid)
+    `INSERT INTO pit.pit (ano, situacao_id, usuario_cadastramento_uuid)
      VALUES ($1, 2, $2) ON CONFLICT (ano) DO NOTHING`,
     [ano, ADMIN_UUID]
   )
@@ -114,7 +114,7 @@ describe('campo: o que o DDL recusa', () => {
     )).rejects.toThrow(/geom/)
   })
 
-  // O ANO APONTA `pit.exercicio` DE VERDADE, e é a decisão que contraria o
+  // O ANO APONTA `pit.pit` DE VERDADE, e é a decisão que contraria o
   // precedente de `rpcmtec.capacitacao.ano` (um SMALLINT solto). Sem o
   // exercício, o campo daquele ano é RECUSADO -- e é exatamente o
   // comportamento desejado: a carga do SAP cria os dez exercícios que faltam.

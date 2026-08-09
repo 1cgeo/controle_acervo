@@ -130,7 +130,7 @@ router.use("/equipamento", equipamentoRoute);
 // do RPCMTec.
 //
 // PREFIXO PRÓPRIO, MAS NÃO É MÓDULO. `/campo` não tem linha em `dominio.modulo`:
-// a autorização dela cobra `producao`, o módulo code 4, que já existia. É o
+// a autorização dela cobra `pit`, o módulo code 4, que já existia. É o
 // mesmo arranjo de `/metas` e `/extra_pit`, que também são telas da seção PIT
 // com rota de plataforma. Um módulo novo obrigaria a conceder perfil de novo a
 // quem já responde pela produção, para ver o trabalho que ela promete.

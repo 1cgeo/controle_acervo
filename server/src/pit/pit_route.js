@@ -98,7 +98,7 @@ router.get(
 // atrasado?" não se responde um mês por vez.
 router.get(
   '/execucao',
-  verifyPerfil('consulta', 'producao'),
+  verifyPerfil('consulta', 'pit'),
   schemaValidation({ query: pitSchema.gradeQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.grade(req.query.ano)
@@ -111,7 +111,7 @@ router.get(
 
 router.get(
   '/execucao/resumo',
-  verifyPerfil('consulta', 'producao'),
+  verifyPerfil('consulta', 'pit'),
   schemaValidation({ query: pitSchema.resumoQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.resumoDoAno(req.query.ano, req.query.mes)
@@ -124,7 +124,7 @@ router.get(
 
 router.get(
   '/execucao/meta/:metaId',
-  verifyPerfil('consulta', 'producao'),
+  verifyPerfil('consulta', 'pit'),
   schemaValidation({ params: pitSchema.metaIdParams }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.listarDaMeta(req.params.metaId)
@@ -146,7 +146,7 @@ router.get(
 // meta a meta, que é o dado de `/execucao`.
 router.get(
   '/execucao/diagnostico',
-  verifyPerfil('consulta', 'producao'),
+  verifyPerfil('consulta', 'pit'),
   schemaValidation({ query: pitSchema.gradeQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.diagnostico(req.query.ano)
@@ -164,7 +164,7 @@ router.get(
 // guardar uma que não diz nada.
 router.post(
   '/execucao',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({ body: pitSchema.salvarExecucao }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.salvar(req.body, req.usuarioUuid, req.contexto)
@@ -177,7 +177,7 @@ router.post(
 
 router.delete(
   '/execucao/:id',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({ params: pitSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     await execucaoCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
@@ -245,7 +245,7 @@ router.get(
 
 router.post(
   '/extra',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({ body: pitSchema.criarDemandaExtra }),
   asyncHandler(async (req, res, next) => {
     const dados = await extraCtrl.criar(req.body, req.usuarioUuid, req.contexto)
@@ -258,7 +258,7 @@ router.post(
 
 router.put(
   '/extra/:id',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({
     params: pitSchema.idParams,
     body: pitSchema.atualizarDemandaExtra
@@ -276,7 +276,7 @@ router.put(
 
 router.delete(
   '/extra/:id',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({ params: pitSchema.idParams }),
   asyncHandler(async (req, res, next) => {
     await extraCtrl.deletar(req.params.id, req.usuarioUuid, req.contexto)
@@ -346,7 +346,7 @@ router.get(
 
 router.post(
   '/extra/:id/versoes',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({
     params: pitSchema.idParams,
     body: pitSchema.associarVersaoDemandaExtra
@@ -364,7 +364,7 @@ router.post(
 
 router.delete(
   '/extra/:id/versoes/:versao_id',
-  verifyPerfil('operador', 'producao'),
+  verifyPerfil('operador', 'pit'),
   schemaValidation({ params: pitSchema.versaoDemandaExtraParams }),
   asyncHandler(async (req, res, next) => {
     await extraCtrl.desassociarVersao(
@@ -394,7 +394,7 @@ router.delete(
 // só por nível, e um endereço fora dela reabre o compartimento.
 router.get(
   '/execucao/ensaio',
-  verifyPerfil('consulta', 'producao'),
+  verifyPerfil('consulta', 'pit'),
   schemaValidation({ query: pitSchema.ensaioQuery }),
   asyncHandler(async (req, res, next) => {
     const dados = await execucaoCtrl.ensaio(req.query.ano, req.query.meta_id)

@@ -12,7 +12,7 @@ const { montarContexto } = require('./contexto')
  * operador e consulta.
  *
  * QUEM O USA, desde 2026-08-08: a LEITURA do RPCMTec. A grade da execução do PIT
- * saiu dele no mesmo dia (ela virou `verifyPerfil('consulta', 'producao')`,
+ * saiu dele no mesmo dia (ela virou `verifyPerfil('consulta', 'pit')`,
  * porque tem módulo próprio), e ele ficou sem chamador por algumas horas -- foi
  * reaproveitado, e não recriado, quando o chefe decidiu que o gerente de
  * qualquer módulo lê o relatório mensal inteiro. Um segundo middleware com a

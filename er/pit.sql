@@ -42,7 +42,23 @@ COMMENT ON SCHEMA pit IS
 -- `rpcmtec.capacitacao.ano` NÃO aponta para cá, e foi medido: ela tem 2013,
 -- 2018, 2019, 2022, 2023, 2024, 2025 e 2026, e o PIT só tem 2025 e 2026.
 -- Capacitação existe fora do PIT, e o modelo continua dizendo isso.
-CREATE TABLE pit.exercicio(
+--
+-- ELA SE CHAMAVA `pit.exercicio` ATÉ 2026-08-09, e o chefe a renomeou. O PIT é o
+-- documento do ANO, então `pit.pit` é a linha do documento e `pit.meta` é o que
+-- ele promete. `pit.exercicio` obrigava a ler "exercício" como sinônimo de PIT
+-- em toda consulta.
+--
+-- CUIDADO COM O HOMÔNIMO DO SAP: lá, `macrocontrole.pit` é a META, e não o ano.
+-- Ela corresponde ao `pit.meta` daqui, e a correspondência está registrada em
+-- `docs/decisoes.md`. Quando o core de produção atravessar, as duas tabelas de
+-- nome `pit` vão existir no mesmo banco querendo dizer coisas diferentes.
+--
+-- A ENTIDADE DE AUDITORIA CONTINUA 'exercicio', e não acompanhou o nome da
+-- tabela. `auditoria.evento.entidade` é TEXTO gravado no evento, e a trilha é
+-- append-only: medido no dump de produção de 2026-08-08, há 15 eventos com esse
+-- valor. Renomear a entidade os deixaria órfãos de ficha, e reescrevê-los seria
+-- a aplicação corrigindo a própria prova.
+CREATE TABLE pit.pit(
   ano SMALLINT NOT NULL PRIMARY KEY,
   situacao_id SMALLINT NOT NULL DEFAULT 2 REFERENCES dominio.situacao_exercicio (code),
   observacao TEXT,
@@ -52,7 +68,7 @@ CREATE TABLE pit.exercicio(
   usuario_modificacao_uuid UUID REFERENCES dgeo.usuario (uuid)
 );
 
-COMMENT ON TABLE pit.exercicio IS
+COMMENT ON TABLE pit.pit IS
     'O ano do PIT. Existe para o ano deixar de ser um SMALLINT solto e para o encerramento ser um ato.';
 
 -- A META DO ANO: o GRUPO numerado que o documento assinado nomeia.
@@ -87,7 +103,7 @@ COMMENT ON TABLE pit.exercicio IS
 -- O TRABALHO (versão, pedido, capacitação) aponta `pit.meta_item`.
 CREATE TABLE pit.meta(
   id BIGSERIAL NOT NULL PRIMARY KEY,
-  ano SMALLINT NOT NULL REFERENCES pit.exercicio (ano),
+  ano SMALLINT NOT NULL REFERENCES pit.pit (ano),
   numero_meta SMALLINT NOT NULL,
   -- O NOME DO GRUPO, como o documento o escreve. É IDENTIDADE, e não declaração:
   -- a tabela de itens do documento não o repete, e revisão nenhuma o altera.
@@ -187,7 +203,7 @@ CREATE INDEX idx_meta_item_meta ON pit.meta_item (meta_id);
 
 CREATE TABLE pit.revisao(
   id BIGSERIAL NOT NULL PRIMARY KEY,
-  ano SMALLINT NOT NULL REFERENCES pit.exercicio (ano),
+  ano SMALLINT NOT NULL REFERENCES pit.pit (ano),
   -- O código é o da DSG: 'R0' é o plano original e 'R1' a primeira revisão.
   codigo VARCHAR(20) NOT NULL,
   -- A data do fecho do documento, que NÃO é a da assinatura digital: o R1 de
@@ -500,7 +516,7 @@ CREATE INDEX idx_execucao_meta ON pit.execucao (meta_id);
 -- única coisa que esta tabela guarda.
 CREATE TABLE pit.demanda_extra(
   id BIGSERIAL NOT NULL PRIMARY KEY,
-  ano SMALLINT NOT NULL REFERENCES pit.exercicio (ano),
+  ano SMALLINT NOT NULL REFERENCES pit.pit (ano),
   demandante VARCHAR(255) NOT NULL,
   tipo_produto VARCHAR(255) NOT NULL,
   quantidade INTEGER NOT NULL CHECK (quantidade > 0),

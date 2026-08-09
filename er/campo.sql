@@ -24,7 +24,7 @@ BEGIN;
 --      espelhando `rpcmtec.capacitacao_militar`, que ja resolveu este mesmo
 --      problema quando a capacitacao atravessou.
 --
--- CARREGA DEPOIS DE `pit` E DE `acervo`: o ano aponta `pit.exercicio` e o
+-- CARREGA DEPOIS DE `pit` E DE `acervo`: o ano aponta `pit.pit` e o
 -- vinculo aponta `acervo.versao`. O PostGIS e declarado aqui porque toda a
 -- geometria deste arquivo depende dele e a ordem de `create_config.js` nao
 -- garante que outro ja o declarou (mesma convencao de `er/limites.sql`).
@@ -80,7 +80,7 @@ INSERT INTO campo.categoria (code, nome) VALUES
 -- O campo
 -- ---------------------------------------------------------------------------
 --
--- `ano` APONTA `pit.exercicio`, e isso e uma decisao do chefe de 2026-08-08,
+-- `ano` APONTA `pit.pit`, e isso e uma decisao do chefe de 2026-08-08,
 -- tomada CONTRA o precedente ao lado: `rpcmtec.capacitacao.ano` e um SMALLINT
 -- solto justamente porque a capacitacao tem anos que o PIT nao tem. Campo esta
 -- na mesma situacao de fato (os 54 do dump vao de 2013 a 2026, e o PIT so tem
@@ -108,7 +108,7 @@ CREATE TABLE campo.campo(
   id BIGSERIAL NOT NULL PRIMARY KEY,
   nome VARCHAR(255) NOT NULL UNIQUE,
   descricao TEXT,
-  ano SMALLINT NOT NULL REFERENCES pit.exercicio (ano),
+  ano SMALLINT NOT NULL REFERENCES pit.pit (ano),
   situacao_id SMALLINT NOT NULL REFERENCES campo.situacao (code),
   data_inicio DATE NOT NULL,
   data_fim DATE NOT NULL,

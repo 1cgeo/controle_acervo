@@ -19,7 +19,7 @@
 // Apagar FOTO e TRAJETO continua no operador, e não é incoerência: quem subiu o
 // arquivo errado há um minuto tem de poder tirá-lo, e o alcance é uma linha.
 //
-// O MÓDULO É `producao`, E NÃO UM MÓDULO NOVO. `dominio.modulo` continua com
+// O MÓDULO É `pit`, E NÃO UM MÓDULO NOVO. `dominio.modulo` continua com
 // seis linhas: a tela mora na seção PIT, e campo é o trabalho que o PIT promete.
 //
 // A ARMADILHA QUE ISTO GUARDA, e ela é do CLAUDE.md: o default de
@@ -39,7 +39,7 @@ const {
 } = require('../helpers/auth')
 const { SITUACAO_CAMPO, CATEGORIA_CAMPO } = require('../../utils/domain_constants')
 
-const MODULO = { producao: 4 }
+const MODULO = { pit: 4 }
 const NIVEL = { consulta: 1, operador: 2, gerente: 3 }
 
 let app
@@ -51,7 +51,7 @@ beforeAll(async () => {
 // A CONCESSÃO SE DESFAZ AQUI, e nos dois lados.
 //
 // `cleanTestData` apaga `dgeo.usuario_perfil` só de quem está FORA da semente, e
-// o usuário de teste está DENTRO: a linha de `producao` ficaria e vazaria para
+// o usuário de teste está DENTRO: a linha de `pit` ficaria e vazaria para
 // todo arquivo que rodasse depois neste worker. Já mordeu três vezes neste
 // projeto em 2026-08-08, e o sintoma aparece longe da causa.
 //
@@ -61,7 +61,7 @@ const semPerfilEmProducao = () =>
   conn.none(
     `DELETE FROM dgeo.usuario_perfil
       WHERE modulo_id = $2 AND usuario_id = (SELECT id FROM dgeo.usuario WHERE uuid = $1)`,
-    [USER_UUID, MODULO.producao]
+    [USER_UUID, MODULO.pit]
   )
 
 beforeEach(semPerfilEmProducao)
@@ -77,7 +77,7 @@ const daPerfil = (nivel) =>
     `INSERT INTO dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id)
      SELECT id, $2, $3 FROM dgeo.usuario WHERE uuid = $1
      ON CONFLICT (usuario_id, modulo_id) DO UPDATE SET perfil_id = EXCLUDED.perfil_id`,
-    [USER_UUID, MODULO.producao, nivel]
+    [USER_UUID, MODULO.pit, nivel]
   )
 
 const usuario = () => generateUserToken()
@@ -88,7 +88,7 @@ const usuario = () => generateUserToken()
 // existam, senão o 404 se confundiria com a recusa por perfil.
 //
 // O ANO PRECISA DE EXERCÍCIO NO PIT, e é a primeira coisa que o cenário monta:
-// `campo.ano` referencia `pit.exercicio`, e sem a linha do ano a chave
+// `campo.ano` referencia `pit.pit`, e sem a linha do ano a chave
 // estrangeira recusaria o INSERT com um erro que se leria como falha do teste.
 
 const AREA = 'POLYGON((-53 -29,-52 -29,-52 -28,-53 -28,-53 -29))'
@@ -99,7 +99,7 @@ const semear = async () => {
   cenario += 1
 
   await conn.none(
-    `INSERT INTO pit.exercicio (ano, situacao_id, usuario_cadastramento_uuid)
+    `INSERT INTO pit.pit (ano, situacao_id, usuario_cadastramento_uuid)
      VALUES ($1, 2, $2) ON CONFLICT (ano) DO NOTHING`,
     [ANO, ADMIN_UUID]
   )
@@ -244,7 +244,7 @@ describe('quem tem UM nível abaixo do piso leva 403', () => {
     // A MENSAGEM NOMEIA O MÓDULO, e é ela que pega a armadilha do default: com
     // o segundo argumento esquecido, a frase diria 'no módulo acervo'.
     expect(res.body.message).toMatch(
-      new RegExp(`perfil ${piso} no módulo producao`, 'i')
+      new RegExp(`perfil ${piso} no módulo pit`, 'i')
     )
   })
 })
@@ -292,7 +292,7 @@ describe('o operador LANÇA e corrige, mas não APAGA o campo', () => {
       .set('Authorization', usuario())
 
     expect(res.status).toBe(403)
-    expect(res.body.message).toMatch(/perfil gerente no módulo producao/i)
+    expect(res.body.message).toMatch(/perfil gerente no módulo pit/i)
 
     const sobrou = await conn.one(
       'SELECT count(*)::int AS n FROM campo.imagem WHERE campo_id = $1',

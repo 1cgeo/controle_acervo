@@ -22,7 +22,7 @@ import './campo.css';
  * `lerGeojson` valida antes de o formulário guardar o polígono.
  *
  * O ANO É UM SELETOR DE EXERCÍCIO DO PIT, e não um número livre. `campo.ano`
- * referencia `pit.exercicio`, por decisão do chefe em 2026-08-08: o ano do campo
+ * referencia `pit.pit`, por decisão do chefe em 2026-08-08: o ano do campo
  * é o ano do plano de verdade, e não um número que só por acaso coincide. Ano
  * sem exercício cadastrado é RECUSADO pelo banco, e a mensagem do servidor
  * manda cadastrar o exercício em "PIT do ano".

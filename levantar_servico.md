@@ -49,7 +49,8 @@ acervo ficam no volume descrito na coluna `acervo.volume_armazenamento.volume`, 
    Sobe um processo PM2, `controle-acervo`, na porta de `PORT`. A interface fica em `/`.
 3. Auto-start no boot: `pm2 startup` (uma vez, como admin) mais `pm2 save`.
 
-O banco precisa estar na versão **1.25.0**, que é o `MIN_DATABASE_VERSION` de `server/src/config.js`.
+O banco precisa estar na versão **1.50.0**, que é o `MIN_DATABASE_VERSION` de `server/src/config.js`.
+Este número ENVELHECE: leia a constante no arquivo antes de confiar nele.
 O server recusa subir com banco abaixo do piso (`semver.lt`), e aceita banco à frente. Migrações em
 `migrations/`, aplicadas na ordem da VERSÃO que cada arquivo carimba (ver o `README.md`).
 
