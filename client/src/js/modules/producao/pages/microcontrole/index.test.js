@@ -13,10 +13,17 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 //
 //  - AS SEÇÕES CARREGAM SEPARADAS, cada uma com o próprio `catch`. É a regra que
 //    mordeu três vezes em 2026-08-08: num `Promise.all` a falha de uma derruba a
-//    TELA INTEIRA e a mensagem que sobra é a dela. Aqui as chamadas têm guardas
-//    e BANCOS diferentes -- a lista de lotes é `consulta` no banco principal, a
-//    telemetria é `gerente` num banco separado que pode nem existir --, então a
-//    falha de uma não pode apagar o que a outra trouxe;
+//    TELA INTEIRA e a mensagem que sobra é a dela. Aqui o piso é o MESMO nas três
+//    chamadas (`consulta` em `producao`) e o que difere é o BANCO: a lista de
+//    lotes vem do principal e a telemetria vem de um banco separado que pode nem
+//    existir, então a falha de uma não pode apagar o que a outra trouxe;
+//
+//  - O FILTRO DE LOTE PRECISA CHEGAR NA REQUISIÇÃO. Até 2026-08-09 a lista vinha
+//    de `/acompanhamento/dashboard/execucao`, que devolve `lote_id` e `lote`, e a
+//    tela lia `id` e `nome`: toda opção nascia "Lote undefined" e o pedido saía
+//    SEM lote, mostrando a produção inteira como se fosse a do lote escolhido. O
+//    fixture abaixo é a forma REAL de `/acompanhamento/lotes`, e um caso prende
+//    o `loteId` na chamada seguinte -- era o teste que faltava;
 //
 //  - O 503 DA TELEMETRIA APARECE COMO A FRASE DO SERVIDOR, dentro da seção. Ele
 //    distingue "não configurado" de "fora do ar", e é a única coisa que manda
@@ -29,7 +36,7 @@ const servicos = vi.hoisted(() => ({
   getResumoFeicao: vi.fn(),
   getCoberturaTela: vi.fn(),
   getAproveitamentoTela: vi.fn(),
-  getLotesEmExecucao: vi.fn(),
+  getLotesComProducao: vi.fn(),
 }));
 
 vi.mock('@services/microcontrole-service.js', () => ({
@@ -38,8 +45,8 @@ vi.mock('@services/microcontrole-service.js', () => ({
   getAproveitamentoTela: servicos.getAproveitamentoTela,
 }));
 
-vi.mock('@services/producao-acompanhamento-service.js', () => ({
-  getLotesEmExecucao: servicos.getLotesEmExecucao,
+vi.mock('@services/producao-service.js', () => ({
+  getLotesComProducao: servicos.getLotesComProducao,
 }));
 
 const { renderMicrocontrole, amostrasPorOperador } = await import('./index.js');
@@ -68,6 +75,14 @@ const RESUMO = {
     },
   ],
 };
+
+// A FORMA REAL DE `GET /api/acompanhamento/lotes`: `id`, `nome` e `projeto`, que
+// é o que `lotesComProducao` seleciona. Escrever aqui uma forma que o servidor
+// não produz é o que deixava a suíte verde com o filtro quebrado.
+const LOTES = [
+  { id: 7, nome: 'Lote Alfa', pit: 2026, projeto: 'Carta Topográfica' },
+  { id: 9, nome: 'Lote Bravo', pit: 2026, projeto: 'Carta Topográfica' },
+];
 
 const COBERTURA = {
   type: 'FeatureCollection',
@@ -108,11 +123,16 @@ function montar() {
 /** Deixa as promessas pendentes da carga inicial resolverem. */
 const assentar = () => new Promise((resolver) => { setTimeout(resolver, 0); });
 
+/** O seletor de lote, achado pelo placeholder dele (o outro select é o de operador). */
+const seletorDeLote = (container) => [...container.querySelectorAll('select')].find(
+  (s) => [...s.options].some((o) => o.textContent === 'Todos os lotes'),
+);
+
 beforeEach(() => {
   servicos.getResumoFeicao.mockResolvedValue(RESUMO);
   servicos.getCoberturaTela.mockResolvedValue(COBERTURA);
   servicos.getAproveitamentoTela.mockResolvedValue([]);
-  servicos.getLotesEmExecucao.mockResolvedValue([{ id: 7, nome: 'Lote Teste' }]);
+  servicos.getLotesComProducao.mockResolvedValue(LOTES);
 });
 
 afterEach(() => {
@@ -171,10 +191,67 @@ describe('microcontrole: a tela mede o trabalho', () => {
     cleanup();
   });
 
+  test('a lista de lotes vira opções com nome, e não "Lote undefined"', async () => {
+    const { container, cleanup } = montar();
+    await assentar();
+
+    const seletorLote = seletorDeLote(container);
+    const opcoes = [...seletorLote.options].map((o) => o.textContent);
+
+    expect(opcoes).toEqual([
+      'Todos os lotes',
+      'Lote Alfa (Carta Topográfica)',
+      'Lote Bravo (Carta Topográfica)',
+    ]);
+    // A rota de execução devolve `lote_id` e `lote`: ler `id` e `nome` de lá
+    // daria três opções indistinguíveis, todas "Lote undefined".
+    expect(opcoes.join(' ')).not.toMatch(/undefined/);
+    cleanup();
+  });
+
+  test('o lote escolhido chega nas DUAS chamadas do filtro', async () => {
+    const { container, cleanup } = montar();
+    await assentar();
+
+    servicos.getResumoFeicao.mockClear();
+    servicos.getCoberturaTela.mockClear();
+
+    const seletorLote = seletorDeLote(container);
+    seletorLote.value = '9';
+    seletorLote.dispatchEvent(new Event('change'));
+
+    // O "Aplicar" é o que dispara: o filtro é um `form`, e o submit dele recarrega
+    // as duas seções.
+    container.querySelector('.microcontrole__filtro').dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await assentar();
+
+    // O TIPO É O DA RESPOSTA, e não a string do `<option>`: `createSelectField`
+    // devolve o valor original. Com `undefined`, o helper `query()` do serviço
+    // descartava o parâmetro e a medição saía da produção INTEIRA, sem 400 e sem
+    // nada na tela dizendo que o filtro não pegou.
+    expect(servicos.getResumoFeicao).toHaveBeenCalledTimes(1);
+    expect(servicos.getResumoFeicao.mock.calls[0][0].loteId).toBe(9);
+    expect(servicos.getCoberturaTela).toHaveBeenCalledTimes(1);
+    expect(servicos.getCoberturaTela.mock.calls[0][0].loteId).toBe(9);
+    cleanup();
+  });
+
+  test('sem lote escolhido, a medição sai de toda a produção', async () => {
+    const { cleanup } = montar();
+    await assentar();
+
+    // `null`, e não a string vazia nem `undefined`: é o que o serviço omite da
+    // query, e é o "todos os lotes" que a tela promete no placeholder.
+    expect(servicos.getResumoFeicao.mock.calls[0][0].loteId).toBeNull();
+    cleanup();
+  });
+
   test('a falha da lista de lotes não apaga a medição', async () => {
     // A lista de lotes é `consulta` no `producao` e vem do banco PRINCIPAL: quem
     // não a alcança leva 403 nela e continua alcançando o resto.
-    servicos.getLotesEmExecucao.mockRejectedValue(new Error('403'));
+    servicos.getLotesComProducao.mockRejectedValue(new Error('403'));
 
     const { container, cleanup } = montar();
     await assentar();
@@ -236,6 +313,42 @@ describe('microcontrole: a tela mede o trabalho', () => {
     await assentar();
     expect(typeof cleanup).toBe('function');
     expect(() => cleanup()).not.toThrow();
+  });
+
+  test('depois do cleanup, a resposta atrasada não escreve mais na tela', async () => {
+    // A CHAMADA QUE VOLTA TARDE É O CASO REAL: a pessoa troca de rota enquanto a
+    // telemetria ainda responde. Sem a guarda `disposed`, esta resolução pintaria
+    // tabela num container que já saiu do documento.
+    let liberar;
+    servicos.getResumoFeicao.mockReturnValue(
+      new Promise((resolver) => { liberar = resolver; }),
+    );
+
+    const { container, cleanup } = montar();
+    cleanup();
+
+    liberar(RESUMO);
+    await assentar();
+
+    expect(container.textContent).not.toMatch(/Cap Silva/);
+    expect(container.textContent).not.toMatch(/edicao\.via_deslocamento/);
+  });
+
+  test('depois do cleanup, o "Aplicar" não dispara mais chamada', async () => {
+    const { container, cleanup } = montar();
+    await assentar();
+
+    cleanup();
+    servicos.getResumoFeicao.mockClear();
+    servicos.getCoberturaTela.mockClear();
+
+    container.querySelector('.microcontrole__filtro').dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await assentar();
+
+    expect(servicos.getResumoFeicao).not.toHaveBeenCalled();
+    expect(servicos.getCoberturaTela).not.toHaveBeenCalled();
   });
 });
 

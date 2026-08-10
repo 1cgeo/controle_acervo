@@ -533,6 +533,112 @@ const sqlCopiar = (tabela, colunas) => {
           RETURNING *`
 }
 
+// --- A trava da linha de produção --------------------------------------------
+//
+// O QUE ELA IMPEDE. Cada linha das doze tabelas de perfil é (alguma coisa,
+// `subfase_id`, `lote_id`), e quem a lê é a sessão do QGIS pela ETAPA da
+// atividade, que traz o par (subfase, lote). Copiar a configuração de um lote
+// para outro que não executa aquelas subfases grava dezenas de linhas que
+// sessão nenhuma lê, e a tela responde "copiado com sucesso".
+//
+// A CHAVE ESTRANGEIRA NÃO PEGA ISSO, e o comentário desta seção prometia que
+// pegaria até 2026-08-09. `sqlCopiar` copia `o.subfase_id` verbatim: o id
+// continua existindo em `producao.subfase`, e a FK fica satisfeita. Não há
+// recusa nenhuma, e o defeito só aparece quando alguém abre o QGIS e não
+// encontra o menu que a tela jurou ter copiado.
+//
+// COMO A TRAVA VOLTOU, já que o modelo mudou. No SAP 2.3.5 ela era uma
+// igualdade: `macrocontrole.lote.linha_producao_id` dos dois lotes tinha de
+// bater. Aqui o lote é `acervo.lote`, que NÃO tem linha de produção e não vai
+// ter -- é justamente o fato de um lote atravessar linhas que a decisão do chefe
+// de 2026-08-09 reconheceu (`er/producao.sql`, `docs/decisoes.md`). A linha de
+// produção de um lote é DERIVADA das etapas dele (etapa -> subfase -> fase ->
+// linha_producao), que é o mesmo caminho de
+// `acompanhamento.linhas_producao_do_lote`.
+//
+// ENTÃO A COBRANÇA É SOBRE O QUE VAI SER COPIADO, e não sobre os dois lotes
+// inteiros: toda subfase que aparece na configuração da ORIGEM tem de pertencer
+// a uma linha de produção que o DESTINO executa. Um destino que executa mais
+// linhas que a origem passa, e é correto que passe -- tudo o que se copiou tem
+// quem leia. Ressuscitar a igualdade do SAP recusaria esse caso, que o desenho
+// de hoje considera normal.
+
+const sqlSubfasesDaOrigem = grupo =>
+  `SELECT o.subfase_id FROM ${alvoDe(grupo.tabela)} AS o WHERE o.lote_id = $<origem>`
+
+const sqlLinhasEstranhas = grupos => `
+  SELECT DISTINCT lp.nome AS linha_producao, s.nome AS subfase
+    FROM (${grupos.map(sqlSubfasesDaOrigem).join(' UNION ')}) AS copiada
+   INNER JOIN producao.subfase AS s ON s.id = copiada.subfase_id
+   INNER JOIN producao.fase AS f ON f.id = s.fase_id
+   INNER JOIN producao.linha_producao AS lp ON lp.id = f.linha_producao_id
+   WHERE f.linha_producao_id NOT IN (
+     SELECT f_destino.linha_producao_id
+       FROM producao.etapa AS e_destino
+      INNER JOIN producao.subfase AS s_destino ON s_destino.id = e_destino.subfase_id
+      INNER JOIN producao.fase AS f_destino ON f_destino.id = s_destino.fase_id
+      WHERE e_destino.lote_id = $<destino>
+   )
+   ORDER BY lp.nome, s.nome`
+
+const SQL_LINHAS_DO_LOTE = `
+  SELECT DISTINCT f.linha_producao_id
+    FROM producao.etapa AS e
+   INNER JOIN producao.subfase AS s ON s.id = e.subfase_id
+   INNER JOIN producao.fase AS f ON f.id = s.fase_id
+   WHERE e.lote_id = $<loteId>`
+
+// Quantas subfases o erro cita antes de resumir. A recusa tem de dizer O QUE
+// está errado, e uma lista de sessenta subfases numa caixa de mensagem não diz
+// nada a mais que as cinco primeiras mais a contagem.
+const SUBFASES_NO_ERRO = 5
+
+/**
+ * Recusa a cópia quando a configuração da origem aponta subfase que o destino
+ * não executa.
+ *
+ * A CONSULTA DE LINHAS DO DESTINO SÓ RODA NO CAMINHO DA RECUSA, e ela existe
+ * para a mensagem: "o destino não executa esta linha" e "o destino não tem etapa
+ * nenhuma cadastrada" pedem providências diferentes de quem está na tela.
+ */
+const exigirMesmaLinhaProducao = async (t, grupos, origem, destino) => {
+  // NENHUM GRUPO MARCADO, NADA A COBRAR: a cópia não vai gravar linha nenhuma.
+  // Os grupos sem `subfase_id` ficariam de fora do UNION e derrubariam a
+  // consulta; hoje as doze têm a coluna, e o filtro é o que impede a próxima
+  // tabela de forma diferente de entrar calada.
+  const comSubfase = grupos.filter(g => g.colunas.includes('subfase_id'))
+  if (comSubfase.length === 0) return
+
+  const estranhas = await t.any(sqlLinhasEstranhas(comSubfase), { origem, destino })
+  if (estranhas.length === 0) return
+
+  const linhasDoDestino = await t.any(SQL_LINHAS_DO_LOTE, { loteId: destino })
+
+  if (linhasDoDestino.length === 0) {
+    throw new AppError(
+      'O lote de destino não tem etapa cadastrada em subfase nenhuma, e por isso ' +
+        'não executa linha de produção alguma. Cadastre as etapas dele antes de ' +
+        'copiar a configuração, senão nada do que for copiado será lido pelo QGIS',
+      httpCode.BadRequest
+    )
+  }
+
+  const citadas = estranhas
+    .slice(0, SUBFASES_NO_ERRO)
+    .map(l => `${l.subfase} (linha de produção ${l.linha_producao})`)
+    .join('; ')
+
+  const resto = estranhas.length - Math.min(estranhas.length, SUBFASES_NO_ERRO)
+
+  throw new AppError(
+    'A configuração do lote de origem aponta subfases de linha de produção que o ' +
+      `lote de destino não executa: ${citadas}${resto > 0 ? ` e mais ${resto}` : ''}. ` +
+      'A configuração copiada não seria lida por sessão nenhuma do QGIS. Copie ' +
+      'apenas entre lotes que executem a mesma linha de produção',
+    httpCode.BadRequest
+  )
+}
+
 const ERROS_COPIA = {
   [UNIQUE_VIOLATION]:
     'O lote de destino já tem parte desta configuração. Apague o que está repetido antes de copiar, ou desmarque o grupo',
@@ -545,14 +651,16 @@ const ERROS_COPIA = {
  * É UMA TRANSAÇÃO SÓ, e é o ponto da rota: copiar onze grupos em onze
  * requisições deixaria o lote meio configurado quando a sexta falhasse.
  *
- * A CONFERÊNCIA DOS LOTES MUDOU EM RELAÇÃO AO SAP, e não por escolha. Lá ela
- * exigia que os dois lotes fossem da MESMA LINHA DE PRODUÇÃO, lendo
- * `macrocontrole.lote.linha_producao_id`. Aqui o lote é `acervo.lote`, que NÃO
- * tem linha de produção: a `producao.lote_linha` foi removida em 2026-08-09 e
- * não deve ser proposta de novo (`docs/decisoes.md`). Sobrou o que ainda se pode
- * cobrar: que os dois existam e que sejam diferentes. Quem copia configuração de
- * uma linha para outra recebe erro de chave estrangeira na subfase, que é a
- * cobrança que restou.
+ * SÃO TRÊS CONFERÊNCIAS: que os lotes sejam diferentes, que os dois existam e
+ * que a configuração copiada aponte subfases de linha de produção que o destino
+ * EXECUTE. A terceira é a trava do SAP recuperada em 2026-08-09, e o bloco
+ * "A trava da linha de produção" acima explica por que ela deixou de ser a
+ * igualdade de `linha_producao_id` que a origem cobrava.
+ *
+ * ESTE COMENTÁRIO PROMETIA O QUE NÃO ACONTECIA: dizia que copiar entre linhas
+ * diferentes daria "erro de chave estrangeira na subfase". Não dá. `sqlCopiar`
+ * leva `o.subfase_id` verbatim, o id existe em `producao.subfase` e a FK fica
+ * satisfeita -- a cópia entrava calada e a tela dizia "copiado com sucesso".
  *
  * UM EVENTO DE AUDITORIA POR LINHA CRIADA. São dezenas de linhas num ato só, e
  * é exatamente por isso: sem uma por linha, a ficha do lote de destino não
@@ -583,11 +691,16 @@ controller.copiarConfiguracaoLote = async (dados, usuarioUuid, contexto) => {
           )
         }
 
+        const marcados = GRUPOS_COPIAVEIS.filter(grupo => dados[grupo.flag])
+
+        // ANTES DE COPIAR QUALQUER LINHA, e dentro da mesma transação: a recusa
+        // que chegasse depois do primeiro INSERT dependeria do ROLLBACK para não
+        // deixar metade da configuração no destino.
+        await exigirMesmaLinhaProducao(t, marcados, origem, destino)
+
         const copiado = {}
 
-        for (const grupo of GRUPOS_COPIAVEIS) {
-          if (!dados[grupo.flag]) continue
-
+        for (const grupo of marcados) {
           const criadas = await t.any(sqlCopiar(grupo.tabela, grupo.colunas), {
             origem,
             destino,

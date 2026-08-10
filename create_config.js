@@ -34,9 +34,18 @@ const verifyDotEnv = () => {
 // conexao nem e montada), mas o arquivo escrito com elas em branco ENSINA o que
 // existe a quem for ligar a telemetria depois -- que e o mesmo papel do
 // `.env.example`, num arquivo que ninguem le por engano.
-const createDotEnv = (port, dbServer, dbPort, dbName, dbUser, dbPassword, dbUserReadonly, dbPasswordReadonly, micro) => {
+//
+// AS TRES `PRODUCAO_DB_*` SAEM PELA MESMA REGRA, e a ausencia delas custou caro:
+// ate 2026-08-09 este arquivo nao as escrevia, entao toda instalacao nova pelo
+// caminho documentado (`node create_config.js`) subia com o subsistema de
+// permissao no banco de EDICAO desligado em silencio -- 503 nas tres rotas de
+// `/api/gerencia_producao/banco_dados` e o pacote da atividade sem a secao de
+// acesso, sem ninguem descobrir no boot. Escritas em branco, elas dizem que
+// existem.
+const createDotEnv = (port, dbServer, dbPort, dbName, dbUser, dbPassword, dbUserReadonly, dbPasswordReadonly, micro, producao) => {
   const secret = randomBytes(64).toString('hex');
   const m = micro || {};
+  const p = producao || {};
 
   const env = `PORT=${port}
 DB_SERVER=${dbServer}
@@ -51,6 +60,9 @@ MICRO_DB_PORT=${m.port || ''}
 MICRO_DB_NAME=${m.name || ''}
 MICRO_DB_USER=${m.user || ''}
 MICRO_DB_PASSWORD=${m.password || ''}
+PRODUCAO_DB_ADMIN_USER=${p.adminUser || ''}
+PRODUCAO_DB_ADMIN_PASSWORD=${p.adminPassword || ''}
+PRODUCAO_DB_HOSTS=${p.hosts || ''}
 JWT_SECRET=${secret}`;
 
   writeFileSync(join(__dirname, 'server', 'config.env'), env);
@@ -323,6 +335,36 @@ const validatePort = (value) => {
   return true;
 };
 
+// A LISTA DE SERVIDORES DE EDICAO, conferida ANTES de virar linha do config.env.
+//
+// O ERRO QUE ELA PEGA e o de quem cola `servidor:porta/banco` inteiro, que e o
+// formato do campo `configuracao_producao` e nao o desta chave: a lista e de
+// SERVIDOR, com porta opcional. Sem a conferencia, o item errado nunca casaria
+// com alvo nenhum e o sintoma seria 503 dizendo "o servidor nao esta na lista"
+// com o servidor escrito na lista, que e o pior tipo de mensagem.
+const validateHosts = (value) => {
+  const itens = String(value || '')
+    .split(',')
+    .map((i) => i.trim())
+    .filter(Boolean);
+
+  if (!itens.length) return 'Informe ao menos um servidor';
+
+  for (const item of itens) {
+    if (item.includes('/')) {
+      return `"${item}": a lista é de servidor, sem o nome do banco. Use servidor ou servidor:porta.`;
+    }
+    const partes = item.split(':');
+    if (partes.length > 2) return `"${item}": formato inválido. Use servidor ou servidor:porta.`;
+    if (partes.length === 2) {
+      const validacao = validatePort(partes[1]);
+      if (validacao !== true) return `"${item}": ${validacao}`;
+    }
+  }
+
+  return true;
+};
+
 const getConfigFromUser = (options) => {
   const questions = [];
 
@@ -500,6 +542,64 @@ const getConfigFromUser = (options) => {
       when: microEnabled
     });
   }
+  // --- Administracao dos bancos de EDICAO (login temporario da producao) -----
+  //
+  // OPCIONAL, e responder "nao" e um caminho de primeira classe: sem as tres
+  // chaves o servico sobe inteiro, e o que responde 503 sao as tres rotas de
+  // `/api/gerencia_producao/banco_dados`. Este script NAO cria banco nenhum aqui
+  // -- os bancos de edicao ja existem, e sao de outra instalacao -- e por isso
+  // nao ha pergunta de "criar agora".
+  //
+  // A LISTA DE SERVIDORES NAO E ACESSORIO. O endereco do banco de edicao vem do
+  // DADO (`producao.dado_producao.configuracao_producao`), digitado por um
+  // gerente do modulo pela tela; sem a lista, quem digita aquele campo escolheria
+  // para qual servidor o SAP manda o par de superusuario abaixo. Por isso as tres
+  // valem juntas ou nenhuma, e `server/src/config.js` recusa o boot com meia
+  // configuracao.
+  const producaoEnabled = (answers) => {
+    if (options.producaoDb !== undefined) return options.producaoDb;
+    return answers.producaoDb;
+  };
+
+  if (options.producaoDb === undefined) {
+    questions.push({
+      type: 'confirm',
+      name: 'producaoDb',
+      message:
+        'Deseja configurar o acesso administrativo aos bancos de EDIÇÃO (o que cria e revoga o usuário temporário do operador no PostGIS de produção)?',
+      default: false
+    });
+  }
+  if (!options.producaoDbHosts) {
+    questions.push({
+      type: 'input',
+      name: 'producaoDbHosts',
+      message:
+        'Quais servidores PostgreSQL de edição esta instalação pode alcançar (separados por vírgula, no formato servidor ou servidor:porta)?',
+      when: producaoEnabled,
+      validate: validateHosts
+    });
+  }
+  if (!options.producaoDbAdminUser) {
+    questions.push({
+      type: 'input',
+      name: 'producaoDbAdminUser',
+      message:
+        'Qual o usuário superusuário do PostgreSQL nos bancos de edição (é com ele que o SAP cria o papel temporário e concede permissão camada a camada)?',
+      when: producaoEnabled,
+      validate: (value) => (value ? true : 'Informe o usuário')
+    });
+  }
+  if (!options.producaoDbAdminPassword) {
+    questions.push({
+      type: 'password',
+      name: 'producaoDbAdminPassword',
+      mask: '*',
+      message: 'Qual a senha desse superusuário dos bancos de edição?',
+      when: producaoEnabled,
+      validate: (value) => (value ? true : 'Informe uma senha')
+    });
+  }
 
   // O primeiro administrador so faz sentido quando o banco esta sendo CRIADO:
   // com --no-db-create ele ja existe na base que se esta reaproveitando.
@@ -661,7 +761,11 @@ const createConfig = async (options) => {
       microName,
       microUser,
       microPassword,
-      microCreate
+      microCreate,
+      producaoDb,
+      producaoDbHosts,
+      producaoDbAdminUser,
+      producaoDbAdminPassword
     } = { ...options, ...(await inquirer.prompt(questions)) };
 
     // As perguntas interativas passam por `validatePort`; as FLAGS nao passavam
@@ -688,6 +792,26 @@ const createConfig = async (options) => {
       }
       const validacao = validatePort(microPort);
       if (validacao !== true) throw new Error(`--micro-port: ${validacao}`);
+    }
+
+    // AS TRES CHAVES DO BANCO DE EDICAO valem juntas ou nenhuma, pela mesma
+    // regra das cinco acima e pelo motivo mais duro: credencial de superusuario
+    // sem lista de servidores e justamente o defeito que a lista fecha. Metade
+    // delas escreveria um `config.env` que o `server/src/config.js` recusa no
+    // boot (`Joi.and`), e o erro apareceria no deploy, longe de quem digitou.
+    const producaoFields = { producaoDbAdminUser, producaoDbAdminPassword, producaoDbHosts };
+    const producaoConfigured = Object.values(producaoFields).every(Boolean);
+    if (producaoDb || Object.values(producaoFields).some(Boolean)) {
+      const faltando = Object.entries(producaoFields)
+        .filter(([, v]) => !v)
+        .map(([k]) => k);
+      if (faltando.length) {
+        throw new Error(
+          `Dados do acesso administrativo aos bancos de edição incompletos: ${faltando.join(', ')}. As três chaves valem juntas ou nenhuma.`
+        );
+      }
+      const validacao = validateHosts(producaoDbHosts);
+      if (validacao !== true) throw new Error(`--producao-db-hosts: ${validacao}`);
     }
 
     const readonlyConfigured = Boolean(dbUserReadonly && dbPasswordReadonly);
@@ -790,6 +914,16 @@ const createConfig = async (options) => {
       );
     }
 
+    if (producaoConfigured) {
+      console.log(
+        chalk.blue(`Acesso administrativo aos bancos de edição configurado. O SAP só vai discar para os servidores listados em PRODUCAO_DB_HOSTS, e o cadastro de dado de produção que apontar outro servidor responde 503.`)
+      );
+    } else {
+      console.log(
+        chalk.yellow('Sem acesso administrativo aos bancos de edição: as três rotas de /api/gerencia_producao/banco_dados vão responder 503 e o pacote da atividade sai sem a seção de acesso. O restante do serviço sobe normalmente.')
+      );
+    }
+
     createDotEnv(
       port,
       dbServer,
@@ -806,6 +940,13 @@ const createConfig = async (options) => {
             name: microName,
             user: microUser,
             password: microPassword
+          }
+        : null,
+      producaoConfigured
+        ? {
+            adminUser: producaoDbAdminUser,
+            adminPassword: producaoDbAdminPassword,
+            hosts: producaoDbHosts
           }
         : null
     );
@@ -859,6 +1000,14 @@ program
   .option('--micro-password <value>', 'Senha do usuário do banco de telemetria')
   .option('--micro-create', 'Criar o banco de telemetria (aplica er_microcontrole/)')
   .option('--no-micro-create', 'Não criar o banco de telemetria (ele já existe)')
+  // O acesso administrativo aos bancos de EDICAO. Opcional, e as tres chaves
+  // valem juntas ou nenhuma: sem elas o servico sobe e as tres rotas de
+  // /api/gerencia_producao/banco_dados respondem 503.
+  .option('--producao-db', 'Configurar o acesso administrativo aos bancos de edição da produção')
+  .option('--no-producao-db', 'Não configurar o acesso administrativo aos bancos de edição')
+  .option('--producao-db-admin-user <value>', 'Usuário superusuário do PostgreSQL nos bancos de edição')
+  .option('--producao-db-admin-password <value>', 'Senha do superusuário dos bancos de edição')
+  .option('--producao-db-hosts <value>', 'Servidores de banco de edição que esta instalação pode alcançar (servidor ou servidor:porta, separados por vírgula)')
   .option('--overwrite-env', 'Sobrescrever arquivo de configuração');
 
 program.parse(process.argv);

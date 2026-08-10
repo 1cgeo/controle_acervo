@@ -207,6 +207,9 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **`GET /api/mapoteca/pedido/localizador/:localizador` não tem autenticação.** É o acompanhamento
   pelo próprio cliente, que não tem conta. Já foi fechada por engano numa classificação automática.
 - **`/logs` não tem autenticação, e o CORS aceita qualquer origem.** O sistema roda em rede interna.
+  Confirmado pelo chefe em 2026-08-09, e o que mudou naquele dia não foi a porta e sim o CONTEÚDO:
+  o token da tile é redigido antes de a URL entrar no log, e ele deixou de ser a credencial de
+  sessão. Ver "O login que os plugins esperam".
 - **Credencial de banco na URI de camada do QGIS.** O plugin conecta direto no PostgreSQL; é para isso
   que existe o papel somente leitura (`DB_USER_READONLY`).
 - **A LEITURA do RPCMTec usa `verifyGerente`, e `#/rastreabilidade` usa `verifyRastreabilidade`.**
@@ -226,8 +229,12 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   conteúdo dele entra aqui. **A versão do serviço é 3.0.0 e CONTINUA a numeração do sistema
   aposentado**: manter a série 1.x faria "SAP 3.0" no menu conviver com `1.51.0` na resposta da API
   e em `public.versao`, que é o descompasso que `versao_do_servico.test.js` existe para pegar.
-  A migração `2026-08-09_o_sca_vira_sap_3.sql` **não toca schema nenhum**: ela só carimba a versão,
-  e as migrações de schema do core de produção vêm depois dela.
+  A migração `2026-08-09_o_sca_vira_sap_3.sql` **não toca schema nenhum e não carimba nada**: ela
+  carimbava 3.0.0 até 2026-08-09 e perdeu o `UPDATE public.versao`, porque quem aplicasse só ela
+  ficaria com `public.versao` dizendo 3.0.0 e sem um objeto do core -- e, com
+  `MIN_DATABASE_VERSION` também em 3.0.0, o serviço subiria satisfeito contra esse banco. Quem
+  carimba a 3.0.0 é `2026-08-09_o_core_de_producao_atravessa.sql`, que é quem CRIA os schemas. O que
+  sobrou aqui é uma conferência, e a renomeação vive no código e nas telas.
 - **O acervo é uma PARTE do SAP 3.0, e não o todo, e por isso NADA do acervo foi renomeado.** O
   schema `acervo`, o módulo `acervo` de `dominio.modulo` (code 1, `nome_abrev` = `acervo`), o
   `acervo_cli` e as rotas `/api/acervo/*` continuam com o nome de sempre. Renomear o schema custaria
@@ -461,6 +468,41 @@ propósito, para a carga poder ser ensaiada antes de acontecer.
   mapa é o estado normal de módulo que ainda não tem tela, e a folga é uma lista explícita
   (`SEM_ROTA`) que se esvazia sozinha quando `producao` ganhar rota.
 
+### Os plugins sobem em LOCKSTEP com o servidor, e o contrato antigo não é aceito
+
+- **Os plugins SAP Operador e SAP Gerência sobem JUNTO com o servidor 3.0.0, e o servidor mantém só
+  o contrato NOVO** (chefe, 2026-08-09). Não há período de convivência, não há alias de compatibilidade
+  e não há tradução de nome antigo na entrada. É essa decisão que torna DELIBERADA cada uma das
+  quebras da lista abaixo, e não descuido de quem portou:
+  - `/api/projeto/*` virou `/api/producao/*` (146 rotas) e `/api/gerencia/*` virou
+    `/api/gerencia_producao/*` (60). O porquê de cada prefixo está na seção seguinte.
+  - Os 16 caminhos de `perfil_producao*` e `perfil_bloco_operador` viraram `habilitacao`,
+    `habilitacao_etapa`, `habilitacao_usuario` e `habilitacao_bloco`, quatro verbos cada.
+  - `produto_id` virou `versao_id`, em `/distribuicao/finaliza` e em todo o metadado: o que se
+    publica é uma EDIÇÃO (`acervo.versao`), e o `macrocontrole.produto` do SAP não existe aqui.
+  - `qgis_shortcuts` virou `atalhos` no CORPO de `POST`, `PUT` e `DELETE /atalhos` (e `atalhos_ids`
+    no `DELETE`). **O `GET` continua respondendo**, e é essa assimetria que dá o sintoma exato de um
+    plugin velho contra um servidor novo: a tela LÊ o catálogo e não GRAVA.
+  - `tipo_produto_id` virou `subtipo_produto_id`, `usuario_id` virou `usuario_uuid`, `status_id`
+    virou `status_execucao_id` e `?status=finalizado` virou `?status=encerrado`.
+  - As views materializadas de acompanhamento deixaram de se chamar `lote_<N>` e passaram a
+    `lote_<L>_linha_<P>` e `lote_<L>_subfase_<S>`.
+- **O QUE ISSO CUSTOU, e por que se aceitou pagar: nenhuma dessas quebras é silenciosa.** O validador
+  daqui é ESTRITO (`utils/schema_validation_estrito.js`): chave desconhecida no corpo vira **400**,
+  com a sugestão do nome declarado mais parecido. O SAP 2.3.5 validava com `stripUnknown: true`, que
+  DESCARTA a chave e segue -- e é aí que a compatibilidade teria sido pior que a quebra: um plugin
+  velho mandando `qgis_shortcuts` ou `produto_id` teria a chave jogada fora, receberia 200 e gravaria
+  nada. Com a régua estrita, quem esqueceu de atualizar o plugin descobre na primeira gravação, com
+  o nome novo escrito na resposta, em vez de descobrir semanas depois numa contagem que não fecha.
+  **Reabrir o contrato antigo é decisão, e se registra aqui.**
+- **`avancaAtividade` com ZERO linhas responde 404, e no SAP respondia sucesso.** É a única
+  divergência de comportamento das quatro operações de fluxo da gerência, e ela é deliberada: pausar,
+  reiniciar e voltar já respondiam 404 quando não achavam o que mexer, e só avançar respondia
+  "sucesso" tendo mudado nada. O gerente seleciona as atividades na tela e clica; "avancei" sobre
+  zero linhas é a resposta que ele não tem como distinguir da certa, e o efeito é ele achar que o
+  lote andou. Se algum cliente antigo depender do silêncio, é esta a linha a desfazer
+  (`gerencia_producao_ctrl.js`), e desfazê-la é decisão.
+
 ### Dois prefixos de rota não são os do SAP 2.3.5
 
 - **`/api/gerencia` é do ACERVO, e o da produção é `/api/gerencia_producao`** (chefe, 2026-08-09).
@@ -474,7 +516,7 @@ propósito, para a carga poder ser ensaiada antes de acontecer.
 
 ### As onze telas da produção, uma por tela do SAP 2.3.5
 
-- **A proposta de fundir as dez de acompanhamento em seis foi RECUSADA** (chefe, 2026-08-09). Quem
+- **A proposta de fundir as nove de acompanhamento em seis foi RECUSADA** (chefe, 2026-08-09). Quem
   trabalha no SAP procura pelo nome que conhece, e fundir telas obriga a reaprender onde cada
   resposta mora. **As outras sete telas do SAP não viraram tela nova porque já existem aqui**, e não
   se duplicam: Campos e Gerência de Campos são as duas abas de `#/campo`; Capacitações são
@@ -484,11 +526,21 @@ propósito, para a carga poder ser ensaiada antes de acontecer.
 ### A ordem de aplicar migração é a da VERSÃO, e não a do nome
 
 - **Migração se aplica na ordem da versão que ela CARIMBA, nunca em ordem alfabética de arquivo.**
-  O nome traz a data, e duas do mesmo dia não se ordenam por ele. O caso concreto de 2026-08-09 são
-  três: `o_pit_devolve_o_nome_producao` (carimba 1.50.0), `o_sca_vira_sap_3` (não carimba nada) e
-  `o_core_de_producao_atravessa` (carimba 3.0.0 e cria os cinco schemas). Alfabética poria
-  `o_core...` primeiro, e ele exige o schema que a primeira renomeia. O sintoma de errar a ordem é
-  um banco que se diz 3.0.0 sem `producao.etapa`.
+  O nome traz a data, e cinco do mesmo dia não se ordenam por ele. O caso concreto de 2026-08-09 são
+  **cinco**, nesta ordem: `o_pit_devolve_o_nome_producao` (carimba 1.50.0), `a_instituicao` (1.51.0),
+  `a_area_e_de_quem_configurou` (1.52.0), `o_sca_vira_sap_3` (não carimba nada) e
+  `o_core_de_producao_atravessa` (3.0.0, e é quem cria os cinco schemas). A cadeia sobe
+  1.49.0 -> 1.50.0 -> 1.51.0 -> 1.52.0 -> 3.0.0. Alfabética poria `a_area...` antes de
+  `a_instituicao`, que é quem cria a tabela que a outra lê, e poria `o_core...` em segundo quando
+  ele é o último. Os sintomas de errar a ordem são dois: `a_area...` PARA na conferência, dizendo
+  que não há instituição com que comparar, e um banco que se diz 3.0.0 sem `producao.etapa` sobe
+  calado até a primeira consulta.
+- **As duas do meio são fáceis de pular, e pulá-las não dá erro de boot.** `a_instituicao` e
+  `a_area_e_de_quem_configurou` não são do core: elas fecham o "antes", e um banco que pare em
+  1.52.0 fica abaixo do piso e o serviço RECUSA subir. O perigo é o contrário -- aplicar só o par
+  do core e chegar a 3.0.0 sem `dgeo.instituicao` e com o `e_1cgeo` ainda de pé. Aí o serviço sobe,
+  e a falta aparece longe: na subseção 2.7 do RPCMTec, que perde de onde tirar a área do Centro, e
+  no rodapé dos relatórios, que perde o nome da instalação.
 
 ### O que a 3.0.0 deixou de fora, de propósito e por escrito
 
@@ -573,12 +625,21 @@ registrada acima está revogada.
   linha de trilha por amostra faria a auditoria crescer **mais rápido que o dado que ela descreve**.
   O GRANT do banco separado é SELECT e INSERT, sem UPDATE nem DELETE, pela mesma razão que
   `auditoria` não os tem no banco principal.
-- **A tradução de perfil é a da origem, e é literal:** `verifyAdmin` do SAP virou `gerente` (nove
-  rotas) e `verifyLogin` virou `operador` (duas). As duas de operador são `POST /feicao` e
-  `POST /tela`, e elas **não são tela**: é o plugin gravando a medição do próprio trabalho de quem
-  está com a atividade na mão. A leitura agregada é `gerente` porque não é "a tela do módulo", é o
-  rendimento de pessoas com nome. A **pasta é `microcontrole` e o módulo é `producao`**, como
-  `src/campo/` cobra `pit`, e `modulo_em_toda_rota.test.js` varre o arquivo por isso.
+- **A tradução de perfil PARTIU da origem e não parou nela, e o recorte VIGENTE é 6/2/3.** Do SAP
+  2.3.5 vieram nove rotas de `verifyAdmin` e duas de `verifyLogin`; as duas viraram `operador` e lá
+  ficaram, mas as nove NÃO são nove de `gerente`. Em 2026-08-09, no mesmo dia, a regra do chefe para
+  o módulo ("o visualizador vê TUDO") desceu as **seis de LEITURA para `consulta`**
+  (`GET /tipo_monitoramento`, `GET /tipo_operacao`, `GET /feicao/resumo`, `GET /tela/cobertura`,
+  `GET /tela/aproveitamento` e `GET /configuracao/perfil_monitoramento`) e deixou em `gerente` só as
+  **três que MEXEM** no perfil de monitoramento (`POST`, `PUT` e `DELETE` de
+  `/configuracao/perfil_monitoramento`). As duas de `operador` são `POST /feicao` e `POST /tela`, e
+  elas **não são tela**: é o plugin gravando a medição do próprio trabalho de quem está com a
+  atividade na mão. **O que a leitura em `consulta` alarga está dito acima**, na entrada das seis
+  rotas: quem tem consulta em `producao` vê rendimento de pessoa com nome da Divisão inteira, e é
+  essa a linha a reverter se a intenção for outra. Quem trava o recorte é
+  `__tests__/routes/microcontrole.test.js`, rota por rota. A **pasta é `microcontrole` e o módulo é
+  `producao`**, como `src/campo/` cobra `pit`, e `modulo_em_toda_rota.test.js` varre o arquivo por
+  isso.
 - **`atividade_id` do corpo NÃO é conferido, e a ausência é escolha.** Confirmar que a atividade é de
   quem manda custaria uma consulta ao banco principal por rajada -- barata. O que decide é o risco: o
   plugin envia em segundo plano, e uma amostra que chegasse logo depois de a atividade ser
@@ -683,6 +744,20 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
   `server/src/__tests__/routes/login_tile_exclusivo.test.js` varre os `*_route.js` para provar que
   nenhuma outra rota a usa, que nenhuma outra guarda lê `req.query.token`, e que dentro do arquivo
   autorizado ela só aparece em rota `.pbf`.
+- **O token da TILE ganhou audiência própria e vida curta, e a credencial de SESSÃO deixou de
+  circular por `?token=`** (chefe, 2026-08-09). O `/logs` continua sem autenticação, como a entrada
+  acima registra e o chefe confirmou; **o que muda é o que passa por ele**. Antes deste branch o log
+  guardava filtro de busca, e a partir dele guardaria um JWT COMPLETO, porque a camada XYZ do
+  MapLibre não tem onde pôr cabeçalho `Authorization` e manda a credencial na URL. Um log aberto com
+  a sessão inteira dentro é uma porta de entrada que ninguém abriu de propósito.
+  **A correção é DUPLA, e ter só metade não resolve:** o valor do token é REDIGIDO antes de a URL ir
+  para o log, e o token que a tile carrega passa a ter **audiência própria e TTL curto**, recusado
+  pelas outras guardas. Redigir sozinho não bastaria, porque a URL ainda viaja pelo histórico do
+  navegador, pelo `Referer` e por qualquer intermediário; escopar sozinho não bastaria, porque um
+  token de escopo estreito que fique horas no log ainda serve para pedir tile em nome de quem o
+  emitiu. **O que isso custa:** um segredo a mais para emitir e conferir, e um caminho de renovação
+  quando a tela fica aberta além do TTL. Aceitou-se pagar porque a alternativa era a sessão de oito
+  horas em texto num arquivo que qualquer um lê.
 - **`verifyLogin` passou a reler `dgeo.usuario.ativo` do BANCO a cada requisição** (2026-08-09). Ele
   era a única guarda do sistema que confiava no token: `ativo`, `id` e `administrador` saíam todos
   do JWT, que vive `JWT_EXPIRACAO` (8 h). Quem fosse desativado continuava lendo **e escrevendo** o
@@ -1695,3 +1770,88 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
 - **O rate limit é desligado sob `NODE_ENV=test`.** O efeito ruim não era falhar: era fazer falhar um
   teste **que não mudou**, só porque um teste novo entrou antes dele no mesmo minuto, o que faz a
   suíte depender de ordem e de relógio.
+
+### O que a revisão de merge da 3.0.0 consertou, em 2026-08-09
+
+A 3.0.0 passou por uma revisão multiagente antes do merge, e o que ela achou está consertado com
+teste. Estas entradas existem para que nenhum dos consertos seja desfeito por parecer excesso de
+zelo, e para que os que NÃO foram feitos não voltem como surpresa.
+
+- **O JWT de sessão deixa de circular pela URL, e a defesa é DUPLA.** O caminho completo era: o
+  cliente punha o bearer na query da tile, o middleware de log gravava `req.originalUrl` inteira, e
+  `/logs` -- que não tem autenticação, por decisão registrada acima -- publicava o arquivo. Um `curl`
+  sem conta nenhuma devolvia sessões válidas por 8h. As duas metades estavam registradas em separado
+  e a INTERAÇÃO delas não estava: antes deste branch o log guardava filtro de busca, e a partir dele
+  guardaria credencial. Redigir sozinho não bastaria (a URL ainda viaja pelo histórico do navegador,
+  pelo `Referer` e por qualquer intermediário), e escopar sozinho não bastaria (um token de escopo
+  estreito que fique horas no log ainda pede tile em nome de quem o emitiu). **São DOIS pontos de
+  redação, e não um**: o middleware de `server/app.js` e o `sendJsonAndLog`, porque o `errorHandler`
+  responde por este último e uma tile que FALHA gravava a query inteira -- o caminho que passa
+  despercebido justamente por ser o de erro.
+- **Um gerente de módulo escolhia para onde o serviço discava com a credencial de superusuário.**
+  `configuracao_producao` é texto livre e gravável por `gerente` em `producao`, e `conexao_admin.js`
+  aceitava qualquer `host:porta/banco`; um PostgreSQL falso pedindo autenticação em claro recebia a
+  senha administrativa dos bancos de edição. A allow-list (`PRODUCAO_DB_HOSTS`) é cobrada **no ponto
+  de discagem**, e não só no Joi, porque cadastro JÁ GRAVADO precisa ser barrado na hora de discar.
+  **Chave ausente recusa TUDO, e não libera geral**: configuração que falta desliga o subsistema,
+  nunca o afrouxa. Quem já tinha as duas chaves antigas não sobe sem a terceira, e descobre no
+  ARRANQUE em vez de na primeira atividade.
+- **Pausar, devolver, reiniciar e indisponibilizar voltaram a REVOGAR o acesso ao banco de edição.**
+  O SAP 2.3.5 trocava a senha do papel efêmero nessas quatro; a travessia mexia só em
+  `producao.atividade`. O gerente pausava a atividade de alguém justamente para tirá-lo do trabalho,
+  e a pessoa seguia gravando. **Reiniciar revoga com mais razão que pausar**: a atividade nova nasce
+  sem dono e volta para a fila, então manter o acesso daria a uma pessoa o dado de uma folha que
+  agora é de outra. **Avançar NÃO revoga**, e é deliberado: ela só alcança o que estava 'Não
+  iniciada', e atividade sem operador nunca teve papel criado.
+- **`GET /producao/banco_dados` parou de devolver o endereço do servidor.** A coluna guarda
+  `servidor:porta/banco` AQUI TAMBÉM -- o comentário que dizia o contrário era o mesmo engano em três
+  arquivos --, e `er/producao.sql` proíbe o endereço em resposta de API. O que sai agora é só o nome
+  do banco.
+- **O corpo AUSENTE passa a ser `{}` nos dois validadores.** Sob Express 5, `DELETE` sem corpo deixa
+  `req.body` indefinido, e `Joi.object().keys({...required})` ACEITA `undefined`: o Joi só cobra as
+  chaves do objeto presente. O schema passava e quem recusava era o `TypeError` de ler `.confirmar`,
+  que chega como 500 "Erro no servidor". Mordia as 15 rotas destrutivas, que são exatamente as que
+  existem para exigir confirmação digitada. **A correção é no validador e não nos 15 schemas**, para
+  valer também para a rota que ainda não existe.
+- **Varredura destrutiva sem alvo TAMBÉM deixa rastro**, e o `detalhe` do evento tem teto de 20.
+  Alguém digitou a confirmação e escreveu o motivo: "rodei e não havia nada" é informação, e é a que
+  responde "então quem apagou?" depois. O teto é o do irmão `producao/insumo_ctrl.js`, e pelo mesmo
+  motivo: `auditoria.evento` é append-only, e inchar o evento é decisão sem volta.
+- **`metadado.informacoes_edicao` e `informacoes_produto` ganharam índice ÚNICO.** O `xor_lote` já
+  garantia que cada linha aponta uma versão OU um lote; o que faltava era impedir a SEGUNDA linha
+  para o mesmo alvo. Sem isso, dois POST para o mesmo lote faziam o `oneOrNone` estourar e o XML e o
+  JSON de edição de TODA versão daquele lote respondiam 500 -- com a causa mascarada, porque o
+  envelope do 500 troca a mensagem por "Erro no servidor". Uma linha a mais numa tabela de
+  configuração derrubava a saída do lote inteiro.
+- **`.strict()` no id vale para o CORPO, e nunca para a QUERY.** Os dois lados são defeito: sem ele no
+  corpo, `["7"]` apaga a linha 7 por coerção silenciosa; COM ele na query, a rota fica inalcançável,
+  porque `req.query` chega sempre como texto. `insumo_schema.js` e `fluxo_schema.js` ganharam o
+  `.strict()` que os irmãos já tinham, e `insumo_schema.js` ganhou junto o `idDeQuery()` -- a primeira
+  tentativa de conserto quebrou três schemas de query, e quem pegou foi a varredura-guarda de
+  `__tests__/routes/query_de_texto.test.js`, que executa os schemas vivos dos sete módulos.
+- **`.required()` no ITEM de uma lista faz a lista vazia recusar pelo motivo errado**
+  (`array.includesRequiredUnknowns`, "não contém 1 valor obrigatório") em vez de `array.min`. A
+  mensagem passa a falar de um requisito que ninguém declarou. Não muda o que se aceita, e nulo dentro
+  da lista continua recusado pelo tipo.
+
+**O que NÃO foi consertado, e por quê.** São decisões de desenho, não defeitos de execução, e mexer
+nelas é conversa com o chefe:
+
+- **O papel somente leitura enxerga `producao.login_temporario`, que guarda senha em CLARO.**
+  `er/permissao_readonly.sql` já concedia `SELECT ON ALL TABLES IN SCHEMA producao` na instalação
+  nova, com justificativa escrita (o gerente abre `unidade_trabalho` no QGIS), e a migração espelha a
+  decisão porque a paridade exige. O que a migração acrescenta é QUEM recebe: o laço de descoberta
+  pega qualquer papel com SELECT em `acervo`, então uma conta de analista ou de BI entra nele. O
+  caminho é estreitar a descoberta e trocar o `ALL TABLES` por concessão nominal.
+- **Nenhum pool do projeto usa `ssl`.** A senha do superusuário atravessa a rede interna em claro
+  mesmo para host legítimo, e a allow-list não muda isso.
+- **`UT_COMPLETA` conta versão com unidade de trabalho não distribuída como completa.** Trocar o
+  `INNER JOIN` por `LEFT JOIN` parece conserto e não é: não existe gatilho que crie atividade ao
+  inserir unidade de trabalho, então UT sem atividade é estado NORMAL, e a troca mudaria número em
+  seis consultas, entre elas o realizado do PIT. A pergunta real é de negócio: versão com UT não
+  distribuída conta como entregue?
+- **O filtro de subtipo do gatilho de `relacionamento_versao` descarta versão de subtipo irmão.** Um
+  lote do acervo mistura produtos de subtipos do mesmo `tipo_id` (2, 12, 24 e 28 são todos carta
+  topográfica), e a `linha_producao` declara UM. O acompanhamento subconta sem que nada acuse, e não
+  há conferência que aponte a versão órfã. A saída registrada é separar os lotes por tipo de produto;
+  até lá, cabe uma consulta de conferência exposta ao gerente.

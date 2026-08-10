@@ -320,9 +320,14 @@ describe('Schema do metadado: os parâmetros das rotas de saída', () => {
 describe('Schema do metadado: a organização é EDIÇÃO, e não cadastro', () => {
   // Os cinco CGEO sao semeados por `er/metadado.sql`. O que a tela edita e o
   // CONTATO de cada um, e por isso o `code` e obrigatorio e nao ha POST.
+  // A FIXTURE NAO E A INSTALACAO DE NINGUEM, e isso e de proposito: o Centro que
+  // opera esta instalacao vira dado em `dgeo.instituicao` desde 2026-08-09, e o
+  // teste que confirmasse o proprio Centro passaria igual com o valor escrito no
+  // codigo. Aqui, como em `rpcmtec.test.js` e em `login_ctrl.test.js`, o exemplo
+  // e outro Centro, com contato inventado.
   it('exige o code de cada organização', () => {
     recusaPor(
-      schema.organizacao.validate({ organizacoes: [{ nome: '1º Centro de Geoinformação' }] }),
+      schema.organizacao.validate({ organizacoes: [{ nome: '2º Centro de Geoinformação' }] }),
       ['organizacoes', 0, 'code'],
       'any.required'
     )
@@ -332,12 +337,12 @@ describe('Schema do metadado: a organização é EDIÇÃO, e não cadastro', () 
     aceita(
       schema.organizacao.validate({
         organizacoes: [{
-          code: 1,
-          nome: '1º Centro de Geoinformação',
-          sigla: '1º CGEO',
-          endereco: 'Rua Cleveland, nº 250 - Porto Alegre - RS',
-          telefone: '(51)3232-0749',
-          site: 'http://www.1cgeo.eb.mil.br/'
+          code: 2,
+          nome: '2º Centro de Geoinformação',
+          sigla: '2º CGEO',
+          endereco: 'Rua Exemplo, nº 100 - Cidade - UF',
+          telefone: '(00)0000-0000',
+          site: 'http://exemplo.invalid/'
         }]
       })
     )

@@ -7,7 +7,12 @@ import { flush } from '@/__tests__/helpers/flush.js';
 //               em UTC-3 a barra inteira anda um dia para trás;
 //   o FIM       o servidor manda o dia SEGUINTE ao último (`fim + 1`), que é o
 //               certo para desenhar e um dia a mais para escrever;
-//   o AGRUPAMENTO  um quadro por lote, na ordem em que o servidor mandou.
+//   o AGRUPAMENTO  um quadro por `lote_id`, na ordem em que o servidor mandou.
+//
+// E o quarto, de 2026-08-09: a SÉRIE É A CHAVE. O servidor passou a agrupar por
+// (`lote_id`, `subfase_id`) em vez de por nome, então duas subfases "Edição" de
+// linhas de produção diferentes chegam como DUAS linhas, e a tela tem de dizer
+// qual é qual.
 const servico = vi.hoisted(() => ({ resposta: [], falha: null, chamadas: 0 }));
 
 vi.mock('@services/producao-service.js', () => ({
@@ -90,6 +95,8 @@ describe('faixasDe: o que o servidor manda e o que a tela desenha', () => {
 describe('atividade por subfase: o desenho', () => {
   test('só a faixa ATIVA vira barra; o trilho vazio é o "não trabalhou"', async () => {
     servico.resposta = [{
+      lote_id: 1,
+      subfase_id: 10,
       lote: 'Lote 1',
       subfase: 'Edição',
       data: [
@@ -106,6 +113,8 @@ describe('atividade por subfase: o desenho', () => {
   test('o rótulo da barra escreve o último dia INCLUSIVO', async () => {
     // O servidor manda `fim + 1`. Repeti-lo no texto diria um dia a mais.
     servico.resposta = [{
+      lote_id: 1,
+      subfase_id: 10,
       lote: 'Lote 1',
       subfase: 'Edição',
       data: [['2026-02-10', '1', '2026-02-15']],
@@ -121,6 +130,8 @@ describe('atividade por subfase: o desenho', () => {
 
   test('a posição da barra é proporcional ao período do conjunto', async () => {
     servico.resposta = [{
+      lote_id: 1,
+      subfase_id: 10,
       lote: 'Lote 1',
       subfase: 'Edição',
       data: [
@@ -140,6 +151,8 @@ describe('atividade por subfase: o desenho', () => {
 
   test('faixa de um dia não some: o mínimo é em pixel, e a posição segue exata', async () => {
     servico.resposta = [{
+      lote_id: 1,
+      subfase_id: 10,
       lote: 'Lote 1',
       subfase: 'Edição',
       data: [
@@ -155,9 +168,18 @@ describe('atividade por subfase: o desenho', () => {
 
 describe('atividade por subfase: o agrupamento e os filtros', () => {
   const duasLinhas = () => [
-    { lote: 'Lote 1', subfase: 'Edição', data: [['2026-01-01', '1', '2026-01-10']] },
-    { lote: 'Lote 1', subfase: 'Validação', data: [['2026-01-05', '1', '2026-01-20']] },
-    { lote: 'Lote 2', subfase: 'Edição', data: [['2026-02-01', '1', '2026-02-10']] },
+    {
+      lote_id: 1, subfase_id: 10, lote: 'Lote 1', subfase: 'Edição',
+      linha_producao: 'CTM25', data: [['2026-01-01', '1', '2026-01-10']],
+    },
+    {
+      lote_id: 1, subfase_id: 11, lote: 'Lote 1', subfase: 'Validação',
+      linha_producao: 'CTM25', data: [['2026-01-05', '1', '2026-01-20']],
+    },
+    {
+      lote_id: 2, subfase_id: 10, lote: 'Lote 2', subfase: 'Edição',
+      linha_producao: 'CTM25', data: [['2026-02-01', '1', '2026-02-10']],
+    },
   ];
 
   test('um quadro por lote, na ordem do servidor', async () => {
@@ -169,12 +191,38 @@ describe('atividade por subfase: o agrupamento e os filtros', () => {
     expect(quadros()[0].querySelectorAll('.linha-tempo__linha')).toHaveLength(2);
   });
 
-  test('o filtro de lote deixa um quadro só', async () => {
+  // A QUEBRA É PELO `lote_id`. Dois projetos podem batizar o lote com o mesmo
+  // nome, e agrupar pelo nome os juntaria num quadro só -- a mesma fusão por
+  // rótulo que o servidor deixou de fazer em 2026-08-09.
+  test('dois lotes de mesmo NOME e ids diferentes são dois quadros', async () => {
+    servico.resposta = [
+      {
+        lote_id: 7, subfase_id: 10, lote: 'Lote A', subfase: 'Edição',
+        linha_producao: 'CTM25', data: [['2026-01-01', '1', '2026-01-10']],
+      },
+      {
+        lote_id: 8, subfase_id: 10, lote: 'Lote A', subfase: 'Edição',
+        linha_producao: 'CTM25', data: [['2026-02-01', '1', '2026-02-10']],
+      },
+    ];
+    await abrir();
+
+    expect(quadros()).toHaveLength(2);
+    expect(quadros().map(q => q.querySelector('.linha-tempo__lote').textContent))
+      .toEqual(['Lote A', 'Lote A']);
+  });
+
+  test('o filtro de lote deixa um quadro só, e casa o id e não o nome', async () => {
     servico.resposta = duasLinhas();
     await abrir();
 
     const select = container.querySelector('.page__filters select');
-    select.value = 'Lote 2';
+    // O valor da opção é o `lote_id`; o rótulo é que é o nome.
+    expect([...select.options].map(o => o.value)).toEqual(['', '1', '2']);
+    expect([...select.options].map(o => o.textContent))
+      .toEqual(['Todos', 'Lote 1', 'Lote 2']);
+
+    select.value = '2';
     select.dispatchEvent(new Event('change'));
     await flush();
 
@@ -213,5 +261,67 @@ describe('atividade por subfase: o agrupamento e os filtros', () => {
 
     expect(servico.chamadas).toBe(2);
     expect(quadros()).toHaveLength(2);
+  });
+});
+
+// O DEFEITO DE 2026-08-09, do lado da tela.
+//
+// `producao.subfase` é UNIQUE (nome, fase_id): "Edição" existe na linha da Carta
+// Topográfica E na do CDGV, e 61 dos 102 lotes atravessam mais de um subtipo. O
+// servidor agrupava por NOME e mandava UMA série com as faixas das duas
+// intercaladas; agora manda DUAS, com `subfase_id` diferente. O que estes casos
+// prendem é o que a tela faz com elas.
+describe('duas subfases de mesmo nome em linhas de produção diferentes', () => {
+  const duasEdicoes = () => [
+    {
+      lote_id: 1, subfase_id: 10, lote: 'Lote 1', subfase: 'Edição',
+      linha_producao: 'CTM25', data: [['2026-01-02', '1', '2026-01-04']],
+    },
+    {
+      lote_id: 1, subfase_id: 20, lote: 'Lote 1', subfase: 'Edição',
+      linha_producao: 'CDGV', data: [['2026-01-06', '1', '2026-01-08']],
+    },
+  ];
+
+  test('são DUAS linhas no mesmo quadro, e não uma', async () => {
+    servico.resposta = duasEdicoes();
+    await abrir();
+
+    expect(quadros()).toHaveLength(1);
+    expect(quadros()[0].querySelectorAll('.linha-tempo__linha')).toHaveLength(2);
+    // Uma barra em cada linha, e não duas na mesma.
+    expect(barras()).toHaveLength(2);
+    const porLinha = [...quadros()[0].querySelectorAll('.linha-tempo__linha')]
+      .map(l => l.querySelectorAll('.linha-tempo__barra').length);
+    expect(porLinha).toEqual([1, 1]);
+  });
+
+  test('a linha de produção desempata o rótulo', async () => {
+    servico.resposta = duasEdicoes();
+    await abrir();
+
+    const rotulos = [...container.querySelectorAll('.linha-tempo__rotulo')]
+      .map(r => r.textContent)
+      .filter(Boolean);
+    expect(rotulos).toEqual(['Edição (CTM25)', 'Edição (CDGV)']);
+  });
+
+  test('sem empate, a sigla NÃO entra: o nome sozinho já identifica', async () => {
+    servico.resposta = [
+      {
+        lote_id: 1, subfase_id: 10, lote: 'Lote 1', subfase: 'Edição',
+        linha_producao: 'CTM25', data: [['2026-01-02', '1', '2026-01-04']],
+      },
+      {
+        lote_id: 1, subfase_id: 11, lote: 'Lote 1', subfase: 'Validação',
+        linha_producao: 'CTM25', data: [['2026-01-06', '1', '2026-01-08']],
+      },
+    ];
+    await abrir();
+
+    const rotulos = [...container.querySelectorAll('.linha-tempo__rotulo')]
+      .map(r => r.textContent)
+      .filter(Boolean);
+    expect(rotulos).toEqual(['Edição', 'Validação']);
   });
 });

@@ -78,6 +78,7 @@ Arquivo `server/config.env`, gerado pelo `npm run config`. O catálogo comentado
 | `DB_USER`, `DB_PASSWORD` | Sim | Usuário de escrita do banco |
 | `DB_USER_READONLY`, `DB_PASSWORD_READONLY` | Não | Papel somente leitura (URI de camada do QGIS) |
 | `MICRO_DB_SERVER`, `MICRO_DB_PORT`, `MICRO_DB_NAME`, `MICRO_DB_USER`, `MICRO_DB_PASSWORD` | Não | O banco SEPARADO da telemetria do microcontrole. **TODAS ou NENHUMA**: o boot cobra as cinco se alguma vier preenchida. Sem elas o serviço sobe inteiro e as rotas que leem a telemetria respondem 503 |
+| `PRODUCAO_DB_ADMIN_USER`, `PRODUCAO_DB_ADMIN_PASSWORD`, `PRODUCAO_DB_HOSTS` | Não | A conexão ADMINISTRATIVA dos bancos de edição, que cria e revoga o papel efêmero do operador. **TODAS ou NENHUMA**, e o boot recusa subir com duas das três. `PRODUCAO_DB_HOSTS` é a lista branca de `servidor` ou `servidor:porta`, separada por vírgula: alvo fora dela é recusado NA HORA DE DISCAR, e não só ao cadastrar. Sem as três, as rotas de `/banco_dados` respondem 503 |
 | `JWT_SECRET` | Sim | Segredo para assinatura JWT |
 | `JWT_EXPIRACAO` | Não | Duração da sessão no formato do jsonwebtoken (default `8h`) |
 | `MINIATURA_PDFTOPPM`, `MINIATURA_GDAL_TRANSLATE`, `MINIATURA_GDALINFO` | Não | Caminho dos binários de miniatura (vazio = procurar no PATH) |
@@ -264,7 +265,7 @@ client/src/js/
 ├── store/            # auth-store: sessão única, prefixo @sca-*
 ├── services/         # api-client, cache, plataforma-service, rpcmtec-service,
 │                     # campo-service, rastreabilidade-service, producao-service,
-│                     # producao-acompanhamento-service, microcontrole-service
+│                     # producao-service, microcontrole-service
 ├── utils/            # dom, formatação, tema, toast, localizador, reconciliar
 ├── components/       # layout, data-table, modal, form-fields, charts, mapa, tabs,
 │                     # wizard, paginação, histórico, filtros, export-bar

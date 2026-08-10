@@ -229,14 +229,21 @@ dotenv.config({
 // versão não entra no rótulo: o menu, o `<title>` e o Swagger dizem "SAP", e
 // quem carrega o 3.0.0 é `VERSION` aqui e `public.versao` no banco.
 //
-// O PISO SOBE JUNTO, e a migração `2026-08-09_o_sca_vira_sap_3.sql` não toca
-// schema nenhum: ela só carimba `public.versao`. Pela regra do parágrafo da
-// 1.26.0 ele poderia ficar em 1.50.0, porque um banco 1.50.0 tem exatamente o
-// schema que este código lê. Ele sobe assim mesmo porque a renumeração precisa
-// atravessar UMA vez em cada instalação: as migrações de schema do core de
-// produção vêm depois desta e carimbam 3.x, e um banco que pulou a renomeação
-// ficaria comparando a série velha com a nova para sempre. O custo de cobrar é
-// aplicar uma migração que roda em milissegundos.
+// A MIGRAÇÃO `2026-08-09_o_sca_vira_sap_3.sql` NÃO CARIMBA NADA, e não toca
+// schema nenhum. Ela carimbava 3.0.0 até 2026-08-09 e PERDEU o
+// `UPDATE public.versao`: quem aplicasse só ela ficaria com `public.versao`
+// dizendo 3.0.0 e sem um objeto do core, e como `MIN_DATABASE_VERSION` também é
+// 3.0.0 o serviço subiria satisfeito contra esse banco. Quem carimba a 3.0.0 é
+// `2026-08-09_o_core_de_producao_atravessa.sql`, que é quem CRIA os cinco
+// schemas -- o número só sobe quando o banco tem de fato o que o número promete.
+// O que sobrou naquele arquivo é uma conferência, e a renomeação é de PRODUTO:
+// ela vive neste código e nas telas.
+//
+// O PISO EM 3.0.0 NÃO É SIMETRIA COM A `VERSION`, e é o caso raro em que a regra
+// do parágrafo da 1.26.0 não precisa ser invocada: este código LÊ `producao`,
+// `qgis`, `metadado`, `acompanhamento` e `microcontrole`, e um banco em 1.52.0
+// não tem nenhum deles. Cobrar menos deixaria o serviço subir para morrer na
+// primeira consulta, com "relation producao.etapa does not exist".
 // A IDENTIDADE DA INSTALAÇÃO NÃO MOVE ESTES DOIS NÚMEROS, e a ausência é
 // deliberada. `dgeo.instituicao` (1.51.0) e a saída do `e_1cgeo` de
 // `limites.area_suprimento` (1.52.0) entraram em 2026-08-09, ANTES da renumeração
@@ -255,6 +262,10 @@ const MIN_DATABASE_VERSION = '3.0.0'
  * telemetria nao foi configurada. Sem esta poda, `MICRO_DB_SERVER=''` contaria
  * como "presente" para o `Joi.and` e o boot morreria cobrando as outras quatro
  * de toda instalacao que nao usa telemetria.
+ *
+ * VALE IGUAL para as tres `PRODUCAO_DB_*`, escritas em branco pelo mesmo
+ * instalador quando a instalacao nao tem banco de edicao com controle de
+ * permissao.
  */
 const vazioEhAusente = obj =>
   Object.fromEntries(
@@ -304,6 +315,34 @@ const configSchema = Joi.object().keys({
   MICRO_DB_NAME: Joi.string(),
   MICRO_DB_USER: Joi.string(),
   MICRO_DB_PASSWORD: Joi.string(),
+  // --- Administração dos bancos de EDIÇÃO (login temporário da produção) -----
+  //
+  // AS TRÊS SÃO OPCIONAIS, pelo mesmo desenho das cinco acima: sem elas o
+  // subsistema que cria e revoga o papel efêmero no banco de edição fica
+  // DESLIGADO, e não quebrado. O serviço sobe inteiro, as três rotas de
+  // `/api/gerencia_producao/banco_dados` respondem 503 e o pacote da atividade
+  // sai sem a seção de acesso. Quem lê as chaves é `database/conexao_admin.js`,
+  // direto de `process.env`; aqui elas são VALIDADAS, e é só isso.
+  //
+  // E ELAS VALEM JUNTAS OU NENHUMA, o que aqui não é preciosismo de simetria:
+  // `PRODUCAO_DB_HOSTS` é a lista de servidores de banco que esta instalação
+  // pode discar, e ela existe porque o endereço do alvo vem do DADO
+  // (`producao.dado_producao.configuracao_producao`), digitado por um gerente do
+  // módulo. Sem lista, quem digita aquele campo escolhia para qual servidor este
+  // serviço manda o par de SUPERUSUÁRIO abaixo, e um PostgreSQL falso do outro
+  // lado pede a senha em claro e a recebe.
+  //
+  // Por isso credencial sem lista mata o BOOT em vez de virar 503 na primeira
+  // requisição: uma instalação que já tem as duas primeiras chaves precisa saber
+  // AGORA que falta a terceira, e não no dia em que alguém for iniciar uma
+  // atividade. `conexao_admin.js` recusa toda discagem enquanto a lista estiver
+  // vazia, que é o lado seguro da ausência.
+  //
+  // O ENDEREÇO NÃO ENTRA EM `PRODUCAO_DB_ADMIN_*`: elas são só o papel e a senha.
+  PRODUCAO_DB_ADMIN_USER: Joi.string(),
+  PRODUCAO_DB_ADMIN_PASSWORD: Joi.string(),
+  // `servidor` ou `servidor:porta`, separados por vírgula. Sem curinga.
+  PRODUCAO_DB_HOSTS: Joi.string(),
   // Onde os shares do acervo estão MONTADOS nesta máquina. Só importa fora do
   // Windows: `acervo.volume_armazenamento.volume` guarda caminho UNC, que no
   // Linux não existe. Com VOLUMES_RAIZ=/mnt, o share "acervo_sca" da UNC é lido
@@ -327,6 +366,15 @@ const configSchema = Joi.object().keys({
     'MICRO_DB_NAME',
     'MICRO_DB_USER',
     'MICRO_DB_PASSWORD'
+  )
+  // TODAS OU NENHUMA, de novo, e por um motivo mais duro: aqui a chave que falta
+  // não degrada uma tela, ela decide para qual servidor este serviço manda um
+  // par de superusuário. Credencial sem lista de servidores é o defeito, e ele
+  // morre no boot.
+  .and(
+    'PRODUCAO_DB_ADMIN_USER',
+    'PRODUCAO_DB_ADMIN_PASSWORD',
+    'PRODUCAO_DB_HOSTS'
   )
 
 const config = {
@@ -356,6 +404,15 @@ const config = {
     MICRO_DB_NAME: process.env.MICRO_DB_NAME,
     MICRO_DB_USER: process.env.MICRO_DB_USER,
     MICRO_DB_PASSWORD: process.env.MICRO_DB_PASSWORD
+  }),
+  // Pela mesma regra e pelo mesmo motivo das cinco acima: `create_config.js`
+  // escreve as três em branco quando o subsistema não foi configurado, e uma
+  // `''` presente faria o `Joi.and` cobrar as outras duas de toda instalação que
+  // não usa banco de edição com controle de permissão.
+  ...vazioEhAusente({
+    PRODUCAO_DB_ADMIN_USER: process.env.PRODUCAO_DB_ADMIN_USER,
+    PRODUCAO_DB_ADMIN_PASSWORD: process.env.PRODUCAO_DB_ADMIN_PASSWORD,
+    PRODUCAO_DB_HOSTS: process.env.PRODUCAO_DB_HOSTS
   }),
   VERSION,
   MIN_DATABASE_VERSION

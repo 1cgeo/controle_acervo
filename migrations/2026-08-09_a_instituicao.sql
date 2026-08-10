@@ -106,19 +106,17 @@
 -- segunda passada NAO reescreve o nome, a sigla nem a UG: quem ja tiver trocado
 -- os tres pela tela nao os perde ao reaplicar.
 --
--- Para ensaiar antes de aplicar, em cadeia com as tres do mesmo dia, que e como
--- as quatro rodam em producao:
+-- PARA ENSAIAR, O COMANDO E UM SO, E ELE NAO ESTA AQUI: esta no cabecalho de
+-- `migrations/2026-08-09_o_core_de_producao_atravessa.sql`, sob "O COMANDO
+-- CANONICO DE ENSAIO DE 2026-08-09". Ele leva AS CINCO migracoes do dia em
+-- cadeia (esta e a segunda), os CINCO `er/` novos e os DEZ schemas que a entrega
+-- toca, `dgeo` entre eles. Ensaiar esta sozinha nao prova nada: o que interessa
+-- e que a SEQUENCIA chegue onde a instalacao nova chega.
 --
---   node migrations/ensaiar_migracao.cjs \
---     --migracao migrations/2026-08-09_o_pit_devolve_o_nome_producao.sql,migrations/2026-08-09_a_instituicao.sql,migrations/2026-08-09_o_sca_vira_sap_3.sql,migrations/2026-08-09_o_core_de_producao_atravessa.sql \
---     --novos er/producao.sql,er/qgis.sql,er/metadado.sql,er/acompanhamento_producao.sql,er/microcontrole.sql \
---     --versao-anterior 1.50.0 --versao-esperada 3.0.0 \
---     --schemas dgeo,dominio,pit,producao,qgis,metadado,acompanhamento,microcontrole \
---     --er-de <revisao anterior a chegada do core>
---
--- O `--er-de` NAO E OPCIONAL: esta migracao muda o CONTEUDO de `er/dgeo.sql`
--- (a tabela e a semente). Sem ele, o banco "anterior" ja nasceria com a tabela,
--- a migracao viraria no-op e o ensaio aprovaria sem exercitar nada.
+-- O `--er-de` daquele comando NAO E OPCIONAL para esta migracao em particular:
+-- ela muda o CONTEUDO de `er/dgeo.sql` (a tabela e a semente). Sem ele, o banco
+-- "anterior" ja nasceria com a tabela, a migracao viraria no-op e o ensaio
+-- aprovaria sem exercitar nada.
 
 BEGIN;
 

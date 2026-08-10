@@ -111,7 +111,11 @@ const schemaValidationTolerante = ({
       Object.defineProperty(req, 'params', { value, configurable: true })
     }
     if (bodySchema) {
-      const corpoOriginal = req.body
+      // CORPO AUSENTE E `{}`, pelo mesmo motivo do irmao estrito: sob Express 5
+      // `req.body` fica indefinido quando nao ha corpo, e `Joi.object()` aceita
+      // `undefined` sem cobrar chave obrigatoria nenhuma. A recusa vinha depois,
+      // como `TypeError`, e chegava ao cliente como 500 em vez de 400.
+      const corpoOriginal = req.body === undefined ? {} : req.body
 
       const { error, value } = bodySchema.validate(corpoOriginal, {
         stripUnknown: true,

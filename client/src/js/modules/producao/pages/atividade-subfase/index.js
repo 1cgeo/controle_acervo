@@ -68,11 +68,20 @@ const normalizar = (v) => String(v ?? '')
  * subfase de cada lote teve gente trabalhando.
  *
  * A RESPOSTA JÁ VEM EM FAIXAS, e a tela não as recalcula. `/atividade_subfase`
- * devolve, por (lote, subfase), uma lista de `[dia_inicial, 0 ou 1,
+ * devolve, por (`lote_id`, `subfase_id`), uma lista de `[dia_inicial, 0 ou 1,
  * dia_seguinte_ao_final]`, montada inteira em SQL: `generate_series` dá a grade
- * de dias do ano corrente, um `EXISTS` marca cada dia e a técnica de ilhas funde
- * os dias iguais. Refazer essa costura aqui só criaria um segundo lugar para ela
- * divergir.
+ * de dias do ano corrente, uma junção marca os dias cobertos por alguma
+ * atividade e a técnica de ilhas funde os dias iguais. Refazer essa costura aqui
+ * só criaria um segundo lugar para ela divergir.
+ *
+ * A SÉRIE É O `subfase_id`, E NUNCA O NOME. `producao.subfase` é UNIQUE (nome,
+ * fase_id): "Edição" existe na linha da Carta Topográfica E na do CDGV, e um
+ * lote misto executa as duas. Até 2026-08-09 o servidor agrupava por nome e as
+ * duas vinham numa barra só, com as faixas intercaladas -- o mesmo dia aparecia
+ * duas vezes, uma com valor 1 e outra com 0. Agora vêm duas linhas, e é por isso
+ * que a resposta traz `lote_id`, `subfase_id` e `linha_producao`: sem eles a
+ * tela mostraria duas linhas de rótulo idêntico e o conserto pareceria defeito
+ * novo.
  *
  * SÓ A FAIXA ATIVA É PINTADA. A origem desenha as duas (verde ativo, rosa
  * inativo), e duas cores para "trabalhou / não trabalhou" gastam a paleta de
@@ -170,8 +179,23 @@ export async function renderAtividadeSubfase(container) {
     return marcas;
   }
 
-  function trilho(item, min, max) {
+  /**
+   * O rótulo da linha, e a linha de produção só quando ela desempata.
+   *
+   * Duas subfases de mesmo nome no mesmo quadro são duas linhas de produção
+   * diferentes, e sem a sigla a tela mostraria "Edição" duas vezes sem dizer
+   * qual é qual. Escrevê-la SEMPRE repetiria a mesma sigla em todas as linhas de
+   * um lote de linha única, que é o caso comum, e roubaria espaço do nome.
+   */
+  function rotuloDe(item, repetidos) {
+    const nome = item.subfase || '-';
+    if (!item.linha_producao || !repetidos.has(item.subfase)) return nome;
+    return `${nome} (${item.linha_producao})`;
+  }
+
+  function trilho(item, min, max, repetidos) {
     const total = max - min;
+    const rotulo = rotuloDe(item, repetidos);
     const barras = item.__faixas
       .filter(f => f.ativa)
       .map((f) => {
@@ -190,7 +214,7 @@ export async function renderAtividadeSubfase(container) {
             // a posição, que continua exata.
             width: `max(3px, ${Math.max(0, largura)}%)`,
           },
-          title: `${item.subfase}: ${diaBR(f.inicio)} a ${diaBR(ultimoDia)} `
+          title: `${rotulo}: ${diaBR(f.inicio)} a ${diaBR(ultimoDia)} `
             + `(${dias} dia${dias === 1 ? '' : 's'})`,
         });
       });
@@ -198,8 +222,8 @@ export async function renderAtividadeSubfase(container) {
     return el('div', { className: 'linha-tempo__linha' }, [
       el('div', {
         className: 'linha-tempo__rotulo',
-        textContent: item.subfase || '-',
-        title: item.subfase || '',
+        textContent: rotulo,
+        title: rotulo,
       }),
       el('div', { className: 'linha-tempo__trilho' }, barras),
     ]);
@@ -207,6 +231,12 @@ export async function renderAtividadeSubfase(container) {
 
   function quadroDoLote(lote, itens, min, max) {
     const marcas = marcasDeMes(min, max);
+    const vistos = new Set();
+    const repetidos = new Set();
+    for (const i of itens) {
+      if (vistos.has(i.subfase)) repetidos.add(i.subfase);
+      vistos.add(i.subfase);
+    }
     return el('section', { className: 'linha-tempo__quadro' }, [
       el('h2', { className: 'linha-tempo__lote', textContent: lote }),
       el('div', { className: 'linha-tempo__eixo' }, [
@@ -218,12 +248,16 @@ export async function renderAtividadeSubfase(container) {
             textContent: m.rotulo,
           }))),
       ]),
-      ...itens.map(i => trilho(i, min, max)),
+      ...itens.map(i => trilho(i, min, max, repetidos)),
     ]);
   }
 
+  // O FILTRO CASA `lote_id`, e não o nome: dois projetos podem ter lotes de
+  // mesmo nome, e escolher um deles no seletor traria os dois. A comparação é
+  // por texto dos dois lados porque `lote_id` é BIGINT no banco, e o driver o
+  // entrega como string enquanto o valor do `<select>` já é string.
   const passaNoFiltro = (item) => {
-    if (filtros.lote && item.lote !== filtros.lote) return false;
+    if (filtros.lote && String(item.lote_id) !== String(filtros.lote)) return false;
     if (!filtros.busca) return true;
     return normalizar(item.subfase).includes(normalizar(filtros.busca));
   };
@@ -254,20 +288,23 @@ export async function renderAtividadeSubfase(container) {
       return;
     }
 
-    // A ORDEM VEM DO SERVIDOR (lote, subfase), então o agrupamento é
-    // sequencial: um `Map` por nome bastaria hoje e fundiria lotes homônimos no
-    // dia em que dois projetos tivessem lotes de mesmo nome.
+    // A ORDEM VEM DO SERVIDOR (lote, subfase, e a chave no desempate), então o
+    // agrupamento é sequencial. A QUEBRA É PELO `lote_id`, e não pelo nome: o
+    // nome fundiria dois lotes homônimos de projetos diferentes num quadro só,
+    // que é a mesma fusão por rótulo que o servidor acabou de deixar de fazer.
     let loteAtual = null;
+    let nomeAtual = null;
     let acumulado = [];
     const despejar = () => {
-      if (loteAtual !== null && acumulado.length) {
-        area.appendChild(quadroDoLote(loteAtual, acumulado, min, max));
+      if (acumulado.length) {
+        area.appendChild(quadroDoLote(nomeAtual, acumulado, min, max));
       }
     };
     for (const item of visiveis) {
-      if (item.lote !== loteAtual) {
+      if (String(item.lote_id) !== String(loteAtual)) {
         despejar();
-        loteAtual = item.lote;
+        loteAtual = item.lote_id;
+        nomeAtual = item.lote;
         acumulado = [];
       }
       acumulado.push(item);
@@ -282,9 +319,15 @@ export async function renderAtividadeSubfase(container) {
       const dados = await getAtividadeSubfase();
       if (disposed) return;
       series = (dados || []).map(item => ({ ...item, __faixas: faixasDe(item) }));
-      loteFilter.setOptions([...new Set(series.map(s => s.lote).filter(Boolean))]
-        .sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'))
-        .map(l => ({ value: l, label: l })));
+      // As opções saem de um `Map` por `lote_id`: dois lotes de mesmo nome viram
+      // duas opções, e não uma que traria os dois.
+      const lotes = new Map();
+      for (const s of series) {
+        if (s.lote_id != null) lotes.set(String(s.lote_id), s.lote);
+      }
+      loteFilter.setOptions([...lotes.entries()]
+        .sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR'))
+        .map(([value, label]) => ({ value, label })));
       desenhar();
     } catch (err) {
       if (disposed) return;

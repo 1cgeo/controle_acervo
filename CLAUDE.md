@@ -80,8 +80,9 @@ dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 pit, 5 efetivo, 6 
   `verifyPerfil`, o mapa `MODULO`, o prefixo de rota e a chave dos `perfis` o comparam por igualdade
   de string, e trocá-lo derruba a autorização sem erro de sintaxe e sem teste vermelho. O rótulo do
   MENU já não é uma terceira coisa: o code 4 se chamava `producao` até 2026-08-09, e virou `pit`
-  para devolver o nome ao core de produção herdado do SAP 2.3.5, que vai entrar como Produção. A
-  **pasta** ainda pode divergir do módulo (`server/src/campo/` cobra `pit`).
+  para devolver o nome ao core de produção herdado do SAP 2.3.5, que entrou como Produção (code 7)
+  na 3.0.0. A **pasta** ainda pode divergir do módulo (`server/src/campo/` cobra `pit`, e
+  `server/src/microcontrole/` cobra `producao`).
 - **A régua, de 2026-08-08:** `consulta` LÊ as telas do módulo, `operador` LANÇA, `gerente` responde
   pela área e vê tudo dela. Rota nova escolhe o piso por essa frase, e não por costume. As duas
   exceções são deliberadas: a lista NÃO hierárquica (`perfis: ['consulta','gerente']`, lida por
@@ -105,9 +106,11 @@ dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 pit, 5 efetivo, 6 
   ESCREVER subseção do RPCMTec) e `verifyAdmin` (usuários, meta e revisão do PIT, fechar o RPCMTec,
   views materializadas, limpeza de download).
 
-- **`pit.pit` é o ANO, e `macrocontrole.pit` do SAP é a META.** A tabela se chamava `pit.exercicio`
-  até 2026-08-09. Quando o core de produção atravessar, as duas vão existir no mesmo banco com o
-  mesmo nome e sentidos diferentes: a de lá corresponde ao `pit.meta` daqui.
+- **`pit.pit` é o ANO, e o `macrocontrole.pit` do SAP 2.3.5 é a META.** A tabela se chamava
+  `pit.exercicio` até 2026-08-09. **O homônimo NÃO se materializou:** o core atravessou na 3.0.0 e o
+  `macrocontrole.pit` de lá ficou, porque o que ele diz já mora aqui (`pit.meta`, mais o vínculo por
+  `acervo.versao.meta_pit_id`, que aponta `pit.meta_item`). Não existe, e não deve nascer, uma
+  segunda tabela `pit` neste banco.
 - **A entidade de auditoria de `pit.pit` continua `exercicio`**, e não acompanhou o nome da tabela:
   `auditoria.evento.entidade` é texto gravado no evento, e a trilha é append-only.
 

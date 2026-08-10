@@ -20,7 +20,15 @@ import { urlTileLinhaProducao, camadaDaTile } from '@services/producao-service.j
  *            não "como está indo".
  *
  * O TOKEN DA TILE VAI NA URL, e é o único lugar do sistema onde isso acontece.
- * Ver `urlTileLinhaProducao` em `services/producao-service.js`.
+ * Ele NÃO é o token da sessão: é uma credencial de audiência `tile`, pedida ao
+ * servidor a cada montagem da fonte e válida por minutos. Ver
+ * `urlTileLinhaProducao` em `services/producao-service.js`.
+ *
+ * E POR ISSO MONTAR A CAMADA DE TILES É ASSÍNCRONO. Duas consequências que o
+ * código abaixo trata: a linha de produção pode ter mudado enquanto o token era
+ * buscado (a montagem em curso desiste, e quem manda é a chamada mais nova), e o
+ * token vence com o mapa aberto (a fonte se refaz sozinha, uma vez por minuto no
+ * máximo, antes de a tela acusar falha).
  *
  * TILE VAZIA NÃO É ERRO. O servidor responde 204 em dois casos normais: a linha
  * de produção ainda não tem view materializada nenhuma (nenhum lote com etapa
@@ -32,6 +40,17 @@ import { urlTileLinhaProducao, camadaDaTile } from '@services/producao-service.j
 const FONTE_GEOJSON = 'acompanhamento';
 const FONTE_TILE = 'linha-producao-tile';
 const CAMADA_TILE = 'linha-producao-contorno';
+
+/**
+ * O intervalo mínimo entre duas renovações do token da tile.
+ *
+ * O MapLibre dispara um `error` POR TILE que falha, então um token vencido chega
+ * aqui como uma rajada de eventos. A rajada é absorvida por um sinalizador, e
+ * este intervalo é a trava do caso oposto: uma fonte quebrada de verdade (500 do
+ * servidor, view apagada) erraria para sempre, e sem ele a tela ficaria refazendo
+ * a fonte em laço em vez de dizer o que houve.
+ */
+const INTERVALO_RENOVACAO_MS = 60 * 1000;
 
 /**
  * As cores da SITUAÇÃO da folha, e elas são as do SAP de propósito: quem vem da
@@ -125,6 +144,8 @@ export function criarMapaAcompanhamento() {
   let colecao = { type: 'FeatureCollection', features: [] };
   let linhaTile = null;
   let enquadramentoPendente = true;
+  let renovandoTile = false;
+  let ultimaRenovacao = 0;
 
   const container = el('div', { className: 'producao-mapa__canvas' });
   const aviso = el('p', { className: 'producao-mapa__aviso hidden' });
@@ -230,6 +251,14 @@ export function criarMapaAcompanhamento() {
     mapa.on('error', (evento) => {
       if (destruido) return;
       if (!evento || evento.sourceId !== FONTE_TILE) return;
+
+      // O TOKEN DA TILE VENCE ANTES DA SESSÃO, e um mapa aberto continua pedindo
+      // tile enquanto a pessoa navega. A primeira suspeita diante de uma tile
+      // recusada é essa, e ela custa uma chamada: refazer a fonte busca um token
+      // novo. Só quando isso não é possível (renovação recente, ou a própria
+      // renovação falhou) é que a falha vira aviso na tela.
+      if (renovarTile()) return;
+
       falhar('Não foi possível buscar os tiles da linha de produção. '
         + 'A camada de situação, que vem por outra rota, continua na tela.');
     });
@@ -288,24 +317,57 @@ export function criarMapaAcompanhamento() {
    * Troca a camada de tiles.
    *
    * A FONTE SE REFAZ, e não se esconde: a URL do molde XYZ carrega o id da linha
-   * de produção, e MapLibre nenhum troca a URL de uma fonte viva. Esconder a
-   * camada deixaria a fonte antiga buscando tiles de uma linha que já saiu da
-   * tela.
+   * de produção E o token, e MapLibre nenhum troca a URL de uma fonte viva.
+   * Esconder a camada deixaria a fonte antiga buscando tiles de uma linha que já
+   * saiu da tela.
+   *
+   * A REMOÇÃO É SÍNCRONA E A MONTAGEM NÃO, porque o token vem do servidor. A
+   * antiga sai na hora, antes do `await`; a nova entra depois, e só se ainda for
+   * a linha pedida. Sem essa conferência, duas trocas rápidas montariam a camada
+   * da PRIMEIRA por cima da segunda, conforme a ordem em que as respostas
+   * chegassem.
+   *
+   * ELA NÃO REJEITA NUNCA, e devolve se a camada FICOU montada: quem a chama é
+   * um ouvinte do MapLibre e um `onChange` de campo, e nenhum dos dois tem onde
+   * tratar uma promessa rejeitada. Falha de credencial vira aviso na tela, e o
+   * resto vira `false`.
+   *
+   * @returns {Promise<boolean>} true quando a camada de tiles ficou de pé
    */
-  function aplicarTile() {
-    if (!pronto || destruido) return;
+  async function aplicarTile() {
+    if (!pronto || destruido) return false;
 
     if (mapa.getLayer && mapa.getLayer(CAMADA_TILE)) mapa.removeLayer(CAMADA_TILE);
     if (mapa.getSource(FONTE_TILE)) mapa.removeSource(FONTE_TILE);
 
     if (linhaTile == null) {
       marcaTile.classList.add('hidden');
-      return;
+      return false;
     }
+
+    // A linha PEDIDA, fotografada antes do await.
+    const linha = linhaTile;
+
+    let url;
+    try {
+      url = await urlTileLinhaProducao(linha);
+    } catch (err) {
+      if (destruido || linhaTile !== linha) return false;
+      // A CREDENCIAL DA TILE É OUTRA ROTA, e a falha dela fica na tile: o resto
+      // da tela (a camada de situação, o seletor, o catálogo) não depende dela.
+      falhar('Não foi possível obter a credencial dos tiles da linha de produção'
+        + `${err && err.message ? `: ${err.message}` : '.'} `
+        + 'A camada de situação, que vem por outra rota, continua na tela.');
+      return false;
+    }
+
+    // Trocou de linha, ou a tela saiu, enquanto o token vinha: quem chegou
+    // depois manda, e esta montagem não acontece.
+    if (destruido || !mapa || !pronto || linhaTile !== linha) return false;
 
     mapa.addSource(FONTE_TILE, {
       type: 'vector',
-      tiles: [urlTileLinhaProducao(linhaTile)],
+      tiles: [url],
       minzoom: 0,
       maxzoom: 14,
     });
@@ -317,11 +379,46 @@ export function criarMapaAcompanhamento() {
       // O NOME DA CAMADA DENTRO DA TILE é contrato do servidor
       // (`ST_AsMVT(q, 'linha_producao_<id>', ...)`). Errá-lo não dá erro nenhum:
       // a camada simplesmente não desenha.
-      'source-layer': camadaDaTile(linhaTile),
+      'source-layer': camadaDaTile(linha),
       paint: { 'line-color': '#3949ab', 'line-width': 1.5, 'line-dasharray': [2, 1] },
     });
 
     marcaTile.classList.remove('hidden');
+    // O RELÓGIO DA RENOVAÇÃO É O DA MONTAGEM: o token que está nesta URL acabou
+    // de nascer, então tile recusada no minuto seguinte não é prazo vencido.
+    ultimaRenovacao = Date.now();
+    return true;
+  }
+
+  /**
+   * Refaz a fonte de tiles com um token NOVO, depois de uma tile recusada.
+   *
+   * O token de tile vive minutos (`login_ctrl.TILE_EXPIRACAO`), e um mapa aberto
+   * continua pedindo tile enquanto a pessoa navega: sem esta renovação, passar
+   * do prazo obrigaria a recarregar a página. Ela é por REAÇÃO, e não por
+   * relógio, porque o prazo é do servidor e um temporizador aqui seria uma
+   * segunda cópia dele.
+   *
+   * @returns {boolean} true quando a renovação ficou encarregada do erro
+   */
+  function renovarTile() {
+    if (linhaTile == null) return false;
+    // A rajada de erros de uma mesma leva de tiles vira UMA renovação.
+    if (renovandoTile) return true;
+    if (Date.now() - ultimaRenovacao < INTERVALO_RENOVACAO_MS) return false;
+
+    renovandoTile = true;
+    ultimaRenovacao = Date.now();
+
+    aplicarTile()
+      .then(montou => {
+        // SÓ quando a camada ficou de pé: a montagem que falhou já escreveu o
+        // próprio aviso, e limpá-lo aqui apagaria a explicação da falha.
+        if (montou && !destruido) limparAviso();
+      })
+      .finally(() => { renovandoTile = false; });
+
+    return true;
   }
 
   /** Troca as feições da view escolhida. */
@@ -350,6 +447,12 @@ export function criarMapaAcompanhamento() {
 
   /**
    * Liga ou desliga a camada de tiles.
+   *
+   * CONTINUA SÍNCRONA, e a montagem que ela dispara é que não é: quem chama é um
+   * `onChange` de campo (`pages/mapas/index.js`), e devolver promessa ali só
+   * mudaria de lugar um `await` que ninguém tem o que fazer com. A camada
+   * antiga sai na hora; a nova entra quando o token chegar.
+   *
    * @param {number|string|null} linhaProducaoId - null desliga
    */
   function setTile(linhaProducaoId) {

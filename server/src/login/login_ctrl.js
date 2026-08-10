@@ -11,15 +11,37 @@ const { JWT_SECRET, JWT_EXPIRACAO } = require('../config')
 
 const senhaUtils = require('./senha')
 
+const { AUDIENCIA } = require('./validate_token')
+
 const controller = {}
 
-const signJWT = (data, secret) => {
+/**
+ * QUANTO VIVE O TOKEN DE TILE. Minutos, e não as 8 horas de `JWT_EXPIRACAO`.
+ *
+ * Ele anda na QUERY STRING da URL da camada (é o único canal que uma camada XYZ
+ * oferece), e por isso ele fica em log de acesso, histórico de navegador,
+ * `Referer` e proxy do caminho. Nada disso se apaga depois. O que dá para
+ * encurtar é o tempo em que o que ficou registrado ainda vale, e é isso que este
+ * número é.
+ *
+ * DEZ MINUTOS, E NÃO MENOS, porque cada renovação é uma ida ao servidor no meio
+ * de um mapa aberto. E não mais, porque o ganho todo é este. Quando ele vence, o
+ * MapLibre recebe 401 na próxima tile e o client refaz a fonte com um token novo
+ * (`mapas-mapa.js`), sem que ninguém precise recarregar a página.
+ *
+ * NÃO É CHAVE DE `config.env` de propósito: não é ajuste de instalação, é a
+ * meia-vida de uma credencial que anda em URL, e afrouxá-la numa instalação
+ * desfaria a correção justamente onde ninguém estaria olhando.
+ */
+const TILE_EXPIRACAO = '10m'
+
+const signJWT = (data, secret, expiracao = JWT_EXPIRACAO) => {
   return new Promise((resolve, reject) => {
     jwt.sign(
       data,
       secret,
       {
-        expiresIn: JWT_EXPIRACAO
+        expiresIn: expiracao
       },
       (err, token) => {
         if (err) {
@@ -271,7 +293,15 @@ controller.login = async (login, senha, cliente, plugins, qgis) => {
     // token, ao contrário dos PERFIS, porque é imutável enquanto o token vive;
     // o perfil muda, e por isso o `verifyPerfil` o relê do banco a cada
     // requisição.
-    const token = await signJWT({ id, uuid, administrador, cliente }, JWT_SECRET)
+    //
+    // `aud` ENTROU EM 2026-08-09, e diz PARA QUE este token serve: a sessão
+    // inteira, e não a tile. Quem confere é `validate_token.js`, e o cabeçalho
+    // de lá explica por que o token ANTERIOR a esta data, que não tem o claim,
+    // continua valendo nas guardas normais.
+    const token = await signJWT(
+      { id, uuid, administrador, cliente, aud: AUDIENCIA.SESSAO },
+      JWT_SECRET
+    )
 
     // Historico de acesso, que alimenta a tela #/acessos. Fica DEPOIS da
     // assinatura do token e dentro da mesma transacao: gravar antes contaria
@@ -319,6 +349,46 @@ controller.sessao = async uuid => {
       instituicao
     }
   })
+}
+
+/**
+ * O TOKEN DA TILE: uma credencial de audiência `tile`, de vida curta, que abre
+ * `verifyLoginTile` e mais nada.
+ *
+ * POR QUE ELE EXISTE. Até 2026-08-09 a URL da camada MVT levava o token de
+ * SESSÃO na query (`?token=`), e essa URL era gravada inteira em
+ * `logs/combined.log` pelo middleware de log, que a rota aberta `/logs` publica.
+ * Uma credencial de oito horas, aceita por todas as guardas, ficava legível a
+ * quem abrisse a página do log. O `/logs` continua aberto por decisão; o que
+ * saiu de circulação foi a credencial.
+ *
+ * NÃO LÊ O BANCO, e não é esquecimento: quem chama é a rota `POST /login/tile`,
+ * sob `verifyLogin`, e ele acabou de conferir no banco que a conta existe e está
+ * ATIVA. Uma segunda consulta aqui responderia à mesma pergunta na mesma
+ * requisição. Quem confere de novo, a cada tile, é o próprio `verifyLoginTile`,
+ * que também lê o banco.
+ *
+ * ELE NÃO CARREGA PERFIL NENHUM, como o token de sessão: o que a pessoa pode
+ * continua saindo do banco a cada requisição.
+ *
+ * O `cliente` VIAJA JUNTO para a rastreabilidade não perder a origem: sem ele,
+ * `montarContexto` marcaria toda tile como 'desconhecido'.
+ *
+ * @param {{id:number, uuid:string, administrador:boolean, cliente?:string}} usuario
+ * @returns {Promise<{token:string, expira_em_segundos:number}>}
+ */
+controller.tokenDeTile = async ({ id, uuid, administrador, cliente }) => {
+  const token = await signJWT(
+    { id, uuid, administrador, cliente, aud: AUDIENCIA.TILE },
+    JWT_SECRET,
+    TILE_EXPIRACAO
+  )
+
+  // O prazo vai junto para o client poder renovar ANTES de tomar 401, se um dia
+  // quiser: hoje ele renova por reação ao erro da fonte de tiles.
+  const { exp, iat } = jwt.decode(token)
+
+  return { token, expira_em_segundos: exp - iat }
 }
 
 /**

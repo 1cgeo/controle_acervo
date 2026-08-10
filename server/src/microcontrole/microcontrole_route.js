@@ -18,15 +18,27 @@
 // existe: o controlador resolve aqui os `atividade_id` de um lote e os nomes dos
 // operadores, e leva os identificadores prontos para a consulta de la.
 //
-// A REGUA DE PERFIL, e ela e tradução direta do SAP 2.3.5:
+// A REGUA DE PERFIL VIGENTE E 6/2/3, e ela PARTIU do SAP 2.3.5 sem parar nele.
+// Nao leia a coluna da esquerda como se ela ainda decidisse:
 //
-//   `verifyAdmin` de la  -> `gerente` daqui. Sao NOVE: os dois catalogos, as
-//     tres leituras agregadas e as quatro do CRUD de perfil. Pela regua da casa
-//     (2026-08-08) o gerente e quem responde pela area, e e ele quem olha
-//     aproveitamento de EQUIPE -- a leitura aqui nao e "a tela do modulo", e sim
-//     o rendimento de pessoas com nome. No SAP as nove eram `verifyAdmin` porque
-//     la o admin era o unico degrau acima de "esta logado"; aqui existe o
-//     gerente do modulo, que e o degrau certo.
+//   `verifyAdmin` de la  -> NOVE rotas, e HOJE elas estao em DOIS pisos.
+//     SEIS em `consulta`, as de LEITURA: os dois catalogos
+//     (`GET /tipo_monitoramento`, `GET /tipo_operacao`), as tres leituras
+//     agregadas (`GET /feicao/resumo`, `GET /tela/cobertura`,
+//     `GET /tela/aproveitamento`) e o `GET /configuracao/perfil_monitoramento`.
+//     TRES em `gerente`, as que MEXEM: POST, PUT e DELETE de
+//     `/configuracao/perfil_monitoramento`.
+//     POR QUE A LEITURA DESCEU, em 2026-08-09 e por decisao do chefe: no modulo
+//     `producao` o visualizador VE TUDO, e o microcontrole nao abre excecao. A
+//     regua da casa (2026-08-08) manda `gerente` para quem responde pela area, e
+//     ela continua valendo para as tres de escrita.
+//     O QUE ISSO ALARGA, e fica dito em vez de escondido: a telemetria mede
+//     rendimento de pessoa COM NOME, e quem tem `consulta` em `producao` passa a
+//     ver isso da Divisao inteira. Se a intencao for o visualizador ver o
+//     TRABALHO e nao as PESSOAS, o que se reverte sao SEIS guardas aqui mais a
+//     rota do manifesto do client -- e reverter e DECISAO, que se registra em
+//     `docs/decisoes.md` antes de virar codigo. Quem trava o recorte de hoje e
+//     `__tests__/routes/microcontrole.test.js`, rota por rota.
 //   `verifyLogin` de la  -> `operador` daqui. Sao DUAS: `POST /feicao` e
 //     `POST /tela`. Elas nao sao tela: e o PLUGIN gravando a telemetria do
 //     PROPRIO trabalho de quem esta com a atividade na mao, e quem trabalha e

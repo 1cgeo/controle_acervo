@@ -60,13 +60,21 @@ models.tela = Joi.object().keys({
   dados: Joi.array()
     .items(
       Joi.object().keys({
-        // `Joi.date()` E O CERTO AQUI, e nao `Joi.date().iso().raw()` da regra da
-        // casa. A regra vale para DIA DE CALENDARIO gravado em coluna `DATE`,
-        // onde o fuso empurra a data para o dia anterior. Isto e um INSTANTE, em
-        // coluna `timestamp with time zone`: o momento em que o quadro de tela
-        // foi amostrado. O `.raw()` daria uma string crua onde o driver precisa
-        // do instante, e o Postgres normaliza o fuso sozinho.
-        data: Joi.date().required(),
+        // DUAS DECISOES SEPARADAS AQUI, e elas nao andam juntas.
+        //
+        // SEM `.raw()`, E DE PROPOSITO. A regra da casa
+        // (`Joi.date().iso().raw()`) vale para DIA DE CALENDARIO gravado em
+        // coluna `DATE`, onde o fuso empurra a data para o dia anterior. Isto e
+        // um INSTANTE, em coluna `timestamp with time zone`: o momento em que o
+        // quadro de tela foi amostrado. O `.raw()` daria uma string crua onde o
+        // driver precisa do instante, e o Postgres normaliza o fuso sozinho.
+        //
+        // COM `.iso()`, e ele nada tem a ver com o fuso: sem ele o Joi aceita o
+        // que o `Date` do JavaScript aceitar, e '01/08/2026' entra como 8 de
+        // JANEIRO. A telemetria vem do plugin, que manda ISO 8601; qualquer
+        // outra coisa e engano de quem chamou, e recusar e 400 em vez de uma
+        // amostra gravada com sete meses de erro.
+        data: Joi.date().iso().required(),
         // A EXTENSAO VISIVEL NA TELA, em WGS 84. O controlador a transforma em
         // `ST_MakeEnvelope`; ela nao chega como geometria pronta porque o plugin
         // le quatro numeros do canvas do QGIS e nao monta WKT.
@@ -127,9 +135,15 @@ models.perfilMonitoramentoAtualizacao = Joi.object().keys({
     .min(1)
 })
 
+// SEM `.required()` NO ITEM: com ele, a lista vazia recusa por
+// `array.includesRequiredUnknowns` ("não contém 1 valor obrigatório") antes de
+// chegar ao `array.min`, e a mensagem passa a falar de um requisito que ninguém
+// declarou. `gerencia_producao_schema.js` documenta a armadilha e a evita de
+// propósito, e `perigo_schema.js` também; esta era a última que faltava. Não
+// muda o que se aceita, só a frase que quem errou vai ler.
 models.perfilMonitoramentoIds = Joi.object().keys({
   perfis_monitoramento_ids: Joi.array()
-    .items(Joi.number().integer().strict().required())
+    .items(Joi.number().integer().strict())
     .unique()
     .required()
     .min(1)
@@ -143,11 +157,23 @@ models.perfilMonitoramentoIds = Joi.object().keys({
 // deliberada. `req.query` do Express chega SEMPRE como string: com `.strict()`
 // o Joi recusaria a coercao e todo filtro numerico responderia 400. E a mesma
 // convencao das outras query schemas do repositorio.
+//
+// AS DATAS SAO `.iso().raw()`, e aqui NAO e o mesmo caso do `data` da telemetria
+// logo acima. Sao DIA DE CALENDARIO digitado por quem filtra, e o `.raw()` os
+// entrega ao controlador como TEXTO ('2026-08-09'), para o `::date` do Postgres
+// interpretar o dia no fuso da SESSAO -- o mesmo em que a amostra foi gravada.
+// Convertidos para `Date` aqui, eles virariam meia-noite UTC, e a janela de "um
+// dia" iria das 21h da vespera as 20h59, perdendo as tres ultimas horas do dia
+// em UTC-3. E o padrao de `auditoria/auditoria_schema.js`.
+//
+// O `.iso()` E OUTRA REGRA, e vale para os dois: sem ele '01/08/2026' entra como
+// 8 de janeiro, e o filtro devolve o periodo errado sem acusar nada.
+const diaDeFiltro = () => Joi.date().iso().raw()
 
 models.resumoFeicaoQuery = Joi.object().keys({
   lote_id: Joi.number().integer(),
-  data_inicio: Joi.date(),
-  data_fim: Joi.date()
+  data_inicio: diaDeFiltro(),
+  data_fim: diaDeFiltro()
 })
 
 models.coberturaTelaQuery = Joi.object().keys({
@@ -155,8 +181,8 @@ models.coberturaTelaQuery = Joi.object().keys({
   // O UUID DA PESSOA, e nao um id inteiro: a identidade da casa e
   // `dgeo.usuario.uuid`, e e ele que a telemetria grava.
   usuario_uuid: Joi.string().uuid(),
-  data_inicio: Joi.date(),
-  data_fim: Joi.date()
+  data_inicio: diaDeFiltro(),
+  data_fim: diaDeFiltro()
 })
 
 models.aproveitamentoTelaQuery = Joi.object().keys({
@@ -165,8 +191,8 @@ models.aproveitamentoTelaQuery = Joi.object().keys({
   // nada -- somar o tempo de tela de cinco operadores num unico percentual
   // esconde exatamente a diferenca que se foi olhar.
   usuario_uuid: Joi.string().uuid().required(),
-  data_inicio: Joi.date(),
-  data_fim: Joi.date()
+  data_inicio: diaDeFiltro(),
+  data_fim: diaDeFiltro()
 })
 
 module.exports = models

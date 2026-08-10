@@ -40,6 +40,20 @@ const SRID_CONTROLE = 4674
 
 const id = () => Joi.number().integer().strict().positive()
 
+// O IRMAO DE `id()` PARA QUERY E PARA PARAMETRO DE CAMINHO, e a ausencia do
+// `.strict()` E o contrato dele.
+//
+// `req.query` CHEGA SEMPRE COMO TEXTO. O Express nao converte nada, e
+// `utils/schema_validation.js` valida o objeto CRU: com `.strict()` o Joi recusa
+// a coercao e `GET /api/producao/unidade_trabalho?lote_id=12` responde 400
+// '"lote_id" must be a number' para todo lote, sempre -- a rota fica
+// inalcancavel, e o `+req.query.lote_id` do controlador nunca chega a rodar.
+//
+// `insumo_schema.js` e `fluxo_schema.js` ja fazem assim, e o `.strict()` do
+// `id()` acima continua certo onde ele e usado: o CORPO chega como JSON, e la a
+// string '12' no lugar do numero 12 e erro de quem chamou.
+const idDeQuery = () => Joi.number().integer().positive()
+
 // O ITEM NAO LEVA `.required()`, e a diferenca nao e cosmetica: em Joi,
 // `items(X.required())` quer dizer "o array PRECISA CONTER pelo menos um item
 // que case com X", e a lista vazia passa a ser recusada por
@@ -130,8 +144,11 @@ models.blocoIds = Joi.object().keys({
 
 // --- Unidade de trabalho -----------------------------------------------------
 
+// `idDeQuery()`, e nao `id()`: este e o unico schema de QUERY desta fatia, e o
+// `.strict()` do `id()` tornava a rota inalcancavel (ver o comentario do
+// helper).
 models.unidadeTrabalhoQuery = Joi.object().keys({
-  lote_id: id().required()
+  lote_id: idDeQuery().required()
 })
 
 // `epsg` E TEXTO DE ATE CINCO CARACTERES (VARCHAR(5) NOT NULL), e nao e o SRID

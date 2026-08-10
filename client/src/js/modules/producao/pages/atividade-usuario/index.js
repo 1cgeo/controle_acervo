@@ -96,6 +96,12 @@ function chipDoStatus(status) {
  * a consulta gera os dias de 1º de janeiro até hoje. Não há filtro de ano aqui
  * porque não há rota que aceite um.
  *
+ * A SÉRIE É O `usuario_uuid`, e o nome é só rótulo. Até 2026-08-09 o servidor
+ * agrupava por `posto || nome de guerra`, e dois homônimos de mesmo posto viravam
+ * UMA barra com as faixas dos dois intercaladas. Agora a resposta traz
+ * `usuario_uuid` e eles vêm em duas linhas -- duas linhas de mesmo nome nesta
+ * tela são duas pessoas, e não um desenho repetido.
+ *
  * @param {HTMLElement} container
  * @returns {Function} cleanup
  */

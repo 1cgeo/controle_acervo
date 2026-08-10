@@ -12,12 +12,16 @@ const { montarContexto } = require('./contexto')
  * A guarda da PROPRIA CONTA: token valido e usuario ATIVO, sem perguntar por
  * modulo nenhum.
  *
- * QUEM A USA, e sao seis rotas: `GET /login/sessao`, `GET`/`PUT
+ * QUEM A USA, e sao sete rotas: `GET /login/sessao`, `GET`/`PUT
  * /usuarios/perfil`, `PUT /usuarios/perfil/senha`, `GET
- * /usuarios/dominio/tipo_posto_grad` e, desde 2026-08-09, `GET
- * /instituicao`. Sao exatamente as rotas que a pessoa SEM perfil em modulo
- * nenhum precisa alcancar -- trocar a guarda delas por `verifyAcesso` a
- * trancaria do lado de fora da propria conta.
+ * /usuarios/dominio/tipo_posto_grad` e, desde 2026-08-09, `GET /instituicao` e
+ * `POST /login/tile`. As cinco primeiras sao exatamente as rotas que a pessoa
+ * SEM perfil em modulo nenhum precisa alcancar -- trocar a guarda delas por
+ * `verifyAcesso` a trancaria do lado de fora da propria conta.
+ *
+ * A SETIMA E O TOKEN DA TILE, e ela esta aqui porque faz a MESMA pergunta que a
+ * guarda da ponta (`verifyLoginTile`): token valido e conta ativa, sem modulo
+ * nenhum. Exigir mais para EMITIR do que para USAR nao protegeria coisa alguma.
  *
  * A SEXTA E A UNICA QUE NAO FALA DA PESSOA, e ela cabe aqui pela mesma frase: a
  * pagina de quem ainda nao tem perfil (`#/perfil`) e o cabecalho do sistema
@@ -67,6 +71,12 @@ const verifyLogin = asyncHandler(async (req, res, next) => {
   req.usuarioUuid = decoded.uuid
   req.usuarioId = usuario.id
   req.administrador = usuario.administrador
+
+  // O `cliente` DO TOKEN, e não do banco: ele diz por qual porta a pessoa entrou
+  // ('sap_web', 'sap_fp', ...) e é o que alimenta a `origem` da rastreabilidade.
+  // Sai daqui para o `POST /login/tile` poder copiá-lo no token curto da tile:
+  // sem ele, toda tile entraria no rastro como 'desconhecido'.
+  req.clienteDoToken = decoded.cliente
 
   // Origem, rota e lote da rastreabilidade.
   montarContexto(req, decoded)

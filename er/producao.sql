@@ -353,7 +353,7 @@ CREATE TABLE producao.dado_producao(
 );
 
 COMMENT ON TABLE producao.dado_producao IS
-    'Onde a unidade de trabalho é editada. Guarda o NOME do banco de produção, nunca o endereço dele.';
+    'Onde a unidade de trabalho é editada. configuracao_producao guarda servidor:porta/banco, medido no dump do SAP 2.3.5 em 2026-08-09, e esse endereço é DADO: ele não sai em resposta de API nem em log, e permissoes_producao o resolve por dentro a partir do dado_producao_id.';
 
 CREATE INDEX idx_dado_producao_tipo ON producao.dado_producao (tipo_dado_producao_id);
 
@@ -1306,34 +1306,51 @@ CREATE TRIGGER a_relacionamento_unidade_trabalho
 -- MUDAR O PRÉ-REQUISITO ENTRE SUBFASES muda o cache de TODAS as unidades de
 -- trabalho das duas subfases de uma vez, e por isso esta função não passa por
 -- array de ids: ela apaga e reinsere o par de subfases inteiro.
+--
+-- ELA NÃO VOLTA A `pre_requisito_subfase`, E ISSO É O CONSERTO DE 2026-08-09.
+-- A versão herdada do SAP 2.3.5 procurava o par de subfases rejuntando a própria
+-- tabela que disparou o gatilho, e o gatilho é AFTER: no DELETE a linha já não
+-- estava lá, e no UPDATE ela já tinha os valores NOVOS. A subconsulta devolvia
+-- ZERO linhas e o `DELETE` não apagava nada. Apagar um pré-requisito deixava os
+-- pares em `producao.relacionamento_ut` para sempre, `calcula_fila.sql` seguia
+-- exigindo a subfase anterior concluída por uma regra que já não existia, e o
+-- conserto só vinha chamando
+-- `producao.handle_relacionamento_ut_insert_update()` à mão. Nada disso
+-- levantava exceção: o cache simplesmente mentia.
+--
+-- OS DOIS RAMOS AGORA LEEM SÓ `OLD` E `NEW`, que existem nos três `TG_OP`, e a
+-- função deixou de depender do que está visível na tabela. `AFTER` continua
+-- certo justamente porque ela não pergunta mais nada a `pre_requisito_subfase`.
+--
+-- A LIMPEZA NÃO REPETE O TESTE DE GEOMETRIA, e a ausência é deliberada: o cache
+-- tem de sair pelo PAR DE SUBFASES inteiro, e refiltrar por sobreposição
+-- deixaria para trás a linha cuja unidade de trabalho mudou de polígono depois
+-- de o par ter sido gravado. Apagar por esse par não alcança o cache de outro
+-- pré-requisito porque `relacionamento_ut` tem `PRIMARY KEY (ut_id, ut_re_id)` e
+-- `pre_requisito_subfase` tem `UNIQUE (subfase_anterior_id,
+-- subfase_posterior_id)`: cada par de unidades de trabalho nasce de um par de
+-- subfases só.
 CREATE OR REPLACE FUNCTION producao.update_relacionamento_ut_prs()
 RETURNS TRIGGER AS $$
 BEGIN
   IF TG_OP = 'UPDATE' OR TG_OP = 'DELETE' THEN
     DELETE FROM producao.relacionamento_ut AS ru
-    WHERE EXISTS (
-      SELECT 1
-      FROM producao.unidade_trabalho AS ut
-      INNER JOIN producao.pre_requisito_subfase AS prs ON prs.subfase_posterior_id = ut.subfase_id
-      INNER JOIN producao.unidade_trabalho AS ut_re
-        ON ut_re.subfase_id = prs.subfase_anterior_id AND ut.lote_id = ut_re.lote_id
-      WHERE prs.subfase_anterior_id = OLD.subfase_anterior_id
-        AND prs.subfase_posterior_id = OLD.subfase_posterior_id
-        AND ut.geom && ut_re.geom
-        AND st_relate(ut.geom, ut_re.geom, '2********')
-        AND ru.ut_id = ut.id AND ru.ut_re_id = ut_re.id
-    );
+    USING producao.unidade_trabalho AS ut,
+          producao.unidade_trabalho AS ut_re
+    WHERE ru.ut_id = ut.id
+      AND ru.ut_re_id = ut_re.id
+      AND ut.subfase_id = OLD.subfase_posterior_id
+      AND ut_re.subfase_id = OLD.subfase_anterior_id
+      AND ut.lote_id = ut_re.lote_id;
   END IF;
 
   IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
     INSERT INTO producao.relacionamento_ut (ut_id, ut_re_id, tipo_pre_requisito_id)
-    SELECT ut.id AS ut_id, ut_re.id AS ut_re_id, prs.tipo_pre_requisito_id
+    SELECT ut.id AS ut_id, ut_re.id AS ut_re_id, NEW.tipo_pre_requisito_id
     FROM producao.unidade_trabalho AS ut
-    INNER JOIN producao.pre_requisito_subfase AS prs ON prs.subfase_posterior_id = ut.subfase_id
     INNER JOIN producao.unidade_trabalho AS ut_re
-      ON ut_re.subfase_id = prs.subfase_anterior_id AND ut.lote_id = ut_re.lote_id
-    WHERE prs.subfase_anterior_id = NEW.subfase_anterior_id
-      AND prs.subfase_posterior_id = NEW.subfase_posterior_id
+      ON ut_re.subfase_id = NEW.subfase_anterior_id AND ut.lote_id = ut_re.lote_id
+    WHERE ut.subfase_id = NEW.subfase_posterior_id
       AND ut.geom && ut_re.geom
       AND st_relate(ut.geom, ut_re.geom, '2********');
 
@@ -1347,7 +1364,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION producao.update_relacionamento_ut_prs() IS
-    'Gatilho do pré-requisito entre subfases: refaz o cache do par de subfases inteiro, e não de uma unidade de trabalho.';
+    'Gatilho do pré-requisito entre subfases: refaz o cache do par de subfases inteiro, e não de uma unidade de trabalho. Lê só OLD e NEW, e por isso a limpeza funciona no DELETE e no UPDATE.';
 
 CREATE TRIGGER a_relacionamento_pre_requisito_subfase
   AFTER INSERT OR UPDATE OR DELETE ON producao.pre_requisito_subfase
@@ -1500,14 +1517,29 @@ CREATE TRIGGER chk_lote_status_consistency
 -- É AQUI QUE O `status_execucao_id` DA `lote_linha` FOI PARAR: a pergunta é a
 -- mesma, e quem a responde passou a ser `acervo.lote.status_execucao_id`, que
 -- já existia e aponta o mesmo domínio.
+--
+-- ELE SÓ OLHA A TRANSIÇÃO, e a guarda entrou em 2026-08-09, pela MESMA razão de
+-- `chk_lote_status` acima e de `chk_projeto_status` abaixo. Sem ela, a função
+-- cobrava do ESTADO e CONGELAVA a linha: um `UPDATE producao.bloco SET nome =
+-- ...` ou `SET prioridade = ...` num bloco de lote encerrado relia o lote,
+-- encontrava-o encerrado e recusava, com a mensagem "não é possível alterar o
+-- status" -- que nem descrevia o que a pessoa tinha tentado fazer. Renomear ou
+-- repriorizar um bloco de lote encerrado passou a ser possível, e é o que se
+-- espera: o que a regra proíbe é MEXER NO STATUS, e não editar o bloco.
+--
+-- NO `INSERT` A GUARDA É SEMPRE VERDADEIRA, e por isso nascer dentro de lote
+-- encerrado continua recusado exatamente como antes. O que mudou é só o
+-- `UPDATE` que não toca em `status_execucao_id`.
 CREATE OR REPLACE FUNCTION producao.chk_bloco_status() RETURNS TRIGGER AS $$
 BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM acervo.lote
-    WHERE id = NEW.lote_id
-      AND status_execucao_id IN (3, 4)
-  ) THEN
+  IF (TG_OP = 'INSERT' OR OLD.status_execucao_id IS DISTINCT FROM NEW.status_execucao_id)
+     AND EXISTS (
+       SELECT 1
+       FROM acervo.lote
+       WHERE id = NEW.lote_id
+         AND status_execucao_id IN (3, 4)
+     )
+  THEN
     IF NEW.status_execucao_id NOT IN (3, 4) THEN
       RAISE EXCEPTION 'Não é possível criar ou reabrir bloco em andamento num lote já encerrado';
     ELSE
@@ -1519,7 +1551,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION producao.chk_bloco_status() IS
-    'Recusa criar, reabrir ou alterar o status de bloco cujo lote do acervo já está encerrado.';
+    'Recusa criar, reabrir ou mudar o status de bloco cujo lote do acervo já está encerrado. Só olha a transição: editar nome ou prioridade do bloco continua livre.';
 
 CREATE TRIGGER chk_bloco_status_consistency
   BEFORE INSERT OR UPDATE ON producao.bloco

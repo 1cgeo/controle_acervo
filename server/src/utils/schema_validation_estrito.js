@@ -174,7 +174,17 @@ const schemaValidationEstrito = ({
       Object.defineProperty(req, 'params', { value, configurable: true })
     }
     if (bodySchema) {
-      const corpoOriginal = req.body
+      // CORPO AUSENTE E `{}`, E NAO `undefined`. Sob Express 5 uma requisicao sem
+      // corpo deixa `req.body` indefinido, e `Joi.object().keys({...required})`
+      // ACEITA `undefined`: so o objeto PRESENTE tem as chaves cobradas. O schema
+      // passava, e quem barrava era o `TypeError` de ler `.confirmar` de
+      // `undefined` -- 500 "Erro no servidor" no lugar do 400 que diz o que
+      // faltou. Mordia as 15 rotas destrutivas de `/perigo`, `/gerencia_producao`
+      // e `/microcontrole`, que sao justamente as que existem para exigir
+      // confirmacao digitada, e o cabecalho de `perigo/perigo_route.js` descreve
+      // o caso ("um DELETE sem corpo, disparado por uma aba aberta ou por uma
+      // seta para cima no terminal"). Normalizar aqui vale para todas de uma vez.
+      const corpoOriginal = req.body === undefined ? {} : req.body
       // Sem `stripUnknown`: chave desconhecida no corpo vira 400 em vez de ser
       // descartada em silêncio. Descartar calado fazia um campo com nome errado
       // simplesmente não gravar, e quem chamou achava que tinha gravado. Onde o

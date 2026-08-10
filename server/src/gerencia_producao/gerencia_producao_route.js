@@ -325,7 +325,7 @@ router.post(
   verifyPerfil('gerente', 'producao'),
   schemaValidation({ body: gerenciaProducaoSchema.unidadeTrabalhoDisponivel }),
   asyncHandler(async (req, res, next) => {
-    await gerenciaProducaoCtrl.unidadeTrabalhoDisponivel(
+    const dados = await gerenciaProducaoCtrl.unidadeTrabalhoDisponivel(
       req.body.unidade_trabalho_ids,
       req.body.disponivel,
       req.usuarioUuid,
@@ -334,7 +334,8 @@ router.post(
     return res.sendJsonAndLog(
       true,
       'Disponibilidade das unidades de trabalho atualizada com sucesso',
-      httpCode.Created
+      httpCode.Created,
+      dados
     )
   })
 )
@@ -354,16 +355,28 @@ router.put(
 )
 
 // --- Atividade: a maquina de estado ------------------------------------------
+//
+// TRES DELAS DEVOLVEM `revogacao` NO ENVELOPE, e o campo e NOVO desde 2026-08-09:
+// tirar o trabalho da mao de alguem tambem fecha o acesso dele ao banco de
+// EDICAO, que e outro PostgreSQL. `dados` e NULO no caso comum -- quando o dado
+// de producao daquelas unidades nao e PostGIS com controle de permissao, nao ha
+// porta a fechar e o envelope sai como sempre saiu. Ele so traz alguma coisa
+// quando houve o que revogar, e traz `ok: false` com a providencia quando a
+// revogacao falhou: a operacao vale nos dois casos, e ninguem recebe "sucesso"
+// por revogacao que nao revogou. A decisao inteira esta em
+// `gerencia_producao_ctrl.js`, no alto da secao da maquina de estado.
 
 router.post(
   '/atividade/pausar',
   verifyPerfil('gerente', 'producao'),
   schemaValidation({ body: gerenciaProducaoSchema.atividadePausar }),
   asyncHandler(async (req, res, next) => {
-    await gerenciaProducaoCtrl.pausaAtividade(
+    const dados = await gerenciaProducaoCtrl.pausaAtividade(
       req.body.unidade_trabalho_ids, req.usuarioUuid, req.contexto
     )
-    return res.sendJsonAndLog(true, 'Atividade pausada com sucesso', httpCode.Created)
+    return res.sendJsonAndLog(
+      true, 'Atividade pausada com sucesso', httpCode.Created, dados
+    )
   })
 )
 
@@ -372,10 +385,12 @@ router.post(
   verifyPerfil('gerente', 'producao'),
   schemaValidation({ body: gerenciaProducaoSchema.atividadeReiniciar }),
   asyncHandler(async (req, res, next) => {
-    await gerenciaProducaoCtrl.reiniciaAtividade(
+    const dados = await gerenciaProducaoCtrl.reiniciaAtividade(
       req.body.unidade_trabalho_ids, req.usuarioUuid, req.contexto
     )
-    return res.sendJsonAndLog(true, 'Atividade reiniciada com sucesso', httpCode.Created)
+    return res.sendJsonAndLog(
+      true, 'Atividade reiniciada com sucesso', httpCode.Created, dados
+    )
   })
 )
 
@@ -384,14 +399,14 @@ router.post(
   verifyPerfil('gerente', 'producao'),
   schemaValidation({ body: gerenciaProducaoSchema.atividadeVoltar }),
   asyncHandler(async (req, res, next) => {
-    await gerenciaProducaoCtrl.voltaAtividade(
+    const dados = await gerenciaProducaoCtrl.voltaAtividade(
       req.body.atividade_ids,
       req.body.manter_usuarios,
       req.usuarioUuid,
       req.contexto
     )
     return res.sendJsonAndLog(
-      true, 'Atividade voltou para a etapa anterior com sucesso', httpCode.Created
+      true, 'Atividade voltou para a etapa anterior com sucesso', httpCode.Created, dados
     )
   })
 )

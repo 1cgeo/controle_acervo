@@ -53,4 +53,37 @@ router.get(
   })
 )
 
+// O TOKEN DA TILE, e a rota é literal e vem depois de `/sessao`: não há rota com
+// parâmetro neste arquivo, mas a ordem é a mesma regra de sempre.
+//
+// A GUARDA É `verifyLogin`, E A ESCOLHA É DELIBERADA. Ela é a mesma pergunta que
+// o `verifyLoginTile` faz na ponta ("token válido, conta ativa"), e nada além:
+// a rota da tile declara, no cabeçalho dela, que quem tem conta ativa busca
+// tile mesmo sem perfil no módulo `producao`, porque o que a tile carrega é o
+// recorte da folha e o nome dela. Cobrar `verifyAcesso` aqui trocaria essa
+// decisão de lugar sem que ninguém tivesse decidido nada -- e a tile passaria a
+// exigir mais para NASCER do que para ser BUSCADA, que é o pior dos dois mundos.
+//
+// POST, e não GET: ela CRIA uma credencial, como o `POST /login` cria a sessão.
+// Nenhum corpo é lido, e por isso não há `schemaValidation`.
+router.post(
+  '/tile',
+  verifyLogin,
+  asyncHandler(async (req, res, next) => {
+    const dados = await loginCtrl.tokenDeTile({
+      id: req.usuarioId,
+      uuid: req.usuarioUuid,
+      administrador: req.administrador,
+      cliente: req.clienteDoToken
+    })
+
+    return res.sendJsonAndLog(
+      true,
+      'Token de tile gerado com sucesso',
+      httpCode.Created,
+      dados
+    )
+  })
+)
+
 module.exports = router

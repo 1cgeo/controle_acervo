@@ -1,5 +1,4 @@
 import { apiGet, apiPost } from '@services/api-client.js';
-import { getToken } from '@store/auth-store.js';
 
 /**
  * Serviço do módulo PRODUÇÃO: a porta ÚNICA das telas de `#/producao`.
@@ -191,30 +190,57 @@ export async function getMapaAcompanhamento(nome) {
 // --- `/api/acompanhamento/linha_producao/.../{z}/{x}/{y}.pbf` ----------------
 //
 // Servidor: `server/src/acompanhamento_producao/` (a mesma pasta do bloco acima).
-// Guarda: `verifyLoginTile`, e NÃO `verifyPerfil`. Basta estar logado.
+// Guarda: `verifyLoginTile`, e NÃO `verifyPerfil`. Basta estar logado -- com um
+// token de TILE, que é outra credencial e não o bearer da sessão.
 //
 // Bloco à parte por causa da guarda, e não do caminho: é a única rota do sistema
 // cuja credencial anda na query, e juntá-la às de `consulta` faria alguém supor
 // que o `apiGet` serve aqui.
 
 /**
+ * Pede ao servidor um token de TILE: audiência própria e vida de minutos.
+ *
+ * POR QUE NÃO É MAIS O `getToken()` DA SESSÃO. Até 2026-08-09 a URL da camada
+ * levava o bearer inteiro (8 horas, aceito por todas as guardas), o middleware
+ * de log do servidor gravava a URL COM a query em `logs/combined.log`, e a rota
+ * `/logs` publica esse arquivo sem guarda nenhuma. A credencial completa ficava
+ * legível a quem abrisse a página do log. O `/logs` continua aberto por decisão;
+ * o que se tirou de circulação foi a credencial.
+ *
+ * O que anda na URL hoje só abre `verifyLoginTile`, e só por alguns minutos.
+ *
+ * NÃO GUARDA O TOKEN em lugar nenhum de propósito: ele vence, e um cache aqui
+ * seria uma segunda cópia da regra de validade que só o servidor conhece. Quem
+ * pede uma URL de tile pede um token novo, e o mapa pede isso uma vez por camada
+ * montada.
+ *
+ * @returns {Promise<string>}
+ */
+export async function tokenDeTile() {
+  const dados = await apiPost('/login/tile');
+  return (dados && dados.token) || '';
+}
+
+/**
  * O molde XYZ da camada vetorial de uma linha de produção.
  *
- * ESTA É A ÚNICA URL DO SISTEMA QUE LEVA O TOKEN NA QUERY, e não é escolha
+ * ESTA É A ÚNICA URL DO SISTEMA QUE LEVA UM TOKEN NA QUERY, e não é escolha
  * nossa: o MapLibre monta o pedido de tile sozinho, dentro do renderizador, e
- * uma camada XYZ não tem onde pôr cabeçalho `Authorization`. Do lado do
- * servidor quem atende é `verifyLoginTile`, a única guarda que aceita
- * `?token=`, e o cabeçalho do arquivo dela explica o preço: o token entra no log
- * de acesso e no histórico do navegador. Por isso ele fica AQUI e em mais lugar
- * nenhum: toda outra chamada deste serviço vai por `apiGet`, com cabeçalho.
+ * uma camada XYZ não tem onde pôr cabeçalho `Authorization`. O que é escolha
+ * nossa é QUAL token vai ali, e desde 2026-08-09 é o de tile, e não o da sessão.
+ *
+ * ELA É ASSÍNCRONA POR ISSO, e era síncrona antes: o token de tile vem de uma
+ * chamada ao servidor. Quem a consome é `modules/producao/pages/mapas/mapas-mapa.js`,
+ * que já refaz a fonte a cada troca de linha de produção e agora também quando o
+ * token vence.
  *
  * `{z}/{x}/{y}` ficam literais: quem os substitui é o MapLibre.
  *
  * @param {number|string} linhaProducaoId
- * @returns {string}
+ * @returns {Promise<string>}
  */
-export function urlTileLinhaProducao(linhaProducaoId) {
-  const token = getToken() || '';
+export async function urlTileLinhaProducao(linhaProducaoId) {
+  const token = await tokenDeTile();
   return `/api/acompanhamento/linha_producao/${linhaProducaoId}`
     + `/{z}/{x}/{y}.pbf?token=${encodeURIComponent(token)}`;
 }

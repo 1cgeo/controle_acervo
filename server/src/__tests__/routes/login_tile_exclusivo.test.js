@@ -15,6 +15,12 @@
 // `req.headers.authorization || req.query.token` e e a guarda de tudo. Aqui o
 // preco fica so onde nao ha escolha.
 //
+// DESDE 2026-08-09 O QUE ANDA NA QUERY NAO E MAIS O TOKEN DE SESSAO, e sim um
+// token de AUDIENCIA `tile`, de vida curta, que nenhuma outra guarda aceita
+// (`unit/login/audiencia_do_token.test.js`). Isso reduz o estrago, e nao
+// substitui esta varredura: uma rota de escrita sob a guarda larga continuaria
+// sendo uma rota que aceita credencial pela URL.
+//
 // E E ISSO QUE ESTE ARQUIVO GUARDA. Sem ele, o proximo `require` distraido leva
 // a porta larga para uma rota de escrita, e nada acusa: a rota continua
 // funcionando, com token de cabecalho, para todo mundo que a testar.
@@ -37,6 +43,28 @@ const TILES_AUTORIZADOS = [
 // E dentro do arquivo autorizado a guarda so vale em rota de TILE de verdade. O
 // `.pbf` e o formato do Mapbox Vector Tile, e e por ele que se reconhece uma.
 const CAMINHO_DE_TILE = /\.pbf'/
+
+// A DECLARACAO DE UMA ROTA: `router.get('/caminho', ...guardas...` ate a
+// primeira quebra de bloco. Mora aqui porque duas varreduras a usam, e duas
+// copias divergiriam no primeiro verbo novo.
+const DECLARACAO_DE_ROTA =
+  /router\.(?:get|post|put|delete|patch|head|options|all)\(\s*('[^']+')\s*,([\s\S]*?)\n\)/g
+
+// O MONTAGEM EM MASSA: `router.use(guarda)` e `app.use(...)`, com ou sem caminho
+// antes. E o buraco que esta varredura tinha ate 2026-08-09: ela so olhava
+// `router.get(` e companhia, entao um `router.use(verifyLoginTile)` no topo do
+// arquivo autorizado daria a porta larga as 25 rotas dele sem acender nada.
+const MONTAGEM_EM_MASSA = /\.use\(([\s\S]*?)\n?\s*\)/g
+
+const ocorrenciasDaGuarda = texto => (texto.match(/verifyLoginTile/g) || []).length
+
+// A linha do `require` cita a guarda pelo nome, e ela nao e uso: sem tira-la, a
+// contagem de ocorrencias abaixo nunca fecharia.
+const semImports = fonte =>
+  fonte
+    .split('\n')
+    .filter(linha => !/require\(/.test(linha))
+    .join('\n')
 
 const arquivosDeRota = dir =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap(e =>
@@ -82,10 +110,7 @@ describe('verifyLoginTile so vale nas rotas de tile', () => {
   it.each(TILES_AUTORIZADOS)('em %s a guarda larga so aparece em rota .pbf', arquivo => {
     const fonte = semComentario(fs.readFileSync(path.join(SRC, arquivo), 'utf8'))
 
-    // `router.get('/caminho', ...guardas...` ate a primeira quebra de bloco.
-    const declaracoes = [...fonte.matchAll(
-      /router\.(?:get|post|put|delete)\(\s*('[^']+')\s*,([\s\S]*?)\n\)/g
-    )]
+    const declaracoes = [...fonte.matchAll(DECLARACAO_DE_ROTA)]
 
     const comGuardaLarga = declaracoes
       .filter(d => /verifyLoginTile/.test(d[2]))
@@ -93,6 +118,63 @@ describe('verifyLoginTile so vale nas rotas de tile', () => {
 
     expect(comGuardaLarga.length).toBeGreaterThan(0)
     expect(comGuardaLarga.filter(caminho => !CAMINHO_DE_TILE.test(caminho))).toEqual([])
+  })
+
+  // O BURACO QUE AS DUAS VARREDURAS ACIMA TINHAM, fechado em 2026-08-09: elas
+  // procuram `router.get(` e companhia, e um `router.use(verifyLoginTile)` no
+  // TOPO do arquivo autorizado nao e nenhum dos dois. Ele daria a porta larga as
+  // 25 rotas daquele arquivo -- inclusive as de escrita --, e as duas
+  // continuariam verdes, porque a guarda continuaria aparecendo so na rota .pbf
+  // que elas conhecem.
+  it('nenhum arquivo de rota monta a guarda larga em massa, por .use', () => {
+    const emMassa = arquivos.filter(f => {
+      const fonte = semComentario(fs.readFileSync(f, 'utf8'))
+      return [...fonte.matchAll(MONTAGEM_EM_MASSA)]
+        .some(m => /verifyLoginTile/.test(m[1]))
+    }).map(relativo)
+
+    expect(emMassa).toEqual([])
+  })
+
+  // E O FECHO GERAL, que nao depende de conhecer a forma da armadilha: no
+  // arquivo autorizado, TODA mencao a guarda larga esta dentro de uma declaracao
+  // de rota .pbf. Ela pega o `router.use`, o `const guardaDaTile =
+  // verifyLoginTile` e qualquer outro caminho que ninguem pensou em varrer.
+  it.each(TILES_AUTORIZADOS)('em %s nao ha mencao a guarda larga FORA de uma rota .pbf', arquivo => {
+    const fonte = semImports(semComentario(fs.readFileSync(path.join(SRC, arquivo), 'utf8')))
+
+    const dentroDeRotaDeTile = [...fonte.matchAll(DECLARACAO_DE_ROTA)]
+      .filter(d => CAMINHO_DE_TILE.test(d[1]))
+      .reduce((soma, d) => soma + ocorrenciasDaGuarda(d[2]), 0)
+
+    expect(dentroDeRotaDeTile).toBeGreaterThan(0)
+    expect(ocorrenciasDaGuarda(fonte)).toBe(dentroDeRotaDeTile)
+  })
+
+  // CONTROLE NEGATIVO das duas varreduras acima. Sem ele, um erro de expressao
+  // regular deixaria as duas passando por vacuidade -- que e exatamente como o
+  // buraco original sobreviveu.
+  it('a varredura acusaria um router.use com a guarda larga', () => {
+    const armadilha = [
+      "const { verifyLoginTile } = require('../login')",
+      'router.use(verifyLoginTile)',
+      "router.get('/qualquer/coisa', asyncHandler(async (req, res) => {",
+      '  return res.sendJsonAndLog(true)',
+      '})',
+      ')'
+    ].join('\n')
+
+    const pegaEmMassa = [...armadilha.matchAll(MONTAGEM_EM_MASSA)]
+      .some(m => /verifyLoginTile/.test(m[1]))
+    expect(pegaEmMassa).toBe(true)
+
+    // E o fecho geral tambem a pega: a mencao existe e nao esta em rota .pbf
+    // nenhuma.
+    const fonte = semImports(armadilha)
+    const dentroDeRotaDeTile = [...fonte.matchAll(DECLARACAO_DE_ROTA)]
+      .filter(d => CAMINHO_DE_TILE.test(d[1]))
+      .reduce((soma, d) => soma + ocorrenciasDaGuarda(d[2]), 0)
+    expect(ocorrenciasDaGuarda(fonte)).toBeGreaterThan(dentroDeRotaDeTile)
   })
 
   // O outro lado da mesma regra: NENHUMA outra guarda pode ler `req.query.token`

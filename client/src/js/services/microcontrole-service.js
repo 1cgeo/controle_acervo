@@ -28,9 +28,12 @@ import { apiGet } from '@services/api-client.js';
  * está com a atividade na mão. O navegador não mede tela de ninguém, e uma
  * função aqui só serviria para alguém inventar um uso.
  *
- * TODAS AS ONZE SÃO `gerente` NO MÓDULO `producao`, menos as duas de escrita,
- * que são `operador`. Aqui isso quer dizer: quem não é gerente leva 403 em tudo
- * o que este arquivo oferece.
+ * O PISO É `consulta` NO MÓDULO `producao` NAS SEIS ROTAS DE LEITURA, e é isso
+ * que este arquivo oferece. As outras cinco do prefixo não estão aqui: as duas
+ * de escrita de telemetria são `operador` (e quem grava é o plugin, ver abaixo),
+ * e as três que MEXEM no perfil de monitoramento (POST, PUT e DELETE de
+ * `/configuracao/perfil_monitoramento`) são `gerente`. Quem tem `consulta` em
+ * `producao` alcança tudo o que está aqui.
  */
 
 /** Monta a query string, omitindo o que não foi filtrado. */

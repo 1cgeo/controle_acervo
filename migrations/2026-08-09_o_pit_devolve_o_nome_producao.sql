@@ -43,12 +43,17 @@
 --      evento fica orfao. Reescrever a trilha seria a aplicacao corrigindo a
 --      propria prova.
 --
--- Para ensaiar antes de aplicar:
+-- PARA ENSAIAR, O COMANDO E UM SO, E ELE NAO ESTA AQUI: esta no cabecalho de
+-- `migrations/2026-08-09_o_core_de_producao_atravessa.sql`, sob "O COMANDO
+-- CANONICO DE ENSAIO DE 2026-08-09". Esta migracao e a PRIMEIRA da cadeia, e e
+-- dela que sai o `--versao-anterior 1.49.0` de la; `pit` e `dominio` estao entre
+-- os dez schemas comparados.
 --
---   node migrations/ensaiar_migracao.cjs \
---     --migracao migrations/2026-08-09_o_pit_devolve_o_nome_producao.sql \
---     --versao-anterior 1.49.0 --versao-esperada 1.50.0 \
---     --schemas pit,dominio
+-- O COMANDO SOZINHO QUE MORAVA AQUI RODAVA E NAO PROVAVA NADA, e e por isso que
+-- ele saiu: sem `--er-de`, o banco "anterior" nascia com o `er/pit.sql` de HOJE,
+-- que ja tem a tabela renomeada. A renomeacao virava no-op, e o ensaio comparava
+-- dois bancos identicos por construcao. O comando canonico traz o `--er-de`, e
+-- ele e o que faz o banco "anterior" nascer com `pit.exercicio` de verdade.
 
 BEGIN;
 

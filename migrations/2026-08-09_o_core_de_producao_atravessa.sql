@@ -80,10 +80,12 @@
 -- numero.
 --
 -- O `UPDATE` DAQUI E INCONDICIONAL, e nao um incremento. Ele leva a 3.0.0 tanto
--- um banco em 1.50.0 (esta migracao aplicada sozinha) quanto um banco que ja
--- passou pela renomeacao. Isso e o que permite ensaiar as duas em cadeia, que e
--- como elas rodam em producao, e e o que impede a ordem de aplicacao de mudar o
--- numero final.
+-- um banco em 1.50.0 (esta migracao aplicada sozinha) quanto um em 1.52.0 (a
+-- cadeia inteira do dia, que e como ela roda em producao). Isso e o que permite
+-- ensaiar as cinco em cadeia e e o que impede a ordem de aplicacao de mudar o
+-- numero final. O bloco PARA DESFAZER no fim volta para 1.52.0, e nao para
+-- 1.50.0: o estado imediatamente anterior a ESTA migracao e o de depois das
+-- outras quatro.
 --
 -- O QUE ISSO CUSTA, E ESTA MEDIDO: aplicar SO a renomeacao deixa o banco
 -- dizendo 3.0.0 sem os schemas, que e o defeito descrito la em cima. As duas
@@ -115,20 +117,73 @@
 -- conflitar e a segunda passada duplicaria as linhas em silencio, porque o
 -- ensaio compara tabela de codigo e essas duas nao tem coluna `code`.
 --
--- Para ensaiar antes de aplicar, em cadeia com a renomeacao, que e como as duas
--- rodam em producao:
+-- ============================================================================
+-- O COMANDO CANONICO DE ENSAIO DE 2026-08-09
+-- ============================================================================
+--
+-- E ESTE, E SO ESTE. As cinco migracoes do dia sao UMA entrega e se aplicam em
+-- cadeia; os outros quatro arquivos apontam para ca em vez de repetir o comando,
+-- porque comando repetido apodrece em silencio -- foi o que aconteceu ate
+-- 2026-08-09, quando cada cabecalho trazia uma variacao propria, uma delas com
+-- `er/microcontrole.sql` fora do `--novos` (o banco A tentava cria-lo sem o
+-- schema `producao`, e `er/microcontrole.sql` referencia `producao.subfase`: o
+-- ensaio morria e o comando nunca rodava).
 --
 --   node migrations/ensaiar_migracao.cjs \
---     --migracao migrations/2026-08-09_o_sca_vira_sap_3.sql,migrations/2026-08-09_o_core_de_producao_atravessa.sql \
---     --novos er/producao.sql,er/qgis.sql,er/metadado.sql,er/acompanhamento_producao.sql,er/microcontrole.sql \
---     --versao-anterior 1.50.0 --versao-esperada 3.0.0 \
---     --schemas producao,qgis,metadado,acompanhamento,microcontrole,dominio,acervo \
---     --er-de <revisao anterior a chegada do core>
+--     --migracao migrations/2026-08-09_o_pit_devolve_o_nome_producao.sql,migrations/2026-08-09_a_instituicao.sql,migrations/2026-08-09_a_area_e_de_quem_configurou.sql,migrations/2026-08-09_o_sca_vira_sap_3.sql,migrations/2026-08-09_o_core_de_producao_atravessa.sql \
+--     --novos er/qgis.sql,er/producao.sql,er/metadado.sql,er/acompanhamento_producao.sql,er/microcontrole.sql \
+--     --versao-anterior 1.49.0 --versao-esperada 3.0.0 \
+--     --schemas acervo,acompanhamento,dgeo,dominio,limites,metadado,microcontrole,pit,producao,qgis \
+--     --er-de 8fe3463
 --
--- O `--er-de` NAO E OPCIONAL AQUI: esta migracao muda o CONTEUDO de
--- `er/dominio.sql` (15 dominios e o modulo 7). Sem ele, o banco "anterior" ja
--- nasceria com os dominios e o ensaio aprovaria sem exercitar a parte que mais
--- importa.
+-- CADA PEDACO, E POR QUE ELE ESTA AI:
+--
+--   `--migracao`: AS CINCO, NA ORDEM DE APLICACAO. A cadeia e
+--   1.49.0 -> `o_pit_devolve_o_nome_producao` -> 1.50.0 -> `a_instituicao` ->
+--   1.51.0 -> `a_area_e_de_quem_configurou` -> 1.52.0 -> `o_sca_vira_sap_3`
+--   (que nao carimba, e o cabecalho dela diz por que) -> ESTA -> 3.0.0.
+--   Faltar uma reprova: `a_area_e_de_quem_configurou` RECUSA rodar sem a
+--   `dgeo.instituicao` que `a_instituicao` cria, e a recusa e o comportamento
+--   certo.
+--
+--   `--novos`: OS CINCO `er/` QUE A ENTREGA INTRODUZ, e `er/microcontrole.sql`
+--   e o que mais falta faz. Ele nao e um schema solto: a tabela
+--   `microcontrole.perfil_monitoramento` declara
+--   `REFERENCES producao.subfase (id)`. Deixado fora do `--novos`, o ensaio o
+--   trata como pre-existente, o banco A tenta cria-lo antes de `producao`
+--   existir, e o ensaio morre em vez de comparar coisa nenhuma.
+--
+--   `--versao-anterior 1.49.0`: o estado de VERDADE antes da primeira das
+--   cinco. Comecar em 1.50.0 pularia o carimbo de
+--   `o_pit_devolve_o_nome_producao`, e o ensaio aprovaria uma cadeia que nunca
+--   partiu de onde ela parte em producao.
+--
+--   `--schemas`: OS DEZ que a cadeia toca, e nao so os cinco novos.
+--   `dgeo` entra pela `instituicao`, `limites` pela saida do `e_1cgeo`, `pit`
+--   pela tabela do ano que virou `pit.pit`, `dominio` pelo modulo e pelos 15
+--   dominios, e `acervo` pelos CINCO GATILHOS que a producao instala em tabelas
+--   de outro modulo (`a_relacionamento_versao` e
+--   `refresh_view_acompanhamento_produto` em `acervo.versao`,
+--   `chk_lote_status_consistency` e `refresh_bloco_lote` em `acervo.lote`,
+--   `chk_projeto_status_consistency` em `acervo.projeto`). Sem `acervo` na
+--   lista, a consulta de gatilhos do ensaio nao os alcanca e os cinco passariam
+--   despercebidos -- que e exatamente a peca que a conferencia do bloco 8 mede
+--   por dentro, e a que mais facilmente ficaria so na instalacao nova.
+--
+--   `--er-de`: NAO E OPCIONAL. As cinco mudam o CONTEUDO do `er/`
+--   (`dominio.sql` ganha 15 dominios e o modulo 7, `dgeo.sql` ganha a
+--   instituicao, `limites.sql` perde o `e_1cgeo`, `pit.sql` renomeia a tabela do
+--   ano). Sem ele, o banco "anterior" ja nasceria com tudo isso, as migracoes
+--   virariam no-op e o ensaio aprovaria sem exercitar nada. A revisao e a
+--   IMEDIATAMENTE ANTERIOR a cadeia, isto e, a ultima em que `er/versao.sql`
+--   ainda diz 1.49.0; medida em 2026-08-09, e `8fe3463`. Se a historia for
+--   reescrita, ache-a de novo por essa frase, e nao pelo hash.
+--
+-- MEDIDO EM 2026-08-09, com este comando exato: versao 1.49.0 -> 3.0.0, a cadeia
+-- inteira aplicada DUAS vezes sem quebrar, e 878 colunas, 48 funcoes (corpo a
+-- corpo, por md5), 79 gatilhos, 534 restricoes, 476 indices e 276 codigos de
+-- dominio IDENTICOS entre o banco migrado e o banco instalado pelo `er/`.
+-- ============================================================================
 
 BEGIN;
 
@@ -1209,9 +1264,21 @@ CREATE INDEX IF NOT EXISTS idx_propriedades_camada_subfase ON producao.proprieda
 -- O DADO DE PRODUÇÃO: onde a unidade de trabalho é editada
 -- ---------------------------------------------------------------------------
 --
--- `configuracao_producao` É O NOME DO BANCO de produção, e nunca o endereço
--- dele. O servidor e a porta vêm da conexão que o cliente já tem, e este
--- repositório é público: nenhum valor aqui.
+-- `configuracao_producao` GUARDA `servidor:porta/banco`, e essa é a forma que o
+-- código lê. Foi MEDIDO no dump de produção do SAP 2.3.5 em 2026-08-09: as 19
+-- linhas de `macrocontrole.dado_producao` estão nesse formato, sem exceção.
+--
+-- ESTE COMENTÁRIO AFIRMAVA O CONTRÁRIO até 2026-08-09 ("é o nome do banco, e
+-- nunca o endereço"), e a afirmação era perigosa, não só errada: quem a lesse
+-- poderia "consertar" o subsistema de permissão tirando o endereço, e ele deixa
+-- de achar o banco onde conceder.
+--
+-- E NÃO HÁ CONFLITO COM A REGRA DO REPOSITÓRIO PÚBLICO, que é sobre ARQUIVO
+-- VERSIONADO. Aqui o endereço é DADO, digitado por quem cadastra o dado de
+-- produção, e vive no banco. O que a regra proíbe é escrevê-lo em código, em
+-- teste, em comentário ou em exemplo -- e é por isso que ele também NÃO SAI em
+-- resposta de API nem em log: `permissoes_producao` recebe `dado_producao_id`, e
+-- resolve o endereço por dentro.
 CREATE TABLE IF NOT EXISTS producao.dado_producao(
   id SERIAL NOT NULL PRIMARY KEY,
   tipo_dado_producao_id SMALLINT NOT NULL REFERENCES dominio.tipo_dado_producao (code),
@@ -1224,7 +1291,7 @@ CREATE TABLE IF NOT EXISTS producao.dado_producao(
 
 
 COMMENT ON TABLE producao.dado_producao IS
-    'Onde a unidade de trabalho é editada. Guarda o NOME do banco de produção, nunca o endereço dele.';
+    'Onde a unidade de trabalho é editada. configuracao_producao guarda servidor:porta/banco, medido no dump do SAP 2.3.5 em 2026-08-09, e esse endereço é DADO: ele não sai em resposta de API nem em log, e permissoes_producao o resolve por dentro a partir do dado_producao_id.';
 
 CREATE INDEX IF NOT EXISTS idx_dado_producao_tipo ON producao.dado_producao (tipo_dado_producao_id);
 
@@ -2243,34 +2310,59 @@ CREATE TRIGGER a_relacionamento_unidade_trabalho
 -- MUDAR O PRÉ-REQUISITO ENTRE SUBFASES muda o cache de TODAS as unidades de
 -- trabalho das duas subfases de uma vez, e por isso esta função não passa por
 -- array de ids: ela apaga e reinsere o par de subfases inteiro.
+--
+-- ELA NÃO VOLTA A `pre_requisito_subfase`, E ISSO É O CONSERTO DE 2026-08-09.
+-- A versão herdada do SAP 2.3.5 procurava o par de subfases rejuntando a própria
+-- tabela que disparou o gatilho, e o gatilho é AFTER: no DELETE a linha já não
+-- estava lá, e no UPDATE ela já tinha os valores NOVOS. A subconsulta devolvia
+-- ZERO linhas e o `DELETE` não apagava nada. Apagar um pré-requisito deixava os
+-- pares em `producao.relacionamento_ut` para sempre, `calcula_fila.sql` seguia
+-- exigindo a subfase anterior concluída por uma regra que já não existia, e o
+-- conserto só vinha chamando
+-- `producao.handle_relacionamento_ut_insert_update()` à mão. Nada disso
+-- levantava exceção: o cache simplesmente mentia.
+--
+-- OS DOIS RAMOS AGORA LEEM SÓ `OLD` E `NEW`, que existem nos três `TG_OP`, e a
+-- função deixou de depender do que está visível na tabela. `AFTER` continua
+-- certo justamente porque ela não pergunta mais nada a `pre_requisito_subfase`.
+--
+-- A LIMPEZA NÃO REPETE O TESTE DE GEOMETRIA, e a ausência é deliberada: o cache
+-- tem de sair pelo PAR DE SUBFASES inteiro, e refiltrar por sobreposição
+-- deixaria para trás a linha cuja unidade de trabalho mudou de polígono depois
+-- de o par ter sido gravado. Apagar por esse par não alcança o cache de outro
+-- pré-requisito porque `relacionamento_ut` tem `PRIMARY KEY (ut_id, ut_re_id)` e
+-- `pre_requisito_subfase` tem `UNIQUE (subfase_anterior_id,
+-- subfase_posterior_id)`: cada par de unidades de trabalho nasce de um par de
+-- subfases só.
+--
+-- NUM BANCO QUE JA SOFREU O DEFEITO o cache pode ter par orfao, e esta migracao
+-- NAO o varre: `CREATE OR REPLACE FUNCTION` conserta o gatilho daqui para a
+-- frente, e nao o passado. Como esta entrega cria os cinco schemas VAZIOS, nao
+-- ha passado nenhum para varrer -- mas depois da carga do dump do SAP 2.3.5,
+-- quem quiser a garantia chama
+-- `producao.handle_relacionamento_ut_insert_update()` com todas as unidades de
+-- trabalho, que apaga e refaz os dois caches.
 CREATE OR REPLACE FUNCTION producao.update_relacionamento_ut_prs()
 RETURNS TRIGGER AS $$
 BEGIN
   IF TG_OP = 'UPDATE' OR TG_OP = 'DELETE' THEN
     DELETE FROM producao.relacionamento_ut AS ru
-    WHERE EXISTS (
-      SELECT 1
-      FROM producao.unidade_trabalho AS ut
-      INNER JOIN producao.pre_requisito_subfase AS prs ON prs.subfase_posterior_id = ut.subfase_id
-      INNER JOIN producao.unidade_trabalho AS ut_re
-        ON ut_re.subfase_id = prs.subfase_anterior_id AND ut.lote_id = ut_re.lote_id
-      WHERE prs.subfase_anterior_id = OLD.subfase_anterior_id
-        AND prs.subfase_posterior_id = OLD.subfase_posterior_id
-        AND ut.geom && ut_re.geom
-        AND st_relate(ut.geom, ut_re.geom, '2********')
-        AND ru.ut_id = ut.id AND ru.ut_re_id = ut_re.id
-    );
+    USING producao.unidade_trabalho AS ut,
+          producao.unidade_trabalho AS ut_re
+    WHERE ru.ut_id = ut.id
+      AND ru.ut_re_id = ut_re.id
+      AND ut.subfase_id = OLD.subfase_posterior_id
+      AND ut_re.subfase_id = OLD.subfase_anterior_id
+      AND ut.lote_id = ut_re.lote_id;
   END IF;
 
   IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
     INSERT INTO producao.relacionamento_ut (ut_id, ut_re_id, tipo_pre_requisito_id)
-    SELECT ut.id AS ut_id, ut_re.id AS ut_re_id, prs.tipo_pre_requisito_id
+    SELECT ut.id AS ut_id, ut_re.id AS ut_re_id, NEW.tipo_pre_requisito_id
     FROM producao.unidade_trabalho AS ut
-    INNER JOIN producao.pre_requisito_subfase AS prs ON prs.subfase_posterior_id = ut.subfase_id
     INNER JOIN producao.unidade_trabalho AS ut_re
-      ON ut_re.subfase_id = prs.subfase_anterior_id AND ut.lote_id = ut_re.lote_id
-    WHERE prs.subfase_anterior_id = NEW.subfase_anterior_id
-      AND prs.subfase_posterior_id = NEW.subfase_posterior_id
+      ON ut_re.subfase_id = NEW.subfase_anterior_id AND ut.lote_id = ut_re.lote_id
+    WHERE ut.subfase_id = NEW.subfase_posterior_id
       AND ut.geom && ut_re.geom
       AND st_relate(ut.geom, ut_re.geom, '2********');
 
@@ -2284,7 +2376,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION producao.update_relacionamento_ut_prs() IS
-    'Gatilho do pré-requisito entre subfases: refaz o cache do par de subfases inteiro, e não de uma unidade de trabalho.';
+    'Gatilho do pré-requisito entre subfases: refaz o cache do par de subfases inteiro, e não de uma unidade de trabalho. Lê só OLD e NEW, e por isso a limpeza funciona no DELETE e no UPDATE.';
 
 DROP TRIGGER IF EXISTS a_relacionamento_pre_requisito_subfase ON producao.pre_requisito_subfase;
 
@@ -2446,14 +2538,29 @@ CREATE TRIGGER chk_lote_status_consistency
 -- É AQUI QUE O `status_execucao_id` DA `lote_linha` FOI PARAR: a pergunta é a
 -- mesma, e quem a responde passou a ser `acervo.lote.status_execucao_id`, que
 -- já existia e aponta o mesmo domínio.
+--
+-- ELE SÓ OLHA A TRANSIÇÃO, e a guarda entrou em 2026-08-09, pela MESMA razão de
+-- `chk_lote_status` acima e de `chk_projeto_status` abaixo. Sem ela, a função
+-- cobrava do ESTADO e CONGELAVA a linha: um `UPDATE producao.bloco SET nome =
+-- ...` ou `SET prioridade = ...` num bloco de lote encerrado relia o lote,
+-- encontrava-o encerrado e recusava, com a mensagem "não é possível alterar o
+-- status" -- que nem descrevia o que a pessoa tinha tentado fazer. Renomear ou
+-- repriorizar um bloco de lote encerrado passou a ser possível, e é o que se
+-- espera: o que a regra proíbe é MEXER NO STATUS, e não editar o bloco.
+--
+-- NO `INSERT` A GUARDA É SEMPRE VERDADEIRA, e por isso nascer dentro de lote
+-- encerrado continua recusado exatamente como antes. O que mudou é só o
+-- `UPDATE` que não toca em `status_execucao_id`.
 CREATE OR REPLACE FUNCTION producao.chk_bloco_status() RETURNS TRIGGER AS $$
 BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM acervo.lote
-    WHERE id = NEW.lote_id
-      AND status_execucao_id IN (3, 4)
-  ) THEN
+  IF (TG_OP = 'INSERT' OR OLD.status_execucao_id IS DISTINCT FROM NEW.status_execucao_id)
+     AND EXISTS (
+       SELECT 1
+       FROM acervo.lote
+       WHERE id = NEW.lote_id
+         AND status_execucao_id IN (3, 4)
+     )
+  THEN
     IF NEW.status_execucao_id NOT IN (3, 4) THEN
       RAISE EXCEPTION 'Não é possível criar ou reabrir bloco em andamento num lote já encerrado';
     ELSE
@@ -2465,7 +2572,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION producao.chk_bloco_status() IS
-    'Recusa criar, reabrir ou alterar o status de bloco cujo lote do acervo já está encerrado.';
+    'Recusa criar, reabrir ou mudar o status de bloco cujo lote do acervo já está encerrado. Só olha a transição: editar nome ou prioridade do bloco continua livre.';
 
 DROP TRIGGER IF EXISTS chk_bloco_status_consistency ON producao.bloco;
 
@@ -2856,8 +2963,16 @@ CREATE TABLE IF NOT EXISTS metadado.informacoes_produto(
 COMMENT ON TABLE metadado.informacoes_produto IS
     'Bloco de identificação do XML: resumo, propósito, créditos, sigilo, restrições, datum vertical, especificação e linhagem. Por versão OU por lote do acervo.';
 
-CREATE INDEX IF NOT EXISTS idx_informacoes_produto_versao ON metadado.informacoes_produto (versao_id);
-CREATE INDEX IF NOT EXISTS idx_informacoes_produto_lote ON metadado.informacoes_produto (lote_id);
+-- UNICOS, E NAO SO INDICES, como em `er/metadado.sql`. O `xor_lote` garante que
+-- cada linha aponta UMA versao ou UM lote; o que faltava era impedir a SEGUNDA
+-- linha para o mesmo alvo, e sem isso o `oneOrNone` de `metadado_ctrl.js` estoura
+-- e o XML de TODA versao daquele lote responde 500. NULL nao conflita com NULL no
+-- indice unico do PostgreSQL, entao a coluna que o `xor_lote` deixa vazia nao
+-- atrapalha. O schema nasce VAZIO nesta migracao, entao nao ha duplicata previa a
+-- tratar: quem aplicar sobre um banco que ja recebeu carga precisa limpar antes,
+-- e o `CREATE UNIQUE INDEX` recusa em vez de escolher qual linha fica.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_informacoes_produto_versao ON metadado.informacoes_produto (versao_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_informacoes_produto_lote ON metadado.informacoes_produto (lote_id);
 
 
 -- O QUADRO DE CREDITOS DA MOLDURA, guardado como QPT.
@@ -2927,8 +3042,9 @@ CREATE TABLE IF NOT EXISTS metadado.informacoes_edicao(
 COMMENT ON TABLE metadado.informacoes_edicao IS
     'Os números da edição que a ficha ET-PCDG imprime: PEC, origem da altimetria, quadro de fases, DPI e o MDE usado. Por versão OU por lote do acervo.';
 
-CREATE INDEX IF NOT EXISTS idx_informacoes_edicao_versao ON metadado.informacoes_edicao (versao_id);
-CREATE INDEX IF NOT EXISTS idx_informacoes_edicao_lote ON metadado.informacoes_edicao (lote_id);
+-- UNICOS pelo mesmo motivo da irma `informacoes_produto`, logo acima.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_informacoes_edicao_versao ON metadado.informacoes_edicao (versao_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_informacoes_edicao_lote ON metadado.informacoes_edicao (lote_id);
 
 
 -- ---------------------------------------------------------------------------
@@ -4667,7 +4783,16 @@ COMMIT;
 --   DROP TABLE dominio.tipo_pre_requisito;
 --   DROP TABLE dominio.tipo_fase;
 --
---   UPDATE public.versao SET nome = '1.50.0' WHERE code = 1;
+--   -- 1.52.0, E NAO 1.50.0. A cadeia de 2026-08-09 e
+--   -- 1.49.0 -> `o_pit_devolve_o_nome_producao` -> 1.50.0 -> `a_instituicao` ->
+--   -- 1.51.0 -> `a_area_e_de_quem_configurou` -> 1.52.0 -> `o_sca_vira_sap_3`
+--   -- (que nao carimba) -> ESTA -> 3.0.0. O estado imediatamente anterior ao
+--   -- core e 1.52.0, e voltar para 1.50.0 deixaria o carimbo DOIS degraus atras
+--   -- do schema real: o banco continuaria com `dgeo.instituicao` e sem
+--   -- `limites.area_suprimento.e_1cgeo`, dizendo ser de antes das duas.
+--   -- Desfazer esta migracao desfaz o CORE, e nao a cadeia inteira; quem quiser
+--   -- voltar mais desfaz cada uma pelo bloco dela, na ordem inversa.
+--   UPDATE public.versao SET nome = '1.52.0' WHERE code = 1;
 --   COMMIT;
 --
 -- O DESFAZER PERDE DADO, e este e o primeiro desta serie em que perde: os

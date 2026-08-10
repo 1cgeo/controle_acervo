@@ -128,14 +128,17 @@ export default {
     { path: '/mapas', render: renderMapas, perfis: ['consulta', 'gerente'] },
     // O MICROCONTROLE ENTROU NA CONSULTA em 2026-08-09, e ele era de gerente ate
     // ali. A regra nova do chefe -- "o visualizador ve TUDO" -- nao abre excecao,
-    // e as nove rotas de LEITURA de `/api/microcontrole` baixaram de `gerente`
-    // para `consulta` no servidor para acompanhar.
+    // e as SEIS rotas de LEITURA de `/api/microcontrole` baixaram de `gerente`
+    // para `consulta` no servidor para acompanhar. Sao seis e nao onze: as duas
+    // de gravacao de telemetria continuam em `operador` (quem grava e o plugin) e
+    // as tres que mexem no perfil de monitoramento continuam em `gerente`.
     //
     // O QUE ISSO ALARGA, e vale o senhor saber: a telemetria mede rendimento de
     // pessoa COM NOME (feicoes por hora, cobertura de tela). Quem tem consulta em
     // `producao` passa a ver isso de toda a Divisao. Se a intencao era o
     // visualizador ver o TRABALHO e nao as PESSOAS, esta e a linha a reverter, e
-    // reverte-la e trocar `consulta` por `gerente` aqui e nas nove rotas.
+    // reverte-la e trocar `consulta` por `gerente` aqui e nas seis guardas de
+    // `microcontrole_route.js`.
     { path: '/microcontrole', render: renderMicrocontrole, perfis: ['consulta', 'gerente'] },
   ],
 };

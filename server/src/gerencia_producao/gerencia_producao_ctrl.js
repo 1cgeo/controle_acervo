@@ -525,13 +525,143 @@ controller.deletaHabilitacaoBloco = async (ids, usuarioUuid, contexto) => {
 //
 // Sem essa coreografia, o historico de quem trabalhou numa folha viraria uma
 // linha so, reescrita a cada pausa.
+//
+// ---------------------------------------------------------------------------
+// TIRAR O TRABALHO DA MAO TAMBEM FECHA A PORTA DO BANCO DE EDICAO
+// ---------------------------------------------------------------------------
+//
+// O DEFEITO QUE ISTO CONSERTA. Ate 2026-08-09 as quatro operacoes mexiam SO em
+// `producao.atividade`: o gerente pausava a atividade de alguem JUSTAMENTE para
+// tira-lo do trabalho, e a pessoa continuava com papel valido e escrita no banco
+// de edicao. O SAP 2.3.5 nao tinha esse buraco -- `gerencia_ctrl.js` chamava
+// `temporaryLogin.resetPassword` em pausar, reiniciar e voltar, e era ela quem
+// revogava.
+//
+// QUAIS OPERACOES REVOGAM, e por que cada uma:
+//
+//   PAUSAR                    SIM. E o proprio sentido do ato: o gerente esta
+//                             tirando a folha da mao de quem a estava fazendo.
+//   UNIDADE INDISPONIVEL      SIM, pelo mesmo caminho: `disponivel = false` pausa
+//                             o que estava em execucao, e a unidade que ninguem
+//                             pode trabalhar nao deixa ninguem editando o dado.
+//   REINICIAR                 SIM, e com mais razao que pausar. A reiniciada NAO
+//                             volta para a mesma mao: a nova atividade nasce SEM
+//                             DONO e 'Não iniciada', e a distribuicao a entrega a
+//                             quem estiver disponivel. Quem tinha a folha deixou
+//                             de ter qualquer vinculo com ela, e manter o acesso
+//                             seria dar a uma pessoa o dado de uma folha que
+//                             agora e de outra.
+//   VOLTAR                    SIM. A atividade encerrada aqui ja estava
+//                             finalizada, e o acesso dela em tese fechou na
+//                             entrega -- mas "em tese" e exatamente o caso que
+//                             esta revogacao cobre: quando a revogacao da entrega
+//                             falha, a resposta de la diz que a porta ficou
+//                             aberta ate um gerente fecha-la. Voltar a etapa e o
+//                             momento em que o gerente mexe naquela folha.
+//   AVANCAR                   NAO, e a ausencia e deliberada. `avancaAtividade`
+//                             recusa a operacao quando ha atividade em execucao
+//                             ou pausada na janela do fluxo, e so marca como
+//                             finalizada o que estava 'Não iniciada' -- atividade
+//                             que ninguem executou e para a qual acesso nenhum
+//                             foi concedido. Nao ha porta a fechar.
+//
+// A COREOGRAFIA E A DE `distribuicao/fecharAcesso`, e ela nao se reinventa aqui:
+//
+//   FORA DA TRANSACAO. O banco de edicao e OUTRO PostgreSQL, e nao ha transacao
+//   que cubra os dois. A revogacao roda DEPOIS do commit.
+//
+//   A FALHA NAO DESFAZ A OPERACAO. A pausa (ou o reinicio, ou a volta) esta
+//   gravada e auditada; o que faltou foi fechar uma porta. Desfazer o ato do
+//   gerente porque um servidor que nao e deste servico nao respondeu deixaria a
+//   folha rodando na mao de quem o gerente quis tirar dela.
+//
+//   E NINGUEM RECEBE "SUCESSO" POR REVOGACAO QUE NAO REVOGOU. A resposta traz
+//   `revogacao: { ok: false, ... }` com a providencia: um gerente fecha a mao por
+//   `POST /api/gerencia_producao/banco_dados/revogar_permissoes_usuario`.
+//
+//   O ERRO DO DRIVER NAO ATRAVESSA. A mensagem do PostgreSQL traz o HOST do banco
+//   de edicao, e esta resposta vai para o cliente E para o log (`sendJsonAndLog`
+//   registra o envelope). So mensagem de `AppError` sai; qualquer outro erro vira
+//   frase generica. Ver `database/conexao_admin.js`.
+
+const FALHA_GENERICA =
+  'Não foi possível revogar o acesso ao banco de produção desta atividade.'
+
+/**
+ * Fecha o acesso ao banco de edicao das atividades que acabaram de ser
+ * encerradas.
+ *
+ * @param {Array} encerradas - as linhas de `producao.atividade` encerradas
+ * @param {string} quemPediu - o gerente que disparou o ato
+ * @param {object} contexto
+ * @param {string} situacao - como as atividades ficaram, para a providencia
+ * @returns {Promise<object|null>} `null` quando nao havia acesso a revogar
+ */
+const revogarAcessos = async (encerradas, quemPediu, contexto, situacao) => {
+  // SEM DONO NAO HA A QUEM REVOGAR, e a linha e simplesmente pulada: a atividade
+  // 'Não iniciada' que o avancar marca nunca teve papel. A repetida tambem sai,
+  // porque duas chamadas para o mesmo par so trocariam a senha do papel duas
+  // vezes.
+  const vistos = new Set()
+  const alvos = []
+
+  for (const linha of encerradas) {
+    if (!linha || !linha.usuario_uuid) continue
+    const chave = `${linha.id}:${linha.usuario_uuid}`
+    if (vistos.has(chave)) continue
+    vistos.add(chave)
+    alvos.push({ atividadeId: linha.id, usuarioUuid: linha.usuario_uuid })
+  }
+
+  const falhas = []
+  let revogadas = 0
+
+  for (const alvo of alvos) {
+    try {
+      const revogado = await permissoesProducao.revogarAcesso({
+        atividadeId: alvo.atividadeId,
+        usuarioUuid: alvo.usuarioUuid,
+        quemPediu,
+        contexto
+      })
+
+      // `null` quer dizer que o dado de producao daquela atividade nao e PostGIS
+      // controlado: nao havia acesso nenhum, e a resposta nao fala do que nao
+      // existe.
+      if (revogado) revogadas += 1
+    } catch (err) {
+      falhas.push({
+        atividade_id: alvo.atividadeId,
+        mensagem: err instanceof AppError ? err.message : FALHA_GENERICA
+      })
+    }
+  }
+
+  if (revogadas === 0 && falhas.length === 0) return null
+
+  if (falhas.length === 0) return { revogacao: { ok: true, revogadas } }
+
+  return {
+    revogacao: {
+      ok: false,
+      revogadas,
+      falhas,
+      providencia:
+        `A operação foi concluída e as atividades foram ${situacao}. O acesso ao ` +
+        'banco de produção das atividades acima continua aberto até que um ' +
+        'gerente o revogue.'
+    }
+  }
+}
 
 /**
  * Encerra a atividade EM EXECUCAO das unidades de trabalho e abre uma pausada.
  *
- * Devolve `false` quando nao havia nada em execucao, para o chamador decidir se
- * isso e erro (`POST /atividade/pausar`, que foi pedido explicitamente) ou nao
- * (`POST /unidade_trabalho/disponivel`, onde pausar e efeito colateral).
+ * Devolve as linhas ENCERRADAS, e nao um booleano: alem de dizer se houve o que
+ * pausar -- o chamador decide se a lista vazia e erro (`POST /atividade/pausar`,
+ * que foi pedido explicitamente) ou nao (`POST /unidade_trabalho/disponivel`,
+ * onde pausar e efeito colateral) --, e delas que sai o par (atividade, pessoa)
+ * cujo acesso ao banco de edicao tem de ser revogado depois do commit.
  */
 const pausarAtividades = async (t, unidadeTrabalhoIds, usuarioUuid, contexto) => {
   const encerradas = await t.any(
@@ -552,7 +682,7 @@ const pausarAtividades = async (t, unidadeTrabalhoIds, usuarioUuid, contexto) =>
     }
   )
 
-  if (encerradas.length === 0) return false
+  if (encerradas.length === 0) return encerradas
 
   for (const encerrada of encerradas) {
     await auditoriaCtrl.registrar(t, {
@@ -594,19 +724,25 @@ const pausarAtividades = async (t, unidadeTrabalhoIds, usuarioUuid, contexto) =>
     })
   }
 
-  return true
+  return encerradas
 }
 
 controller.pausaAtividade = async (unidadeTrabalhoIds, usuarioUuid, contexto) => {
-  return db.conn.tx(async t => {
-    const mudou = await pausarAtividades(t, unidadeTrabalhoIds, usuarioUuid, contexto)
-    if (!mudou) {
+  const encerradas = await db.conn.tx(async t => {
+    const paradas = await pausarAtividades(t, unidadeTrabalhoIds, usuarioUuid, contexto)
+    if (paradas.length === 0) {
       throw new AppError(
         'Unidades de trabalho não possuem atividades em execução',
         httpCode.NotFound
       )
     }
+    return paradas
   })
+
+  // DEPOIS DO COMMIT, e nunca dentro dele: ver o bloco no alto desta secao. E o
+  // pior dos quatro buracos, porque o gerente pausa JUSTAMENTE para tirar a
+  // pessoa do trabalho.
+  return revogarAcessos(encerradas, usuarioUuid, contexto, 'pausadas')
 }
 
 // `disponivel = false` PAUSA O QUE ESTAVA EM EXECUCAO, e nao poderia ser
@@ -619,7 +755,7 @@ controller.unidadeTrabalhoDisponivel = async (
   usuarioUuid,
   contexto
 ) => {
-  return db.conn.tx(async t => {
+  const encerradas = await db.conn.tx(async t => {
     await exigirQueExistam(
       t,
       'producao.unidade_trabalho',
@@ -657,9 +793,17 @@ controller.unidadeTrabalhoDisponivel = async (
     }
 
     if (!disponivel) {
-      await pausarAtividades(t, unidadeTrabalhoIds, usuarioUuid, contexto)
+      return pausarAtividades(t, unidadeTrabalhoIds, usuarioUuid, contexto)
     }
+
+    return []
   })
+
+  // A INDISPONIBILIDADE FECHA A PORTA PELO MESMO MOTIVO QUE A PAUSA, e por aqui
+  // ela alcanca o mesmo caminho: `disponivel = false` pausou o que estava em
+  // execucao, e quem foi pausado nao continua editando o dado. Com `disponivel`
+  // verdadeiro a lista vem vazia e nada e revogado.
+  return revogarAcessos(encerradas, usuarioUuid, contexto, 'pausadas')
 }
 
 // REINICIAR e PAUSAR sao diferentes em duas coisas, e as duas importam: a
@@ -672,7 +816,7 @@ controller.unidadeTrabalhoDisponivel = async (
 // diferentes, e o que se reinicia e a MAIS ANTIGA no fluxo. Reiniciar a de tras
 // deixaria a da frente rodando sobre um trabalho que voltou a zero.
 controller.reiniciaAtividade = async (unidadeTrabalhoIds, usuarioUuid, contexto) => {
-  return db.conn.tx(async t => {
+  const encerradas = await db.conn.tx(async t => {
     const encerradas = await t.any(
       `UPDATE producao.atividade SET
          data_inicio = COALESCE(data_inicio, CURRENT_TIMESTAMP),
@@ -735,7 +879,17 @@ controller.reiniciaAtividade = async (unidadeTrabalhoIds, usuarioUuid, contexto)
         motivo: 'Atividade reiniciada pela gerência'
       })
     }
+
+    return encerradas
   })
+
+  // REINICIAR REVOGA COM MAIS RAZAO QUE PAUSAR, e a diferenca esta duas dezenas
+  // de linhas acima: a nova atividade nasce SEM DONO e 'Não iniciada', e a folha
+  // volta para a fila. Quem a tinha deixou de ter vinculo com ela, e o acesso
+  // que sobrasse seria o dado de uma folha que agora e de outra pessoa. As
+  // PAUSADAS que o reinicio tambem alcanca ja tiveram o acesso fechado na pausa,
+  // e revogar de novo custa uma troca de senha de um papel que ninguem usa.
+  return revogarAcessos(encerradas, usuarioUuid, contexto, 'reiniciadas')
 }
 
 /**
@@ -775,7 +929,7 @@ controller.voltaAtividade = async (
   usuarioUuid,
   contexto
 ) => {
-  return db.conn.tx(async t => {
+  const encerradas = await db.conn.tx(async t => {
     const emCurso = await t.any(
       janelaDoFluxo(
         '>=',
@@ -859,13 +1013,30 @@ controller.voltaAtividade = async (
         motivo: 'Atividade devolvida para etapa anterior'
       })
     }
+
+    return encerradas
   })
+
+  // VOLTAR REVOGA MESMO ENCERRANDO ATIVIDADE JA FINALIZADA, e e por isso que
+  // revoga: o acesso daquela entrega deveria ter fechado em `/finaliza`, e
+  // "deveria" e exatamente o caso que esta chamada cobre -- quando a revogacao
+  // da entrega falha, a resposta de la diz que a porta fica aberta ate um
+  // gerente fecha-la. Devolver a folha para tras e o momento em que o gerente
+  // mexe nela. Com `manter_usuarios`, a nova nasce PAUSADA na mesma mao, e o
+  // acesso volta pelo `/verifica` do dia em que o trabalho recomecar.
+  return revogarAcessos(encerradas, usuarioUuid, contexto, 'devolvidas')
 }
 
 // AVANCAR MARCA COMO FINALIZADO O QUE NAO FOI FEITO, e o `usuario_uuid` que
 // entra e o DO GERENTE, e nao o de quem deveria ter feito. E deliberado e vem do
 // SAP: a atividade pulada nao teve operador, e escrever qualquer outro nome ali
 // afirmaria um trabalho que ninguem executou.
+//
+// E A UNICA DAS CINCO QUE NAO REVOGA ACESSO AO BANCO DE EDICAO, e a ausencia e
+// deliberada: as tres recusas abaixo garantem que nada em execucao, pausado ou
+// em fila prioritaria entra na janela, e o UPDATE so alcanca o que estava 'Não
+// iniciada'. Atividade que ninguem executou nao teve papel criado nem permissao
+// concedida, e nao ha porta a fechar. Ver o bloco no alto desta secao.
 controller.avancaAtividade = async (
   atividadeIds,
   concluida,

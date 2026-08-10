@@ -320,6 +320,64 @@ describe('schema da unidade de trabalho: os demais campos', () => {
   })
 })
 
+// ============================================================================
+// A QUERY CHEGA COMO TEXTO, SEMPRE
+// ============================================================================
+
+// ISTO JÁ ESTEVE QUEBRADO, e o defeito era invisível: `lote_id` usava o helper
+// `id()`, que traz `.strict()`, e o `.strict()` desliga a coerção. O Express não
+// converte nada, e `utils/schema_validation.js` valida `req.query` CRU: o
+// resultado era 400 '"lote_id" must be a number' em
+// `GET /api/producao/unidade_trabalho?lote_id=12` para todo lote, sempre. A rota
+// era inalcançável, e o `+req.query.lote_id` do controlador nunca rodava.
+//
+// O CORPO CONTINUA ESTRITO, e a assimetria é o contrato: lá o JSON já traz tipo,
+// e a string '7' no lugar do número 7 é erro de quem chamou.
+describe('a consulta de unidade de trabalho aceita o lote como texto', () => {
+  it('aceita "12" e entrega o número 12', () => {
+    const valor = aceita(schema.unidadeTrabalhoQuery.validate({ lote_id: '12' }))
+    expect(valor.lote_id).toBe(12)
+  })
+
+  it('continua recusando o que não é número', () => {
+    recusaPor(
+      schema.unidadeTrabalhoQuery.validate({ lote_id: 'sete' }),
+      'lote_id',
+      'number.base'
+    )
+  })
+
+  // O `.positive()` NÃO CAIU JUNTO com o `.strict()`: SERIAL começa em 1, e um
+  // zero é erro de quem chamou e não um 404 depois de ir ao banco.
+  it('continua recusando o zero, mesmo em texto', () => {
+    recusaPor(
+      schema.unidadeTrabalhoQuery.validate({ lote_id: '0' }),
+      'lote_id',
+      'number.positive'
+    )
+  })
+
+  it('continua recusando o número quebrado, mesmo em texto', () => {
+    recusaPor(
+      schema.unidadeTrabalhoQuery.validate({ lote_id: '1.5' }),
+      'lote_id',
+      'number.integer'
+    )
+  })
+
+  it('o CORPO segue estrito, e lá a string é recusada', () => {
+    recusaPor(
+      schema.unidadeTrabalhoCriar.validate({
+        unidades_trabalho: [unidadeValida()],
+        subfase_ids: [1],
+        lote_id: '7'
+      }),
+      'lote_id',
+      'number.base'
+    )
+  })
+})
+
 describe('schema das três operações geométricas', () => {
   it('o reshape cobra o SRID na geometria nova', () => {
     recusaPor(

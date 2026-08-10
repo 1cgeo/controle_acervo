@@ -305,8 +305,19 @@ CREATE TABLE metadado.informacoes_produto(
 COMMENT ON TABLE metadado.informacoes_produto IS
     'Bloco de identificação do XML: resumo, propósito, créditos, sigilo, restrições, datum vertical, especificação e linhagem. Por versão OU por lote do acervo.';
 
-CREATE INDEX idx_informacoes_produto_versao ON metadado.informacoes_produto (versao_id);
-CREATE INDEX idx_informacoes_produto_lote ON metadado.informacoes_produto (lote_id);
+-- UNICO, E NAO SO INDICE. O `xor_lote` acima garante que cada linha aponta UMA
+-- versao ou UM lote; o que faltava era impedir a SEGUNDA linha para o mesmo
+-- alvo. Sem isto, dois POST para o mesmo lote faziam `oneOrNone` em
+-- `metadado_ctrl.js` estourar `Multiple rows were not expected`, e o XML e o JSON
+-- de edicao de TODA versao daquele lote passavam a responder 500 -- com a causa
+-- mascarada, porque o envelope do 500 troca a mensagem por "Erro no servidor".
+-- Uma linha a mais numa tabela de configuracao derrubava a saida do lote inteiro.
+--
+-- NULL NAO CONFLITA COM NULL no indice unico do PostgreSQL, entao a coluna que o
+-- `xor_lote` deixa vazia nao atrapalha: as linhas por lote tem `versao_id` nulo e
+-- convivem todas no indice de versao, e vice-versa.
+CREATE UNIQUE INDEX idx_informacoes_produto_versao ON metadado.informacoes_produto (versao_id);
+CREATE UNIQUE INDEX idx_informacoes_produto_lote ON metadado.informacoes_produto (lote_id);
 
 -- O QUADRO DE CREDITOS DA MOLDURA, guardado como QPT.
 --
@@ -373,8 +384,11 @@ CREATE TABLE metadado.informacoes_edicao(
 COMMENT ON TABLE metadado.informacoes_edicao IS
     'Os números da edição que a ficha ET-PCDG imprime: PEC, origem da altimetria, quadro de fases, DPI e o MDE usado. Por versão OU por lote do acervo.';
 
-CREATE INDEX idx_informacoes_edicao_versao ON metadado.informacoes_edicao (versao_id);
-CREATE INDEX idx_informacoes_edicao_lote ON metadado.informacoes_edicao (lote_id);
+-- UNICO pelo mesmo motivo da irma `informacoes_produto`, e com o mesmo efeito
+-- quando faltava: a segunda linha para o mesmo lote derrubava a ficha ET-PCDG de
+-- todas as versoes dele.
+CREATE UNIQUE INDEX idx_informacoes_edicao_versao ON metadado.informacoes_edicao (versao_id);
+CREATE UNIQUE INDEX idx_informacoes_edicao_lote ON metadado.informacoes_edicao (lote_id);
 
 -- ---------------------------------------------------------------------------
 -- O que so a carta ortoimagem tem

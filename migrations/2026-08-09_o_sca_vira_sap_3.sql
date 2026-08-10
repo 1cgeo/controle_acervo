@@ -11,9 +11,12 @@
 -- de descompasso que `__tests__/unit/versao_do_servico.test.js` existe para
 -- pegar. Depois desta migracao ha um numero so.
 --
--- ESTA MIGRACAO NAO MUDA SCHEMA NENHUM. Ela nao cria, nao apaga e nao renomeia
--- tabela, coluna, indice, restricao nem linha de dominio: ela SO carimba
--- `public.versao`. A renomeacao e de PRODUTO, e vive no codigo e nas telas.
+-- ESTA MIGRACAO NAO MUDA SCHEMA NENHUM, E NAO CARIMBA NADA. Ela nao cria, nao
+-- apaga e nao renomeia tabela, coluna, indice, restricao nem linha de dominio, e
+-- o `UPDATE public.versao` que morava aqui saiu em 2026-08-09 (ver o rodape):
+-- carimbar 3.0.0 antes do core deixaria um banco dizendo ter o que nao tem. Quem
+-- carimba e `o_core_de_producao_atravessa.sql`. A renomeacao e de PRODUTO, e vive
+-- no codigo e nas telas.
 --
 -- AS MIGRACOES DE SCHEMA DO CORE DE PRODUCAO VEM DEPOIS DESTA. Os schemas
 -- `producao`, `qgis`, `metadado`, `acompanhamento` e `microcontrole`, o modulo 7
@@ -60,13 +63,18 @@
 -- servidor recusa subir por piso, e a mensagem diz que falta migrar: e o
 -- comportamento desejado, e nao um efeito colateral.
 --
--- Para ensaiar, ensaie AS DUAS EM CADEIA, que e como elas se aplicam:
+-- PARA ENSAIAR, O COMANDO E UM SO, E ELE NAO ESTA AQUI: esta no cabecalho de
+-- `migrations/2026-08-09_o_core_de_producao_atravessa.sql`, sob "O COMANDO
+-- CANONICO DE ENSAIO DE 2026-08-09". Ele leva AS CINCO migracoes do dia em
+-- cadeia, os CINCO `er/` novos e os DEZ schemas que a entrega toca.
 --
---   node migrations/ensaiar_migracao.cjs \
---     --migracao migrations/2026-08-09_o_sca_vira_sap_3.sql,migrations/2026-08-09_o_core_de_producao_atravessa.sql \
---     --novos er/qgis.sql,er/producao.sql,er/metadado.sql,er/acompanhamento_producao.sql \
---     --versao-anterior 1.50.0 --versao-esperada 3.0.0 \
---     --schemas producao,qgis,metadado,acompanhamento,dominio,acervo
+-- O QUE MORAVA AQUI ERA UM COMANDO QUE NUNCA RODOU, e ele fica registrado como
+-- alerta: ele listava quatro `er/` novos e esquecia `er/microcontrole.sql`, que
+-- entao era tratado como pre-existente. O banco "anterior" tentava cria-lo sem o
+-- schema `producao`, e `microcontrole.perfil_monitoramento` declara
+-- `REFERENCES producao.subfase (id)`: o ensaio morria antes de comparar coisa
+-- nenhuma. Comando de ensaio repetido em cinco cabecalhos apodrece em cinco
+-- lugares diferentes, e por isso agora ha UM.
 --
 -- IDEMPOTENTE por construcao: sobrou so a conferencia abaixo, que nao escreve.
 

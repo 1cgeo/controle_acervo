@@ -99,8 +99,20 @@ app.use(helmet({
 }))
 app.use(noCache())
 
+// O LOG NÃO PODE CARREGAR CREDENCIAL, e `req.originalUrl` inclui a query
+// string. A única rota que leva token na query é a da tile MVT
+// (`verify_login_tile.js`), e a rota `/logs` logo abaixo publica este arquivo
+// SEM guarda nenhuma: sem a redação, o token da tile ficava legível a quem
+// abrisse a página do log. Ver `login/redigir_token_da_url.js`.
+//
+// O `require` é do arquivo, e não do `../login`: aquele índice puxa banco e
+// configuração, e isto aqui é uma função de string sem dependência nenhuma.
+const redigirTokenDaUrl = require('../login/redigir_token_da_url')
+
 app.use((req, res, next) => {
-  const url = req.protocol + '://' + req.get('host') + req.originalUrl
+  const url = redigirTokenDaUrl(
+    req.protocol + '://' + req.get('host') + req.originalUrl
+  )
 
   logger.info(`${req.method} request`, {
     url,

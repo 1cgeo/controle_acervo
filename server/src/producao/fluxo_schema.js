@@ -83,7 +83,15 @@ const CODIGOS_CONTROLE_QUALIDADE = Object.keys(PADRAO_CONTROLE_QUALIDADE).map(Nu
 
 // `id` de tabela SERIAL. `.positive()` porque SERIAL começa em 1, e um `/0` é
 // erro de quem chamou, não um 404 depois de ir ao banco.
-const idSerial = () => Joi.number().integer().positive()
+//
+// `.strict()` PELO MESMO MOTIVO DOS IRMÃOS, e ele faltava aqui até 2026-08-09.
+// Sem ele o Joi CONVERTE, e `{"camadas_ids": ["7"]}` era aceito em
+// `DELETE /configuracao/camadas` enquanto o mesmo corpo levava 400 em
+// `DELETE /grupo_estilos` -- e quem manda os dois é o mesmo SAP Gerente. A
+// justificativa está escrita em `perfil_schema.js`: a string '3' vira 3 e um
+// corpo com aspas sobrando grava sem ninguém perceber, até o dia em que chega
+// '3a' e a rota quebra num lugar que nunca foi tocado.
+const idSerial = () => Joi.number().integer().strict().positive()
 
 // O lote é `acervo.lote (id)`, BIGSERIAL. Continua sendo inteiro positivo: o
 // JavaScript representa exatamente até 2^53, e o acervo tem 102 lotes.

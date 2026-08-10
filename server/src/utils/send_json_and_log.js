@@ -3,6 +3,7 @@
 const logger = require('./logger')
 const httpCode = require('./http_code')
 const { VERSION } = require('../config')
+const redigirTokenDaUrl = require('../login/redigir_token_da_url')
 
 const truncate = dados => {
   if (!dados || typeof dados !== 'object') return dados
@@ -22,7 +23,15 @@ const truncate = dados => {
 }
 const sendJsonAndLogMiddleware = (req, res, next) => {
   res.sendJsonAndLog = (success, message, status, dados = null, error = null, metadata = {}) => {
-    const url = req.protocol + '://' + req.get('host') + req.originalUrl
+    // REDIGIDA, e pelo mesmo motivo do middleware de `server/app.js`: o
+    // `combined.log` sai por `/logs`, que não tem autenticação por decisão
+    // registrada, e `req.originalUrl` traz a query. Este é o SEGUNDO caminho do
+    // vazamento, e é o que passa despercebido: a requisição de tile que FALHA
+    // (401, 403) responde pelo `errorHandler`, que responde por aqui, e gravaria
+    // a query inteira. Redigir num ponto só não bastava.
+    const url = redigirTokenDaUrl(
+      req.protocol + '://' + req.get('host') + req.originalUrl
+    )
 
     logger.info(message, {
       url,

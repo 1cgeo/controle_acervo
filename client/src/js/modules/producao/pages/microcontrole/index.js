@@ -7,7 +7,7 @@ import {
   getCoberturaTela,
   getAproveitamentoTela,
 } from '@services/microcontrole-service.js';
-import { getLotesEmExecucao } from '@services/producao-acompanhamento-service.js';
+import { getLotesComProducao } from '@services/producao-service.js';
 import './microcontrole.css';
 
 /**
@@ -83,10 +83,12 @@ export function amostrasPorOperador(colecao) {
  *
  * CADA SEÇÃO CARREGA SOZINHA, COM O PRÓPRIO `catch`, e isso não é estilo: num
  * `Promise.all` a falha de uma derruba a TELA INTEIRA e a mensagem que sobra é a
- * dela. Aqui as três chamadas têm guardas e bancos diferentes -- a lista de
- * lotes é `consulta` no `producao`, as outras duas são `gerente` e vêm do outro
- * banco --, então um 403 na lista de lotes não pode apagar o resumo de feição
- * que carregou bem.
+ * dela. O PISO É O MESMO NAS TRÊS, `consulta` no módulo `producao`; o que difere
+ * é o BANCO. A lista de lotes vem do banco principal
+ * (`GET /api/acompanhamento/lotes`) e responde sempre; as outras duas vêm da
+ * telemetria, que pode responder 503 por conta própria. Então um 503 da
+ * telemetria não pode esvaziar o filtro, e uma falha na lista de lotes não pode
+ * apagar o resumo de feição que carregou bem.
  *
  * O SELETOR DE OPERADOR SE PREENCHE DO RESUMO DE FEIÇÃO, e não de uma rota de
  * pessoas: quem aparece ali é quem TEM medição no período filtrado, que é a
@@ -299,14 +301,26 @@ export function renderMicrocontrole(container) {
   //
   // ELES NÃO BLOQUEIAM NADA. Sem a lista, o filtro fica só com o período e a
   // medição continua saindo para toda a produção: uma falha aqui não pode
-  // esvaziar as duas seções, que vêm de outro banco e de outra guarda.
+  // esvaziar as duas seções, que vêm de outro banco.
+  //
+  // A LISTA VEM DE `GET /api/acompanhamento/lotes` (`getLotesComProducao`), que é
+  // o seletor: ela devolve `{ id, nome, projeto }` de todo lote COM produção
+  // recortada, no piso `consulta` de `producao`. Ela NÃO é
+  // `/acompanhamento/dashboard/execucao`: aquela é um AGREGADO, devolve
+  // `lote_id` e `lote` (e não `id` e `nome`), e só traz o lote com versão em
+  // execução hoje. Ler `l.id` de lá dava `undefined` em toda opção, e o filtro
+  // saía sem `lote_id` sem erro nenhum: a tela recarregava mostrando a produção
+  // inteira como se fosse a do lote escolhido.
 
   async function carregarLotes() {
     try {
-      const lotes = await getLotesEmExecucao();
+      const lotes = await getLotesComProducao();
       if (disposed) return;
       campoLote.setOptions(
-        (lotes || []).map((l) => ({ value: l.id, label: l.nome || `Lote ${l.id}` })),
+        (lotes || []).map((l) => ({
+          value: l.id,
+          label: l.projeto ? `${l.nome} (${l.projeto})` : (l.nome || `Lote ${l.id}`),
+        })),
       );
     } catch {
       if (disposed) return;

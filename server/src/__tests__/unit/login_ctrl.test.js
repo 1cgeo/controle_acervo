@@ -297,6 +297,68 @@ describe('login_ctrl.sessao', () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// O TOKEN DA TILE (2026-08-09)
+// ---------------------------------------------------------------------------
+//
+// A URL da camada MVT leva credencial na QUERY, porque uma camada XYZ nao tem
+// onde por cabecalho. Ate esta data quem ia ali era o token de SESSAO: oito
+// horas de vida, aceito por todas as guardas, escrito inteiro em
+// `logs/combined.log` pelo middleware de log e publicado pela rota aberta
+// `/logs`. O que anda na URL hoje e este token: audiencia propria, minutos de
+// vida, e nenhuma outra guarda o aceita (`unit/login/audiencia_do_token.test.js`).
+describe('login_ctrl.tokenDeTile', () => {
+  const QUEM = { id: 7, uuid: 'uuid-7', administrador: false, cliente: 'sap_web' }
+
+  test('assina com a audiencia de tile, e nao com a de sessao', async () => {
+    const { token } = await ctrl.tokenDeTile(QUEM)
+    const decoded = jwt.verify(token, JWT_SECRET)
+
+    expect(decoded.aud).toBe('tile')
+    expect(decoded.uuid).toBe('uuid-7')
+  })
+
+  // MINUTOS, E NAO HORAS: e o unico ganho que o token na URL admite, porque o
+  // que ficou escrito em log, historico e proxy nao se apaga.
+  test('vive minutos, e muito menos que o token de sessao', async () => {
+    const { token, expira_em_segundos: prazo } = await ctrl.tokenDeTile(QUEM)
+    const decoded = jwt.verify(token, JWT_SECRET)
+
+    expect(prazo).toBe(decoded.exp - decoded.iat)
+    expect(prazo).toBeGreaterThan(0)
+    expect(prazo).toBeLessThanOrEqual(15 * 60)
+
+    const sessao = await ctrl.login('fulano', SENHA_CERTA, 'sca_web')
+    const daSessao = jwt.verify(sessao.token, JWT_SECRET)
+    expect(prazo).toBeLessThan(daSessao.exp - daSessao.iat)
+  })
+
+  // Ele NAO carrega perfil nenhum, pelo mesmo motivo do token de sessao: quem
+  // decide o que a pessoa pode e a guarda, lendo o banco a cada requisicao.
+  test('nao leva perfil nenhum dentro', async () => {
+    const { token } = await ctrl.tokenDeTile(QUEM)
+    const decoded = jwt.verify(token, JWT_SECRET)
+
+    expect(decoded.perfis).toBeUndefined()
+    // O `cliente` VAI, e e o que impede a tile de entrar no rastro como
+    // 'desconhecido'.
+    expect(decoded.cliente).toBe('sap_web')
+  })
+
+  // NAO LE O BANCO: quem chama e a rota sob `verifyLogin`, que acabou de
+  // conferir que a conta existe e esta ativa. Uma segunda consulta aqui
+  // responderia a mesma pergunta na mesma requisicao.
+  test('nao vai ao banco', async () => {
+    mockDb.conn.oneOrNone.mockClear()
+    mockDb.conn.tx.mockClear()
+
+    await ctrl.tokenDeTile(QUEM)
+
+    expect(mockDb.conn.oneOrNone).not.toHaveBeenCalled()
+    expect(mockDb.conn.tx).not.toHaveBeenCalled()
+  })
+})
+
 describe('login_ctrl.conferirSenha', () => {
   test('aceita a senha vigente', async () => {
     mockDb.conn.oneOrNone.mockResolvedValue({ senha: HASH })

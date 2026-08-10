@@ -11,8 +11,16 @@ import { logarComo, CONSULTA } from '@/__tests__/helpers/sessao.js';
 //  - a fase PULADA vem com `'-'` nas duas datas, e não conta. Tratá-la como
 //    pendente deixaria eternamente "em execução" toda folha que pula uma fase,
 //    que é a maioria delas;
-//  - a URL da tile leva o token na QUERY, e é a única do sistema que faz isso:
-//    o MapLibre monta o pedido dentro do renderizador, onde não há cabeçalho;
+//  - a URL da tile leva um token na QUERY, e é a única do sistema que faz isso:
+//    o MapLibre monta o pedido dentro do renderizador, onde não há cabeçalho.
+//    O token dali NÃO é o da sessão desde 2026-08-09: é um token de audiência
+//    `tile`, pedido a `POST /login/tile`, de vida curta e que nenhuma outra
+//    guarda aceita. O bearer da sessão ficava escrito em `logs/combined.log`, que
+//    a rota aberta `/logs` publica;
+//  - montar a camada de tiles virou ASSÍNCRONO por causa disso, e duas coisas
+//    passaram a poder acontecer no meio: trocar de linha de produção (quem chega
+//    depois manda) e o token vencer (a fonte se refaz sozinha, uma vez por
+//    minuto no máximo, antes de a tela acusar falha);
 //  - o `source-layer` é contrato do servidor (`ST_AsMVT(q, 'linha_producao_<id>')`)
 //    e errá-lo NÃO dá erro: a camada simplesmente não desenha;
 //  - trocar de linha de produção REFAZ a fonte. Nenhum MapLibre troca a URL de
@@ -42,6 +50,24 @@ vi.mock('maplibre-gl', async () => {
   }
   return { ...stub, Map: Mapa, default: { ...stub.default, Map: Mapa } };
 });
+
+// A CREDENCIAL DA TILE VEM DO SERVIDOR, e o serviço a pede por `apiPost`. O
+// dublê guarda cada pedido: contar as chamadas é como se prova que a renovação
+// aconteceu, e que ela acontece UMA vez por rajada de erro.
+const api = vi.hoisted(() => ({
+  chamadas: [],
+  token: 'tk-tile-1',
+  erro: null,
+}));
+
+vi.mock('@services/api-client.js', () => ({
+  apiGet: () => Promise.resolve(null),
+  apiPost: (endpoint) => {
+    api.chamadas.push(endpoint);
+    if (api.erro) return Promise.reject(api.erro);
+    return Promise.resolve({ token: api.token });
+  },
+}));
 
 import { instanciasMapa } from '@components/mapa/maplibre-stub.js';
 import { urlTileLinhaProducao, camadaDaTile } from '@services/producao-service.js';
@@ -116,13 +142,27 @@ describe('situacaoDaFeicao', () => {
 describe('a URL da tile', () => {
   beforeEach(() => {
     logarComo({ producao: CONSULTA });
+    api.chamadas = [];
+    api.token = 'tk-tile-1';
+    api.erro = null;
   });
 
   // A ÚNICA URL DO SISTEMA COM TOKEN NA QUERY, e ela existe porque uma camada
   // XYZ não tem onde pôr cabeçalho.
-  test('leva o token na query e deixa {z}/{x}/{y} para o MapLibre', () => {
-    const url = urlTileLinhaProducao(7);
-    expect(url).toBe('/api/acompanhamento/linha_producao/7/{z}/{x}/{y}.pbf?token=tk-teste');
+  test('leva o token na query e deixa {z}/{x}/{y} para o MapLibre', async () => {
+    const url = await urlTileLinhaProducao(7);
+    expect(url).toBe('/api/acompanhamento/linha_producao/7/{z}/{x}/{y}.pbf?token=tk-tile-1');
+  });
+
+  // O CASO QUE DÁ NOME AO CONSERTO. O token da sessão ('tk-teste', o que
+  // `logarComo` guardou) abre TODAS as guardas e vive oito horas; ele ia inteiro
+  // para a URL, e dali para o `logs/combined.log` que a rota aberta `/logs`
+  // publica.
+  test('NÃO leva o token da sessão: pede um token de tile ao servidor', async () => {
+    const url = await urlTileLinhaProducao(7);
+
+    expect(url).not.toContain('tk-teste');
+    expect(api.chamadas).toEqual(['/login/tile']);
   });
 
   test('o nome da camada dentro da tile é o contrato do servidor', () => {
@@ -134,6 +174,9 @@ describe('o componente do mapa', () => {
   beforeEach(() => {
     logarComo({ producao: CONSULTA });
     instanciasMapa.length = 0;
+    api.chamadas = [];
+    api.token = 'tk-tile-1';
+    api.erro = null;
   });
 
   async function montarMapa() {
@@ -161,13 +204,16 @@ describe('o componente do mapa', () => {
     mapa._cleanup();
   });
 
+  // O `await flush()` DEPOIS DO setTile é a parte nova: a camada só entra quando
+  // o token de tile chega do servidor.
   test('a camada de tiles entra com a URL do token e o source-layer certo', async () => {
     const { mapa, instancia } = await montarMapa();
 
     mapa.setTile(2);
+    await flush();
 
     expect(instancia.configs['linha-producao-tile'].tiles).toEqual([
-      '/api/acompanhamento/linha_producao/2/{z}/{x}/{y}.pbf?token=tk-teste',
+      '/api/acompanhamento/linha_producao/2/{z}/{x}/{y}.pbf?token=tk-tile-1',
     ]);
     expect(instancia.camadas['linha-producao-contorno']['source-layer'])
       .toBe('linha_producao_2');
@@ -178,7 +224,26 @@ describe('o componente do mapa', () => {
     const { mapa, instancia } = await montarMapa();
 
     mapa.setTile(2);
+    await flush();
     mapa.setTile(5);
+    await flush();
+
+    expect(instancia.configs['linha-producao-tile'].tiles[0]).toContain('/linha_producao/5/');
+    expect(instancia.camadas['linha-producao-contorno']['source-layer'])
+      .toBe('linha_producao_5');
+    mapa._cleanup();
+  });
+
+  // A CORRIDA QUE A BUSCA DO TOKEN CRIOU: duas trocas antes de a primeira
+  // resposta chegar. Sem a conferência de `linhaTile` depois do `await`, a
+  // camada montada seria a da resposta que chegasse por último, e não a da linha
+  // que está na tela.
+  test('duas trocas seguidas montam a ÚLTIMA linha, e só ela', async () => {
+    const { mapa, instancia } = await montarMapa();
+
+    mapa.setTile(2);
+    mapa.setTile(5);
+    await flush();
 
     expect(instancia.configs['linha-producao-tile'].tiles[0]).toContain('/linha_producao/5/');
     expect(instancia.camadas['linha-producao-contorno']['source-layer'])
@@ -190,10 +255,28 @@ describe('o componente do mapa', () => {
     const { mapa, instancia } = await montarMapa();
 
     mapa.setTile(2);
+    await flush();
     mapa.setTile(null);
+    await flush();
 
     expect(instancia.getSource('linha-producao-tile')).toBeUndefined();
     expect(instancia.camadas['linha-producao-contorno']).toBeUndefined();
+    mapa._cleanup();
+  });
+
+  // A CREDENCIAL É OUTRA ROTA, e a falha dela fica na tile: a camada de situação
+  // e o resto da tela não dependem dela.
+  test('sem credencial de tile, o aviso é da tile e a tela continua de pé', async () => {
+    const { mapa, instancia } = await montarMapa();
+    api.erro = new Error('Sessão expirada. Faça login novamente.');
+
+    mapa.setTile(2);
+    await flush();
+
+    const aviso = mapa.element.querySelector('.producao-mapa__aviso');
+    expect(aviso.classList.contains('hidden')).toBe(false);
+    expect(aviso.textContent).toMatch(/credencial dos tiles/);
+    expect(instancia.getSource('linha-producao-tile')).toBeUndefined();
     mapa._cleanup();
   });
 
@@ -210,6 +293,46 @@ describe('o componente do mapa', () => {
     const aviso = mapa.element.querySelector('.producao-mapa__aviso');
     expect(aviso.classList.contains('hidden')).toBe(false);
     expect(aviso.textContent).toMatch(/tiles da linha de produção/);
+    mapa._cleanup();
+  });
+
+  // O TOKEN DA TILE VENCE COM O MAPA ABERTO, e é para isso que ele é curto. Sem
+  // esta renovação, passar do prazo obrigaria a recarregar a página no meio de
+  // uma consulta.
+  test('a tile recusada depois do prazo renova o token, e não acusa falha', async () => {
+    const { mapa, instancia } = await montarMapa();
+
+    mapa.setTile(2);
+    await flush();
+    expect(api.chamadas).toEqual(['/login/tile']);
+
+    // Mais de um minuto depois da montagem, que é a trava contra o laço.
+    const relogio = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 61000);
+    api.token = 'tk-tile-2';
+
+    // A RAJADA: o MapLibre dispara um erro por tile que falha, e as três viram
+    // UMA renovação.
+    instancia.emitir('error', { sourceId: 'linha-producao-tile', error: new Error('401') });
+    instancia.emitir('error', { sourceId: 'linha-producao-tile', error: new Error('401') });
+    instancia.emitir('error', { sourceId: 'linha-producao-tile', error: new Error('401') });
+    await flush();
+
+    expect(api.chamadas).toEqual(['/login/tile', '/login/tile']);
+    expect(instancia.configs['linha-producao-tile'].tiles[0]).toContain('tk-tile-2');
+    expect(mapa.element.querySelector('.producao-mapa__aviso').classList.contains('hidden'))
+      .toBe(true);
+
+    // E A FONTE QUEBRADA DE VERDADE AINDA ACUSA: o erro seguinte chega com o
+    // token recém-nascido, então ele não é prazo vencido, e vira aviso.
+    instancia.emitir('error', { sourceId: 'linha-producao-tile', error: new Error('500') });
+    await flush();
+
+    expect(api.chamadas).toHaveLength(2);
+    const aviso = mapa.element.querySelector('.producao-mapa__aviso');
+    expect(aviso.classList.contains('hidden')).toBe(false);
+    expect(aviso.textContent).toMatch(/tiles da linha de produção/);
+
+    relogio.mockRestore();
     mapa._cleanup();
   });
 });

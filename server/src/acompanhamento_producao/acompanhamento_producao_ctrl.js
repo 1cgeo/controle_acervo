@@ -483,11 +483,41 @@ controller.acompanhamentoGrade = async () => {
 // dias que o banco produziu no fuso do banco -- em UTC-3 a barra comecava um dia
 // antes do primeiro trabalho.
 //
-// Aqui `generate_series` da a grade de dias, um `EXISTS` marca cada dia, e a
-// tecnica de ilhas (`dia - row_number()`, constante dentro de uma sequencia
-// ininterrupta) funde as faixas. Nenhuma data passa por JavaScript.
+// Aqui `generate_series` da a grade de dias, uma juncao marca os dias que algum
+// intervalo cobre, e a tecnica de ilhas (`dia - row_number()`, constante dentro
+// de uma sequencia ininterrupta) funde as faixas. Nenhuma data passa por
+// JavaScript.
 /**
  * Monta a consulta de faixas.
+ *
+ * A SERIE E A CHAVE, E NUNCA O ROTULO. Ate 2026-08-09 o SELECT final agrupava
+ * por `${expressoes}` -- as expressoes de `saida`, que sao NOMES -- e o CTE
+ * `faixas` era o unico lugar que ainda separava por id. O efeito era uma fusao
+ * silenciosa de series distintas:
+ *
+ *   `producao.subfase` e UNIQUE (nome, fase_id), entao "Edição" existe na linha
+ *   da Carta Topográfica E na do CDGV. Num lote misto (61 dos 102 lotes com
+ *   versao atravessam mais de um subtipo) as duas subfases caiam numa barra so,
+ *   com o `array_agg(... ORDER BY f.inicio)` INTERCALANDO as faixas das duas: o
+ *   mesmo dia aparecia duas vezes, uma com valor 1 e outra com 0, e a tela
+ *   desenhava um trilho que nao existe.
+ *
+ *   Em `atividadeUsuario`, dois homonimos de mesmo posto e mesmo nome de guerra
+ *   viravam uma pessoa so.
+ *
+ * A origem no SAP 2.3.5 (`acompanhamento_ctrl.js`) agrupava por id E por rotulo,
+ * e era o id de la que protegia. Aqui o `GROUP BY` leva as chaves na frente, e
+ * elas SAEM NA RESPOSTA (`lote_id`, `subfase_id`, `usuario_uuid`): sem isso o
+ * cliente receberia duas linhas de mesmo nome sem nenhum jeito de distingui-las.
+ * O `ORDER BY` continua pelo rotulo, para a tela agrupar na ordem em que le, e
+ * so desempata pela chave.
+ *
+ * O DIA MARCADO SAI DE UMA JUNCAO, e nao de um `EXISTS` correlacionado. Aquele
+ * `EXISTS` estava na lista de selecao de `chaves CROSS JOIN dias`, isto e, rodava
+ * uma vez por celula da grade: com ~100 pessoas e 365 dias sao 36 mil varreduras
+ * de `intervalos`. `marcados` responde a mesma pergunta uma vez, e a grade so a
+ * consulta por igualdade. O `INNER JOIN dias` de dentro dele ainda faz de graca o
+ * recorte de ano que faltava, porque `dias` so tem o ano corrente.
  *
  * `chaves` e `saida` chegam como ARRAYS, e nao como texto a ser fatiado por
  * vírgula: a expressao de saida do usuario e
@@ -503,6 +533,8 @@ controller.acompanhamentoGrade = async () => {
  */
 const linhaDoTempo = ({ chaves, intervalos, juncoes, saida }) => {
   const listaChaves = chaves.join(', ')
+  // As chaves NO SELECT FINAL vem de `faixas`, que é o `f` dos `juncoes`.
+  const chavesDaFaixa = chaves.map(c => `f.${c}`).join(', ')
   const expressoes = saida.map(([expressao]) => expressao).join(', ')
   const selecao = saida.map(([expressao, apelido]) => `${expressao} AS ${apelido}`)
 
@@ -514,14 +546,19 @@ const linhaDoTempo = ({ chaves, intervalos, juncoes, saida }) => {
     ),
     intervalos AS (${intervalos}),
     chaves AS (SELECT DISTINCT ${listaChaves} FROM intervalos),
+    marcados AS (
+      SELECT DISTINCT ${chaves.map(c => `i.${c}`).join(', ')}, d.dia
+        FROM intervalos AS i
+        INNER JOIN dias AS d ON d.dia BETWEEN i.inicio AND i.fim
+    ),
     grade AS (
       SELECT ${chaves.map(c => `c.${c}`).join(', ')}, d.dia,
-             (EXISTS (
-                SELECT 1 FROM intervalos AS i
-                 WHERE ${chaves.map(c => `i.${c} = c.${c}`).join(' AND ')}
-                   AND d.dia BETWEEN i.inicio AND i.fim
-             ))::int AS valor
-        FROM chaves AS c CROSS JOIN dias AS d
+             (m.dia IS NOT NULL)::int AS valor
+        FROM chaves AS c
+        CROSS JOIN dias AS d
+        LEFT JOIN marcados AS m
+          ON ${chaves.map(c => `m.${c} = c.${c}`).join(' AND ')}
+         AND m.dia = d.dia
     ),
     ilhas AS (
       SELECT ${listaChaves}, dia, valor,
@@ -535,17 +572,21 @@ const linhaDoTempo = ({ chaves, intervalos, juncoes, saida }) => {
         FROM ilhas
        GROUP BY ${listaChaves}, valor, grupo
     )
-    SELECT ${selecao.join(', ')},
+    SELECT ${chavesDaFaixa}, ${selecao.join(', ')},
            array_agg(
              ARRAY[f.inicio::text, f.valor::text, (f.fim + 1)::text]
              ORDER BY f.inicio
            ) AS data
       FROM faixas AS f
       ${juncoes}
-     GROUP BY ${expressoes}
-     ORDER BY ${expressoes}`
+     GROUP BY ${chavesDaFaixa}, ${expressoes}
+     ORDER BY ${expressoes}, ${chavesDaFaixa}`
 }
 
+// A LINHA DE PRODUCAO ENTRA NA SAIDA, e ela e a razao de a fusao por nome ter
+// passado despercebida: sem ela, as duas "Edição" de um lote misto sao duas
+// linhas de rotulo identico na tela, e o defeito consertado parece defeito novo.
+// `producao.fase` ganha o apelido `fs` porque `f` ja e `faixas`.
 controller.atividadeSubfase = async () => {
   return db.conn.any(
     linhaDoTempo({
@@ -559,8 +600,14 @@ controller.atividadeSubfase = async () => {
          WHERE a.data_inicio IS NOT NULL`,
       juncoes: `
         INNER JOIN acervo.lote AS l ON l.id = f.lote_id
-        INNER JOIN producao.subfase AS s ON s.id = f.subfase_id`,
-      saida: [['l.nome', 'lote'], ['s.nome', 'subfase']]
+        INNER JOIN producao.subfase AS s ON s.id = f.subfase_id
+        INNER JOIN producao.fase AS fs ON fs.id = s.fase_id
+        INNER JOIN producao.linha_producao AS lp ON lp.id = fs.linha_producao_id`,
+      saida: [
+        ['l.nome', 'lote'],
+        ['s.nome', 'subfase'],
+        ['lp.nome_abrev', 'linha_producao']
+      ]
     })
   )
 }
@@ -892,7 +939,29 @@ controller.getInfoProjetoDetalhada = async (projetoId, ano = null) => {
             COUNT(*) FILTER (WHERE vf.data_inicio IS NULL)::int AS restantes
        FROM versao_fase AS vf
        INNER JOIN acervo.lote AS l ON l.id = vf.lote_id
-      WHERE ($<ano> IS NULL OR EXTRACT(YEAR FROM vf.data_fim) = $<ano>)
+      -- O ANO RECORTA O QUE TERMINOU, E O QUE NAO TERMINOU NAO TEM ANO.
+      --
+      -- Ate 2026-08-09 este filtro era so EXTRACT(YEAR FROM vf.data_fim) = ano,
+      -- e data_fim e NULA justamente na versao que ainda esta na fase -- que e a
+      -- linha que alimenta os dois COUNT(*) FILTER de em_execucao e de restantes
+      -- logo acima. Resultado: /informacao_detalhada/:ano devolvia toda fase com
+      -- em_execucao 0 e restantes 0 com o trabalho andando, enquanto a mesma
+      -- rota SEM ano mostrava os numeros certos. A tela lia "o projeto parou".
+      --
+      -- A SEMANTICA ESCOLHIDA, numa frase: no ano pedido, finalizadas conta o
+      -- que ENTREGOU naquele ano; em_execucao conta o que comecou ate o fim
+      -- daquele ano e ainda nao entregou; restantes conta o que nunca comecou,
+      -- que nao tem data nenhuma e por isso nao pertence a ano algum. Pedir um
+      -- ano PASSADO nao ressuscita o que estava em execucao naquela epoca: mostra
+      -- o que ainda hoje nao entregou e ja tinha comecado la. A alternativa
+      -- (recortar tambem data_inicio pelo ano exato) esconderia da tela do ano
+      -- corrente todo trabalho iniciado no ano anterior, que e a maioria do que
+      -- esta aberto em janeiro.
+      WHERE ($<ano> IS NULL
+             OR EXTRACT(YEAR FROM vf.data_fim) = $<ano>
+             OR (vf.data_fim IS NULL
+                 AND (vf.data_inicio IS NULL
+                      OR EXTRACT(YEAR FROM vf.data_inicio) <= $<ano>)))
       GROUP BY l.id, l.nome, vf.linha_producao, vf.fase_id, vf.fase_ordem, vf.fase_nome
       ORDER BY l.nome, vf.linha_producao, vf.fase_ordem`,
     { projetoId, ano, naoFinalizada: SITUACAO_ATIVIDADE.NAO_FINALIZADA }

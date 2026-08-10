@@ -25,6 +25,11 @@
 
 const { db } = require('../database')
 
+// PELO CAMINHO, E NAO PELO BARRIL: `database/index.js` nao exporta o subsistema
+// de conexao ao banco de producao. Ver o cabecalho de
+// `database/conexao_admin.js`.
+const conexaoAdmin = require('../database/conexao_admin')
+
 const auditoriaCtrl = require('../auditoria/auditoria_ctrl')
 
 const { AppError, httpCode } = require('../utils')
@@ -1590,27 +1595,39 @@ controller.deletarDadoProducao = async (
 // --- As duas leituras de conexao ---------------------------------------------
 
 /**
- * Os bancos de producao cadastrados.
+ * Os bancos de producao cadastrados, SEM O ENDERECO DELES.
  *
- * A DIFERENCA PARA O SAP ESTA AQUI, e ela e de MODELO, nao de gosto. La a coluna
- * `configuracao_producao` guarda 'servidor:porta/nome', e a consulta a fatia em
- * tres com `split_part`. AQUI ELA GUARDA SO O NOME DO BANCO, e o DDL de
- * `er/producao.sql` diz isso com todas as letras: "e o NOME do banco de
- * producao, e nunca o endereco dele. O servidor e a porta vem da conexao que o
- * cliente ja tem, e este repositorio e publico".
+ * `configuracao_producao` GUARDA `servidor:porta/banco`, e nao o nome do banco.
+ * Foi MEDIDO no dump de producao do SAP 2.3.5 em 2026-08-09, e o repositorio
+ * inteiro le a coluna assim: `er/producao.sql` diz o formato com todas as letras,
+ * `database/conexao_admin.js` a analisa por expressao regular e
+ * `producao/trabalho_schema.js` a documenta. Este comentario afirmava o CONTRARIO
+ * ate 2026-08-09 ("aqui ela guarda so o nome do banco"), e a rota devolvia a
+ * coluna crua como `nome` -- o que fazia sair na resposta, e no log de
+ * `sendJsonAndLog`, o endereco de cada banco de edicao da instalacao.
  *
- * Por isso esta rota NAO devolve `servidor` nem `porta`: nao ha o que fatiar, e
- * inventar as duas colunas vazias faria a tela do cliente acreditar que um dia
- * elas se preencheriam. Quem sabe o endereco e o proprio cliente, que ja esta
- * conectado.
+ * ENTAO O ENDERECO E FATIADO AQUI, e so o NOME atravessa. Quem fatia e o
+ * `conexaoAdmin.separar`, que e o mesmo que o subsistema de permissao usa: duas
+ * analises do mesmo formato divergiriam, e a divergencia so apareceria como
+ * endereco vazado ou como banco que ninguem acha.
+ *
+ * E `servidor` E `porta` NAO VOLTAM COMO COLUNAS, ao contrario do `split_part` em
+ * tres do SAP. Nao e economia de campo: `er/producao.sql` proibe o endereco de
+ * sair em resposta de API e em log, e este repositorio e publico. Quem precisa do
+ * endereco e o servidor, que o le do proprio dado; quem consome esta rota escolhe
+ * um `id` de dado de producao, e as rotas de permissao recebem esse `id`.
+ *
+ * `nome` VEM NULO QUANDO A COLUNA ESTA MALFORMADA, e o nulo e a leitura certa de
+ * "o cadastro deste dado de producao esta incompleto". Devolver o texto cru nesse
+ * caso seria justamente vazar o que nao se sabe ler.
  *
  * O FILTRO POR TIPO CONTINUA: so os dois tipos PostGIS sao banco de dados; o
  * tipo 1 ('Nao controlado') e dado que o sistema apenas aponta.
  */
 controller.getBancoDados = async () => {
-  return db.conn.any(
+  const linhas = await db.conn.any(
     `SELECT dp.id, dp.tipo_dado_producao_id, tdp.nome AS tipo_dado_producao,
-            dp.configuracao_producao AS nome,
+            dp.configuracao_producao,
             CASE
               WHEN COUNT(ut.id) = 0 THEN $<naoIniciado>
               WHEN bool_or(l.status_execucao_id = $<naoIniciado>) THEN $<naoIniciado>
@@ -1631,6 +1648,14 @@ controller.getBancoDados = async () => {
       concluido: STATUS_EXECUCAO.CONCLUIDO
     }
   )
+
+  // A COLUNA CRUA E DESCARTADA AQUI, e nao renomeada: `configuracao_producao`
+  // sai do objeto pela desestruturacao, e o que sobra nao tem como levar o
+  // endereco junto por descuido.
+  return linhas.map(({ configuracao_producao: configuracao, ...resto }) => {
+    const alvo = conexaoAdmin.separar(configuracao)
+    return { ...resto, nome: alvo ? alvo.banco : null }
+  })
 }
 
 /**

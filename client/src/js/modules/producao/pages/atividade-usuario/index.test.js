@@ -176,6 +176,33 @@ describe('a tela', () => {
     cleanup();
   });
 
+  // A SÉRIE É O `usuario_uuid`, de 2026-08-09. Antes disso o servidor agrupava
+  // por `posto || nome de guerra`, e dois homônimos de mesmo posto viravam UMA
+  // barra com as faixas dos dois intercaladas. Duas linhas de mesmo nome aqui
+  // são duas pessoas, e a tela não pode fundi-las de novo.
+  test('dois homônimos de mesmo posto são DUAS barras', async () => {
+    getAtividadeUsuario.mockResolvedValue([
+      {
+        usuario_uuid: 'a1', usuario: 'Cap Silva',
+        data: [['2026-01-01', '1', '2026-01-11'], ['2026-01-11', '0', '2026-02-01']],
+      },
+      {
+        usuario_uuid: 'b2', usuario: 'Cap Silva',
+        data: [['2026-01-01', '0', '2026-01-21'], ['2026-01-21', '1', '2026-02-01']],
+      },
+    ]);
+    const { container, cleanup } = await montar();
+
+    const pessoas = container.querySelectorAll('.linha-tempo__pessoa');
+    expect(pessoas).toHaveLength(2);
+    expect([...pessoas].map(p => p.querySelector('.linha-tempo__nome').textContent))
+      .toEqual(['Cap Silva', 'Cap Silva']);
+    // Cada uma com a própria faixa, e não as duas empilhadas numa barra só.
+    expect([...pessoas].map(p => p.querySelectorAll('.linha-tempo__faixa').length))
+      .toEqual([1, 1]);
+    cleanup();
+  });
+
   test('ano sem atividade nenhuma explica o vazio, e não fica em branco', async () => {
     getAtividadeUsuario.mockResolvedValue([]);
     const { container, cleanup } = await montar();

@@ -79,9 +79,19 @@ const grupoDePerfil = (chaveLista, chaveIds, campos) => ({
       .required()
       .min(1)
   }),
+  // SEM `.required()` NO ITEM, e a diferença não é de gosto: com ele, a lista
+  // vazia deixa de recusar por `array.min` ("deve conter ao menos 1 item") e
+  // passa a recusar por `array.includesRequiredUnknowns` ("não contém 1 valor
+  // obrigatório"), que fala de um requisito que ninguém declarou. Quem lê a
+  // mensagem sai procurando um valor especial que não existe. O 400 acontece
+  // igual nos dois casos; o que muda é se a frase ajuda ou atrapalha.
+  //
+  // Os dois schemas irmãos desta fatia (`insumo_schema.js` e
+  // `trabalho_schema.js`) já documentavam a armadilha, e esta fábrica era a
+  // única que a mantinha -- multiplicada pelos DOZE grupos que ela gera.
   ids: Joi.object().keys({
     [chaveIds]: Joi.array()
-      .items(inteiro().required())
+      .items(inteiro())
       .unique()
       .required()
       .min(1)

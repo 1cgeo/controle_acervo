@@ -26,7 +26,22 @@ const models = {}
 
 // `.positive()` porque SERIAL começa em 1: um `0` ou um `-3` são erro de quem
 // chamou, e não um 404 depois de ir ao banco.
-const id = () => Joi.number().integer().positive()
+//
+// `.strict()` ENTROU EM 2026-08-09, e a ausência dele era a única dos três
+// schemas desta travessia: `{"insumo_ids": ["31"]}` era ACEITO em
+// `DELETE /insumo` (a string virava 31 e a linha ia embora) enquanto o mesmo
+// corpo em `DELETE /bloco` ou nos doze da fábrica de perfil dava 400. Apagar por
+// coerção silenciosa é o pior lugar possível para essa gentileza.
+const id = () => Joi.number().integer().strict().positive()
+
+// O MESMO id, SEM `.strict()`, PARA SCHEMA DE QUERY. `req.query` chega SEMPRE
+// como texto (o `utils/schema_validation.js` valida o objeto cru), então o
+// `.strict()` que protege o CORPO torna a rota inalcançável quando aplicado à
+// query: `?grupo_insumo_id=3` responderia 400 para todo grupo, sempre. É o mesmo
+// desdobramento que `trabalho_schema.js` faz, e a varredura-guarda de
+// `__tests__/routes/query_de_texto.test.js` cobra os dois lados: ela pegou
+// exatamente este erro quando o `.strict()` entrou aqui em 2026-08-09.
+const idDeQuery = () => Joi.number().integer().positive()
 
 // A lista de ids que as rotas em massa recebem. `.unique()` porque o mesmo id
 // repetido inflaria a contagem do evento de auditoria sem mudar nada no banco,
@@ -98,8 +113,8 @@ models.grupoInsumoIds = Joi.object().keys({
 // --- Insumo ------------------------------------------------------------------
 
 models.insumoQuery = Joi.object().keys({
-  grupo_insumo_id: id(),
-  tipo_insumo_id: id()
+  grupo_insumo_id: idDeQuery(),
+  tipo_insumo_id: idDeQuery()
 })
 
 const camposInsumo = {
@@ -167,7 +182,7 @@ models.insumoIds = Joi.object().keys({
 // --- A associação com a unidade de trabalho ----------------------------------
 
 models.unidadeTrabalhoInsumoQuery = Joi.object().keys({
-  unidade_trabalho_id: id().required()
+  unidade_trabalho_id: idDeQuery().required()
 })
 
 // `caminho_padrao` é a MESMA classe de dado do `caminho` do insumo: pasta de

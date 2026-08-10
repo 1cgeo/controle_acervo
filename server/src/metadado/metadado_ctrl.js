@@ -1310,29 +1310,83 @@ const montaMetadadoXml = async (t, versao) => {
 
   xml = xml.split('{{PALAVRAS_CHAVE}}').join(palavrasChave)
 
-  // Preenche o retangulo envolvente SOMENTE na identificationInfo. O
-  // LI_Source/sourceExtent, na dataQualityInfo, fica SEMPRE em branco, conforme
-  // os XML reais do BDGEx. Na SCN a identificacao nao tem o Decimal vazio (o
-  // BDGEx o preenche pelo INOM), entao so a nao-SCN de fato recebe valor.
+  // O RETANGULO ENVOLVENTE, e SOMENTE na identificationInfo.
+  //
+  // ELE NUNCA ENTRAVA ATE 2026-08-09. O codigo daqui recortava a
+  // `identificationInfo` e preenchia `<gco:Decimal></gco:Decimal>` vazios dentro
+  // de `<gmd:westBoundLongitude>` e irmaos -- mas nos SEIS templates o unico
+  // `westBoundLongitude` esta na `dataQualityInfo`, que vem ANTES daquele
+  // elemento (orto 160/243, topo 219/302, vetor 212/273). A fatia nao continha
+  // bbox nenhum, a substituicao nao casava nada, e a folha saia sem extensao
+  // geografica e sem nada em `erros` -- com os quatro `ST_Transform` do SELECT
+  // calculados a toa.
+  //
+  // O QUE OS TEMPLATES TRAZEM DE FATO na identificacao e um `geographicElement`
+  // VAZIO: nos dois de orto ele contem um `<gmd:EX_GeographicBoundingBox>` sem
+  // filhos, e nos de topo e de vetor nem isso. Por isso o conserto MONTA o
+  // elemento em vez de preencher lacuna, e os `.xml` ficam como estao: eles sao
+  // byte a byte os do SAP 2.3.5, e a fidelidade e deliberada.
+  //
+  // O `LI_Source/sourceExtent` DA `dataQualityInfo` CONTINUA EM BRANCO, conforme
+  // os XML reais do BDGEx, e e por isso que o recorte por `identificationInfo`
+  // permanece: sem ele a montagem acertaria os dois.
   const bbox = [
     ['westBoundLongitude', versao.bbox_w],
     ['eastBoundLongitude', versao.bbox_e],
     ['southBoundLatitude', versao.bbox_s],
     ['northBoundLatitude', versao.bbox_n]
   ]
+  // OS QUATRO OU NENHUM: meia extensao geografica e pior que extensao nenhuma,
+  // porque um `EX_GeographicBoundingBox` com dois cantos passa pelo validador de
+  // forma e descreve uma area errada.
+  const temBbox = bbox.every(([, val]) => val != null && Number.isFinite(Number(val)))
+
+  // O RECUO SAI DO PROPRIO TEMPLATE, e nao de uma constante: os seis usam
+  // tabulacao e profundidades diferentes, e um bloco desalinhado no meio de um
+  // XML de 500 linhas e o que atrapalha quem confere o arquivo a mao.
+  const RE_ELEMENTO_GEOGRAFICO =
+    /([ \t]*)<gmd:geographicElement>[\s\S]*?<\/gmd:geographicElement>/
+
+  const montaBoundingBox = recuo => {
+    const linhas = [
+      `${recuo}<gmd:geographicElement>`,
+      `${recuo}\t<gmd:EX_GeographicBoundingBox>`
+    ]
+    for (const [tag, val] of bbox) {
+      linhas.push(
+        `${recuo}\t\t<gmd:${tag}>`,
+        `${recuo}\t\t\t<gco:Decimal>${Number(val)}</gco:Decimal>`,
+        `${recuo}\t\t</gmd:${tag}>`
+      )
+    }
+    linhas.push(
+      `${recuo}\t</gmd:EX_GeographicBoundingBox>`,
+      `${recuo}</gmd:geographicElement>`
+    )
+    return linhas.join('\n')
+  }
+
   const idIni = xml.indexOf('<gmd:identificationInfo>')
   const idFim = xml.indexOf('</gmd:identificationInfo>')
-  if (idIni >= 0 && idFim > idIni) {
-    let idPart = xml.slice(idIni, idFim)
-    for (const [tag, val] of bbox) {
-      if (val == null) continue
-      const re = new RegExp(`(<gmd:${tag}>\\s*<gco:Decimal>)(</gco:Decimal>)`, 'g')
-      idPart = idPart.replace(re, `$1${val}$2`)
-    }
-    xml = xml.slice(0, idIni) + idPart + xml.slice(idFim)
+  let bboxEscrito = false
+  if (temBbox && idIni >= 0 && idFim > idIni) {
+    const idPart = xml.slice(idIni, idFim)
+    const idNovo = idPart.replace(RE_ELEMENTO_GEOGRAFICO, (_casou, recuo) =>
+      montaBoundingBox(recuo)
+    )
+    bboxEscrito = idNovo !== idPart
+    xml = xml.slice(0, idIni) + idNovo + xml.slice(idFim)
   }
 
   const erros = []
+  // O SILENCIO ERA METADE DO DEFEITO: sem este aviso, o XML sem extensao
+  // geografica sai com `erros` vazio e se le como pronto para publicar.
+  if (!bboxEscrito) {
+    erros.push(
+      'retângulo envolvente não entrou no XML: confira a geometria do produto ' +
+      '(acervo.produto.geom) e o elemento geographicElement da identificationInfo do template'
+    )
+  }
   if (!valores.UUID) erros.push('fileIdentifier (uuid_versao) vazio')
   if (!infoProduto) {
     erros.push('versão ou lote sem metadado.informacoes_produto (preencha antes de publicar)')

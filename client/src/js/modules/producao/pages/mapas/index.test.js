@@ -45,6 +45,13 @@ vi.mock('@services/producao-service.js', async () => {
     ...real,
     getMapaAcompanhamento: vi.fn(() => Promise.resolve({ vazio: true, motivo: 'sem view' })),
     getCatalogoCamadas: vi.fn(() => Promise.resolve([])),
+    // A URL DA TILE PEDE UM TOKEN AO SERVIDOR desde 2026-08-09 (audiência
+    // `tile`, vida curta), e por isso ela é assíncrona. Aqui ela entra como
+    // dublê para a tela não depender de rede; quem prova o formato da URL e a
+    // troca do token da sessão pelo de tile é `mapas-mapa.test.js`.
+    urlTileLinhaProducao: vi.fn((id) => Promise.resolve(
+      `/api/acompanhamento/linha_producao/${id}/{z}/{x}/{y}.pbf?token=tk-tile`,
+    )),
   };
 });
 
@@ -226,10 +233,12 @@ describe('a camada de tiles', () => {
     const marca = marcaDaTile(container);
     marca.checked = true;
     marca.dispatchEvent(new Event('change'));
+    // A camada só entra quando o token de tile chega.
+    await flush();
 
     const instancia = instanciasMapa[instanciasMapa.length - 1];
     expect(instancia.configs['linha-producao-tile'].tiles[0])
-      .toBe('/api/acompanhamento/linha_producao/1/{z}/{x}/{y}.pbf?token=tk-teste');
+      .toBe('/api/acompanhamento/linha_producao/1/{z}/{x}/{y}.pbf?token=tk-tile');
     expect(instancia.camadas['linha-producao-contorno']['source-layer'])
       .toBe('linha_producao_1');
     cleanup();

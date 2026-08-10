@@ -312,6 +312,13 @@ crudDePerfil({
 // transação -- copiar onze grupos em onze requisições deixaria o lote meio
 // configurado quando a sexta falhasse.
 //
+// ELA RECUSA CÓPIA ENTRE LINHAS DE PRODUÇÃO DIFERENTES desde 2026-08-09, com
+// 400: a configuração aponta subfases, e subfase de uma linha que o lote de
+// destino não executa vira dezenas de linhas que sessão nenhuma do QGIS lê. É a
+// trava do SAP 2.3.5 recuperada; o `perfil_ctrl.js` explica por que ela deixou
+// de ser a igualdade de `linha_producao_id` que a origem cobrava, e por que a
+// chave estrangeira não pega isso sozinha.
+//
 // `copiar_monitoramento` PASSOU A COPIAR EM 2026-08-09, quando o microcontrole
 // atravessou por decisão do chefe: ele leva `microcontrole.perfil_monitoramento`
 // pela mesma fábrica dos outros onze. Até ali ele era aceito e não copiava nada,

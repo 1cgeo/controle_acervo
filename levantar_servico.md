@@ -58,6 +58,15 @@ coluna `dgeo.login.cliente` guarda. Os arquivos do acervo ficam no volume descri
    503. A conexão é preguiçosa, então aquele banco fora do ar **não derruba o serviço**. O schema
    dele se instala por `er_microcontrole/`, e `node create_config.js` o cria quando se responde que
    sim à pergunta do microcontrole.
+
+   As `PRODUCAO_DB_ADMIN_*` mais `PRODUCAO_DB_HOSTS` são a conexão ADMINISTRATIVA dos bancos de
+   edição, que cria e revoga o papel efêmero do operador. Elas também valem **todas ou nenhuma**, e
+   sem elas as três rotas de `/banco_dados` respondem 503 e o pacote da atividade sai sem a seção de
+   acesso. **ATENÇÃO AO ATUALIZAR:** quem já tinha as duas primeiras precisa acrescentar
+   `PRODUCAO_DB_HOSTS`, senão o serviço **não sobe** -- o boot recusa duas das três, e a mensagem
+   nomeia a que falta. Ela é a lista branca de `servidor` ou `servidor:porta`, separada por vírgula,
+   e existe porque sem ela um gerente do módulo escolhia para onde o serviço discava com a
+   credencial de superusuário.
 2. Deploy (build da interface mais PM2, idempotente):
    ```bash
    npm run deploy   # = npm run build + pm2 startOrReload ecosystem.config.cjs + pm2 save
@@ -70,15 +79,28 @@ Este número ENVELHECE: leia a constante no arquivo antes de confiar nele.
 O server recusa subir com banco abaixo do piso (`semver.lt`), e aceita banco à frente. Migrações em
 `migrations/`, aplicadas na ordem da VERSÃO que cada arquivo carimba (ver o `README.md`).
 
-**As TRÊS migrações de 2026-08-09 são o exemplo vivo disso, e a ordem alfabética delas é a errada.**
-Elas se aplicam nesta ordem: `2026-08-09_o_pit_devolve_o_nome_producao.sql` (carimba 1.50.0),
-`2026-08-09_o_sca_vira_sap_3.sql` (**não carimba nada**: o `UPDATE public.versao` saiu dela, e o que
-sobrou é uma conferência) e `2026-08-09_o_core_de_producao_atravessa.sql` (carimba **3.0.0**, e é
-quem cria os cinco schemas do core). Aplicar por nome de arquivo começaria pelo core, que é o
-último. **Um banco que se diz 3.0.0 e não tem `producao.etapa` é o caso que a migração do core
-existe para consertar**: com `MIN_DATABASE_VERSION` em 3.0.0 o serviço subiria sem reclamar, e a
-falha só apareceria na primeira consulta, como "relation producao.etapa does not exist", longe de
-onde nasceu.
+**As CINCO migrações de 2026-08-09 são o exemplo vivo disso, e a ordem alfabética delas é a
+errada.** Elas se aplicam nesta ordem, que é a da versão que cada uma carimba:
+
+1. `2026-08-09_o_pit_devolve_o_nome_producao.sql` -- carimba **1.50.0**.
+2. `2026-08-09_a_instituicao.sql` -- carimba **1.51.0**. Cria `dgeo.instituicao` e semeia a linha
+   única com o nome, a sigla e a UG desta instalação.
+3. `2026-08-09_a_area_e_de_quem_configurou.sql` -- carimba **1.52.0**. Apaga
+   `limites.area_suprimento.e_1cgeo` e amarra a área ao nome configurado no passo anterior. Ela
+   **recusa rodar antes da 1.51.0**, e a recusa é o comportamento certo.
+4. `2026-08-09_o_sca_vira_sap_3.sql` -- **não carimba nada**: o `UPDATE public.versao` saiu dela em
+   2026-08-09, e o que sobrou é uma conferência.
+5. `2026-08-09_o_core_de_producao_atravessa.sql` -- carimba **3.0.0**, e é quem cria os cinco
+   schemas do core.
+
+A cadeia sobe, portanto, 1.49.0 -> 1.50.0 -> 1.51.0 -> 1.52.0 -> 3.0.0. Aplicar por nome de arquivo
+começaria pela área (que exige a instituição) e poria o core em segundo, quando ele é o último.
+**Quem pular as duas do meio sobe sem `dgeo.instituicao` e com o `e_1cgeo` ainda de pé**, e o
+sintoma aparece longe daqui: a subseção 2.7 do RPCMTec e o rodapé dos relatórios não têm de onde
+tirar de quem é a instalação. **Um banco que se diz 3.0.0 e não tem `producao.etapa` é o caso que a
+migração do core existe para consertar**: com `MIN_DATABASE_VERSION` em 3.0.0 o serviço subiria sem
+reclamar, e a falha só apareceria na primeira consulta, como "relation producao.etapa does not
+exist", longe de onde nasceu.
 
 **A versão do banco NÃO diz quais migrações faltam.** Metade delas não mexe no número, e duas do
 mesmo dia não se ordenam pelo nome do arquivo. Antes de atualizar um banco, MEÇA o que já está lá,
@@ -92,7 +114,7 @@ nada, e outras que parecem pendentes já aplicadas e superadas por migrações p
 orçamento e o RPCMTec de ponta a ponta, só com leitura, e sai com código 1 se algo falhar (serve de
 portão num script de deploy). `equipamento`, `campo`, `efetivo` e os **sete prefixos do core de
 produção** (`/api/producao`, `/api/gerencia_producao`, `/api/distribuicao`, `/api/acompanhamento`,
-`/api/metadados`, `/api/microcontrole` e `/api/perigo`) ainda estão FORA dela -- são 309 das 750
+`/api/metadados`, `/api/microcontrole` e `/api/perigo`) ainda estão FORA dela -- são 312 das 755
 rotas do sistema sem fumaça, e depois de um deploy do core vale abrir `#/producao` na interface:
 
 ```bash

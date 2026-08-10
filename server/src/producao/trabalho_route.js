@@ -390,11 +390,16 @@ router.delete(
 
 // --- As duas leituras de conexão ----------------------------------------------
 
-// A LISTA DE BANCOS DE PRODUÇÃO, sem servidor e sem porta. No SAP 2.3.5 esta
-// rota fatia `configuracao_producao` em três com `split_part`, porque LÁ a
-// coluna guarda 'servidor:porta/nome'. AQUI ela guarda só o NOME do banco, e o
-// controlador explica por quê: o endereço vem da conexão que o cliente já tem, e
-// este repositório é público.
+// A LISTA DE BANCOS DE PRODUÇÃO, sem servidor e sem porta. A coluna
+// `configuracao_producao` guarda 'servidor:porta/banco' AQUI TAMBÉM, como no SAP
+// 2.3.5 e como o DDL de `er/producao.sql` mediu nas 19 linhas do dump: o que
+// muda não é o dado, é o que SAI por esta rota. O controlador fatia com
+// `conexaoAdmin.separar()` e devolve só o nome, porque `er/producao.sql` proíbe o
+// endereço em resposta de API e em log, e este repositório é público.
+//
+// O COMENTÁRIO QUE MORAVA AQUI DIZIA O CONTRÁRIO ("aqui ela guarda só o NOME"),
+// e era o mesmo engano do controlador: quem acreditasse nele acharia que não há
+// o que fatiar, e devolveria a coluna crua.
 router.get(
   '/banco_dados',
   verifyPerfil('gerente', 'producao'),

@@ -439,25 +439,52 @@ const filtroAtividadeSql = atividadeIds =>
     ? db.pgp.as.format('AND atividade_id IN ($<atividadeIds:csv>)', { atividadeIds })
     : ''
 
+// ---------------------------------------------------------------------------
+// A JANELA DE TEMPO, RESOLVIDA NO POSTGRES E NAO EM JAVASCRIPT
+// ---------------------------------------------------------------------------
+//
+// ELA JA FOI CALCULADA AQUI, e o calculo estava um dia UTC fora do lugar. As
+// datas chegam como DIA (AAAA-MM-DD) e o `new Date('2026-08-09')` do JavaScript
+// le isso como meia-noite UTC: somado o `+ 24h - 1ms`, a janela de "hoje" ia das
+// 21h de 08-08 as 20h59 de 08-09 no horario de Brasilia. Filtrar por
+// `data_fim=hoje` perdia as tres ultimas horas do dia e engolia tres do
+// anterior, sem nada acusar.
+//
+// O `::date` DO POSTGRES INTERPRETA O DIA NO FUSO DA SESSAO, que e o mesmo em
+// que `monitoramento_feicao.data` e `monitoramento_tela.data` foram gravadas.
+// Por isso o dia atravessa como TEXTO (o `.raw()` do Joi em
+// `microcontrole_schema.js`) e a conta acontece no SQL. E o padrao de
+// `auditoria/auditoria_ctrl.js`.
+//
+// O FIM E EXCLUSIVO (`< fim + 1 dia`), e nao `<= fim`. E o que faz o dia final
+// entrar INTEIRO -- inclusive a amostra das 22h -- sem ninguem ter de somar
+// "menos um milissegundo" a mao, que era a outra metade do defeito.
+//
+// O PADRAO DO INICIO PENDURA NO FIM, e nao em hoje: quem pede so
+// `data_fim=2026-01-15` quer os 30 dias que terminam ali, e nao os 30 ultimos
+// dias (que podem nem se cruzar com o periodo pedido).
+const JANELA_INICIO = `COALESCE($<dataInicio>::date, COALESCE($<dataFim>::date, CURRENT_DATE) - $<janelaDias>::int)`
+const JANELA_FIM = `(COALESCE($<dataFim>::date, CURRENT_DATE) + INTERVAL '1 day')`
+const NA_JANELA = `data >= ${JANELA_INICIO} AND data < ${JANELA_FIM}`
+
 /**
- * Resolve a janela de tempo: ultimos 30 dias quando as datas nao vem.
+ * Os parametros da janela, prontos para o `$<...>` das tres leituras.
  *
- * `data_fim` chega como dia (AAAA-MM-DD) e o fim do dia entra INTEIRO. Sem isso,
- * `data <= fim` cairia na meia-noite e descartaria o dia final todo -- quem pede
- * "ate hoje" nao veria o trabalho de hoje.
+ * `null` e o que diz ao SQL "use o padrao", e o `|| null` existe porque o Joi
+ * entrega `undefined` quando o filtro nao veio -- e `undefined` nao e valor que
+ * o driver saiba formatar.
+ *
+ * @param {string} [dataInicio] - dia AAAA-MM-DD, como texto
+ * @param {string} [dataFim] - dia AAAA-MM-DD, como texto
  */
-const resolveIntervalo = (dataInicio, dataFim) => {
-  const fim = dataFim
-    ? new Date(new Date(dataFim).getTime() + 24 * 60 * 60 * 1000 - 1)
-    : new Date()
-  const inicio = dataInicio
-    ? new Date(dataInicio)
-    : new Date(fim.getTime() - JANELA_DIAS_PADRAO * 24 * 60 * 60 * 1000)
-  return { inicio, fim }
-}
+const paramsJanela = (dataInicio, dataFim) => ({
+  dataInicio: dataInicio || null,
+  dataFim: dataFim || null,
+  janelaDias: JANELA_DIAS_PADRAO
+})
 
 controller.getResumoFeicao = async (loteId, dataInicio, dataFim) => {
-  const { inicio, fim } = resolveIntervalo(dataInicio, dataFim)
+  const janela = paramsJanela(dataInicio, dataFim)
 
   // O BANCO PRINCIPAL PRIMEIRO, e de proposito: se o lote informado nao tem
   // atividade nenhuma, a resposta sai sem tocar a telemetria -- e sem 503 quando
@@ -478,25 +505,25 @@ controller.getResumoFeicao = async (loteId, dataInicio, dataFim) => {
       conn.any(
         `SELECT usuario_uuid, ${SOMA_OPERACOES}, ${SOMA_GEOM}
            FROM microcontrole.monitoramento_feicao
-          WHERE data >= $<inicio> AND data <= $<fim> ${filtroAtividade}
+          WHERE ${NA_JANELA} ${filtroAtividade}
           GROUP BY usuario_uuid`,
-        { inicio, fim }
+        janela
       ),
       conn.any(
         `SELECT camada, ${SOMA_OPERACOES}, ${SOMA_GEOM}
            FROM microcontrole.monitoramento_feicao
-          WHERE data >= $<inicio> AND data <= $<fim> ${filtroAtividade}
+          WHERE ${NA_JANELA} ${filtroAtividade}
           GROUP BY camada
           ORDER BY camada`,
-        { inicio, fim }
+        janela
       ),
       conn.any(
         `SELECT to_char(data::date, 'YYYY-MM-DD') AS dia, ${SOMA_OPERACOES}
            FROM microcontrole.monitoramento_feicao
-          WHERE data >= $<inicio> AND data <= $<fim> ${filtroAtividade}
+          WHERE ${NA_JANELA} ${filtroAtividade}
           GROUP BY data::date
           ORDER BY data::date`,
-        { inicio, fim }
+        janela
       )
     ])
   )
@@ -514,7 +541,7 @@ controller.getResumoFeicao = async (loteId, dataInicio, dataFim) => {
 }
 
 controller.getCoberturaTela = async (loteId, usuarioUuid, dataInicio, dataFim) => {
-  const { inicio, fim } = resolveIntervalo(dataInicio, dataFim)
+  const janela = paramsJanela(dataInicio, dataFim)
   const atividadeIds = await getAtividadesDoLote(loteId)
 
   if (atividadeIds !== null && atividadeIds.length === 0) {
@@ -537,10 +564,10 @@ controller.getCoberturaTela = async (loteId, usuarioUuid, dataInicio, dataFim) =
               to_char(data, 'YYYY-MM-DD"T"HH24:MI:SSOF') AS data,
               ST_AsGeoJSON(geom)::json AS geometry
          FROM microcontrole.monitoramento_tela
-        WHERE data >= $<inicio> AND data <= $<fim> ${filtros}
+        WHERE ${NA_JANELA} ${filtros}
         ORDER BY data DESC
         LIMIT $<limite>`,
-      { inicio, fim, limite: LIMITE_COBERTURA + 1 }
+      { ...janela, limite: LIMITE_COBERTURA + 1 }
     )
   )
 
@@ -571,7 +598,7 @@ controller.getCoberturaTela = async (loteId, usuarioUuid, dataInicio, dataFim) =
 }
 
 controller.getAproveitamentoTela = async (usuarioUuid, dataInicio, dataFim) => {
-  const { inicio, fim } = resolveIntervalo(dataInicio, dataFim)
+  const janela = paramsJanela(dataInicio, dataFim)
 
   // SO A TELEMETRIA, sem tocar o banco principal: a tabela de tela ja guarda o
   // `usuario_uuid`, e nao ha nome a traduzir numa resposta que e uma serie por
@@ -590,7 +617,7 @@ controller.getAproveitamentoTela = async (usuarioUuid, dataInicio, dataFim) => {
                 EXTRACT(EPOCH FROM (data - LAG(data) OVER (PARTITION BY data::date ORDER BY data))) / 60.0 AS gap_min
            FROM microcontrole.monitoramento_tela
           WHERE usuario_uuid = $<usuarioUuid>
-            AND data >= $<inicio> AND data <= $<fim>
+            AND ${NA_JANELA}
        )
        SELECT to_char(dia, 'YYYY-MM-DD') AS dia,
               EXTRACT(EPOCH FROM (MAX(data) - MIN(data))) / 60.0 AS tempo_total_min,
@@ -598,7 +625,7 @@ controller.getAproveitamentoTela = async (usuarioUuid, dataInicio, dataFim) => {
          FROM pontos
         GROUP BY dia
         ORDER BY dia`,
-      { usuarioUuid, inicio, fim, gap: GAP_INATIVIDADE_MIN }
+      { usuarioUuid, ...janela, gap: GAP_INATIVIDADE_MIN }
     )
   )
 

@@ -484,6 +484,23 @@ controller.limpaLog = async (usuarioUuid, contexto, motivo) => {
  * NAO entram aqui: eles sao limpos pelo gatilho AFTER DELETE
  * `a_relacionamento_unidade_trabalho`, que fica LIGADO nesta transacao.
  */
+// O TETO DO `detalhe`, pelo mesmo motivo de `producao/insumo_ctrl.js:451`: esta
+// varredura alcanca a instalacao inteira, e uma lista com milhares de linhas
+// dentro de UM `auditoria.evento` fica maior que a operacao que ela descreve. Os
+// primeiros ficam porque sao o que permite conferir, e o resto vira contagem. A
+// trilha e append-only, entao inchar o evento e uma decisao sem volta.
+const TETO_IDS_NO_EVENTO = 20
+
+const detalheComTeto = alvos => {
+  const descrever = a => `${a.id} (${a.nome || 'sem nome'}, lote ${a.lote_id})`
+  const mostrados = alvos.slice(0, TETO_IDS_NO_EVENTO).map(descrever)
+  const restantes = alvos.length - mostrados.length
+
+  return restantes > 0
+    ? [...mostrados, `e mais ${restantes}`]
+    : mostrados
+}
+
 controller.deleteUtSemAtividade = async (usuarioUuid, contexto, motivo) => {
   return db.conn.tx(async t => {
     const alvos = await t.any(
@@ -495,13 +512,31 @@ controller.deleteUtSemAtividade = async (usuarioUuid, contexto, motivo) => {
         ORDER BY ut.id`
     )
 
+    // VARREDURA SEM ALVO TAMBEM DEIXA RASTRO, e a saida antecipada que morava
+    // aqui era o unico caminho da zona de perigo que nao registrava nada: alguem
+    // digitava a confirmacao, escrevia o motivo, e a operacao nao acontecia nem
+    // no papel. Numa rota destrutiva, "rodei e nao havia nada" e informacao, e e
+    // exatamente a que responde "entao quem apagou?" depois. O irmao
+    // `producao/insumo_ctrl.js` ja fazia assim, e `limpaLog` com zero removidos
+    // tambem registra.
     if (alvos.length === 0) {
-      return {
+      const vazio = {
         operacao: 'unidade_trabalho_sem_atividade',
         alvo: 'unidades de trabalho sem atividade',
         removidos: 0,
         detalhe: []
       }
+
+      await auditoriaCtrl.registrar(t, {
+        tabela: ZONA_PERIGO,
+        operacao: 'D',
+        depois: vazio,
+        usuarioUuid,
+        contexto,
+        motivo
+      })
+
+      return vazio
     }
 
     const ids = alvos.map(a => a.id)
@@ -521,7 +556,7 @@ controller.deleteUtSemAtividade = async (usuarioUuid, contexto, motivo) => {
       operacao: 'unidade_trabalho_sem_atividade',
       alvo: 'unidades de trabalho sem atividade',
       removidos: removidas.length,
-      detalhe: alvos.map(a => `${a.id} (${a.nome || 'sem nome'}, lote ${a.lote_id})`)
+      detalhe: detalheComTeto(alvos)
     }
 
     await auditoriaCtrl.registrar(t, {

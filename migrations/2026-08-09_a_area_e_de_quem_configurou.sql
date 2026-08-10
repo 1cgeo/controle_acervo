@@ -60,16 +60,18 @@
 -- "nossa" uma area cujo nome DIVERGE do nome da instituicao, e a perda e o
 -- ponto: divergencia ali era exatamente o que passava despercebido.
 --
--- Para ensaiar, ensaie A CADEIA INTEIRA de 2026-08-09, que e como as cinco se
--- aplicam. Ensaiar esta sozinha reprova na conferencia acima, e reprovar e o
+-- PARA ENSAIAR, O COMANDO E UM SO, E ELE NAO ESTA AQUI: esta no cabecalho de
+-- `migrations/2026-08-09_o_core_de_producao_atravessa.sql`, sob "O COMANDO
+-- CANONICO DE ENSAIO DE 2026-08-09". Ele leva A CADEIA INTEIRA do dia, que e
+-- como as cinco se aplicam, e `limites` esta entre os dez schemas comparados.
+-- Ensaiar esta sozinha reprova na conferencia acima, e reprovar e o
 -- comportamento certo: sem `dgeo.instituicao` ela nao tem o que comparar.
 --
---   node migrations/ensaiar_migracao.cjs \
---     --migracao migrations/2026-08-09_o_pit_devolve_o_nome_producao.sql,migrations/2026-08-09_a_instituicao.sql,migrations/2026-08-09_a_area_e_de_quem_configurou.sql,migrations/2026-08-09_o_sca_vira_sap_3.sql,migrations/2026-08-09_o_core_de_producao_atravessa.sql \
---     --novos er/producao.sql,er/qgis.sql,er/metadado.sql,er/acompanhamento_producao.sql,er/microcontrole.sql \
---     --versao-anterior 1.50.0 --versao-esperada 3.0.0 \
---     --schemas limites,dgeo,dominio,pit,producao,qgis,metadado,acompanhamento,microcontrole \
---     --er-de <revisao anterior a chegada do core>
+-- O QUE MORAVA AQUI JA TINHA A CADEIA CERTA e errava em duas coisas menores: a
+-- versao anterior era 1.50.0, e o inicio de verdade da cadeia e 1.49.0; e
+-- faltava `acervo` nos schemas, entao os CINCO gatilhos que a producao instala
+-- em `acervo.versao`, `acervo.lote` e `acervo.projeto` ficavam fora da consulta
+-- de conferencia.
 --
 -- IDEMPOTENTE: `DROP ... IF EXISTS` nos dois lados, a restricao so entra se
 -- ainda nao existir, e a conferencia nao escreve.

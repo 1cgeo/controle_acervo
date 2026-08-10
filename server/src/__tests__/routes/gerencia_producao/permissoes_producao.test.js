@@ -786,6 +786,11 @@ describe('quando o banco de producao nao responde', () => {
   it('a frase nao traz o endereco nem a causa crua', async () => {
     process.env.PRODUCAO_DB_ADMIN_USER = 'papel-de-teste'
     process.env.PRODUCAO_DB_ADMIN_PASSWORD = 'valor-de-teste'
+    // A LISTA DE SERVIDORES PERMITIDOS e cobrada no ponto de discagem desde
+    // 2026-08-09: sem ela, `noBanco` recusaria antes de chegar na tarefa, e este
+    // teste passaria pela razao errada. Quem prova a lista e
+    // `__tests__/unit/conexao_admin.test.js`.
+    process.env.PRODUCAO_DB_HOSTS = 'servidor_de_teste'
 
     const erro = Object.assign(new Error('getaddrinfo ENOTFOUND servidor_de_teste'), {
       code: 'ENOTFOUND'
@@ -804,6 +809,7 @@ describe('quando o banco de producao nao responde', () => {
     } finally {
       delete process.env.PRODUCAO_DB_ADMIN_USER
       delete process.env.PRODUCAO_DB_ADMIN_PASSWORD
+      delete process.env.PRODUCAO_DB_HOSTS
     }
   })
 
@@ -813,6 +819,7 @@ describe('quando o banco de producao nao responde', () => {
   it('erro que nao e de conexao sobe como veio', async () => {
     process.env.PRODUCAO_DB_ADMIN_USER = 'papel-de-teste'
     process.env.PRODUCAO_DB_ADMIN_PASSWORD = 'valor-de-teste'
+    process.env.PRODUCAO_DB_HOSTS = 'servidor_de_teste'
 
     const erro = Object.assign(new Error('syntax error at or near'), { code: '42601' })
 
@@ -822,6 +829,7 @@ describe('quando o banco de producao nao responde', () => {
 
     delete process.env.PRODUCAO_DB_ADMIN_USER
     delete process.env.PRODUCAO_DB_ADMIN_PASSWORD
+    delete process.env.PRODUCAO_DB_HOSTS
   })
 
   // SEM AS CHAVES O SUBSISTEMA FICA DESLIGADO, e nao quebrado: 503 com a frase
