@@ -299,8 +299,23 @@ def texto_visivel(linha, indice):
 
     `-` e a celula vazia DESTE documento: quem preencheu usou o traco no lugar do
     branco, em todas as colunas.
+
+    DEFEITO 6, achado na conferencia da carga de producao em 2026-08-10. A celula
+    de MODELO da linha 55 tem DOIS paragrafos ('TOPCON HIPER VR' e ' GEODÉSIA  '):
+    quem digitou apertou Enter dentro da celula para o texto caber na largura da
+    coluna. `_texto_da_celula` junta paragrafo com '\\n', e o `.strip()` so tira
+    das PONTAS: o nome do modelo entrava no banco com uma quebra de linha no meio,
+    numa coluna VARCHAR(255) que a lista, a ficha e o proprio Relatorio DMT
+    imprimem em UMA linha.
+
+    Por isso a normalizacao colapsa QUALQUER corrida de espaco em branco
+    (`\\n`, `\\r`, tabulacao, espacos repetidos) num espaco so, em TODAS as
+    colunas. Nenhuma coluna deste documento carrega estrutura de varias linhas: as
+    quebras sao artefato de digitacao, e um motivo de indisponibilidade quebrado
+    ao meio se le igual com espaco. Fazer a excecao por coluna deixaria a proxima
+    coluna nova de fora, e o defeito voltaria calado.
     """
-    bruto = (celula(linha, indice)['texto'] or '').strip()
+    bruto = re.sub(r'\s+', ' ', celula(linha, indice)['texto'] or '').strip()
     return None if bruto in ('', '-') else bruto
 
 
@@ -470,13 +485,15 @@ def montar_plano(linhas, correcoes, extra_patrimonio, dia_referencia):
             raise ErroDeCarga('Modelo vazio em %s, e a coluna do banco é NOT NULL.' % onde)
 
         patrimonio = converter_patrimonio(linha, onde, diario_patrimonios)
+        patrimonio_pendente = False
+        observacao_correcao = None
         if rotulo_id in correcoes:
-            corrigido = str(correcoes[rotulo_id]).strip()
-            if not corrigido:
-                raise ErroDeCarga(
-                    'A correção informada para a linha %s está vazia.' % rotulo_id)
-            diario_correcoes.append({'onde': onde, 'antes': patrimonio, 'depois': corrigido})
+            corrigido, pendente, observacao_correcao = correcoes[rotulo_id]
+            diario_correcoes.append({'onde': onde, 'antes': patrimonio,
+                                     'depois': corrigido, 'pendente': pendente,
+                                     'observacao': observacao_correcao})
             patrimonio = corrigido
+            patrimonio_pendente = pendente
 
         entrada = converter_data(linha, COL_ENTRADA, '%s, entrada em carga' % onde, diario_datas)
 
@@ -510,6 +527,13 @@ def montar_plano(linhas, correcoes, extra_patrimonio, dia_referencia):
             'rotulo': rotulo_id,
             'onde': onde,
             'nr_patrimonio': patrimonio,
+            # A COLUNA QUE DIZ QUE O NUMERO ACIMA NAO VALE
+            # (`equipamento.equipamento.patrimonio_pendente`, migracao 3.1.0). Ela
+            # so fica verdadeira por decisao EXPLICITA em `--correcoes`: a carga
+            # nao adivinha qual das duas linhas de patrimonio repetido esta errada,
+            # e marcar as duas por seguranca poria em duvida um numero que o chefe
+            # nao pos.
+            'patrimonio_pendente': patrimonio_pendente,
             'classe_nome': nome_classe,
             'classe_id': CLASSE_SUPRIMENTO[nome_classe],
             'tipo_nome': nome_tipo,
@@ -522,7 +546,10 @@ def montar_plano(linhas, correcoes, extra_patrimonio, dia_referencia):
             'secao_nome': secao_carga,
             'secao_id': SECAO_DETENTORA[secao_carga],
             'ativo': True,              # descarga SOLICITADA nao e baixa: o bem segue na carga
-            'observacao': None,
+            # A planilha nao tem coluna de observacao. O unico texto que chega
+            # aqui e o de `--correcoes`, que explica por que o patrimonio e
+            # provisorio.
+            'observacao': observacao_correcao,
             'situacao_planilha': situacao_planilha,
             'linha': linha,
         }
@@ -1003,8 +1030,15 @@ def imprimir_relatorio(plano, caminho_ods, aba, usuario_uuid, saida, aplicar):
     if plano['diario_correcoes']:
         subsecao('3.6 Correções de patrimônio informadas em --correcoes (%d)'
                  % len(plano['diario_correcoes']))
+        print('"por conferir" grava patrimonio_pendente = TRUE: o número é PROVISÓRIO,')
+        print('o bem aparece na seção "Patrimônio por conferir" do painel do módulo e o')
+        print('Relatório DMT sai com o aviso na coluna Descrição. "conferido" é o número')
+        print('certo, e não marca nada.')
+        print()
         for item in plano['diario_correcoes']:
-            print('  %-12s %-20s -> %s' % (item['onde'], item['antes'], item['depois']))
+            print('  %-12s %-20s -> %-24s %s'
+                  % (item['onde'], item['antes'], item['depois'],
+                     'por conferir' if item['pendente'] else 'conferido'))
 
     # -----------------------------------------------------------------
     secao('4. AS LINHAS QUE MERECEM OLHO')
@@ -1030,6 +1064,22 @@ def imprimir_relatorio(plano, caminho_ods, aba, usuario_uuid, saida, aplicar):
                      data_br(item['entrada'])))
             print('          tipo: %s' % item['tipo'])
             print('          -> PENDÊNCIA: cadastrar pela tela, com o número correto.')
+
+    marcados = [r for r in bens if r['patrimonio_pendente']]
+    if marcados:
+        numero += 1
+        subsecao('4.%d Bens que entram com patrimônio PROVISÓRIO' % numero)
+        print('O número destes bens não vale como identidade no SIAFI. Eles entram no')
+        print('cadastro com patrimonio_pendente = TRUE, e o sistema carrega o aviso:')
+        print('a seção "Patrimônio por conferir" do painel os NOMEIA, a lista marca a')
+        print('célula e a ficha traz a tarja. O aviso cai quando alguém conferir a')
+        print('etiqueta colada no bem, gravar o número certo e desmarcar a caixa.')
+        print()
+        for registro in marcados:
+            print('  %-10s %-24s %s' % (registro['onde'], registro['nr_patrimonio'],
+                                        registro['modelo']))
+            print('             tipo: %s' % registro['tipo_nome'])
+            print('             observação: %s' % (registro['observacao'] or '(nenhuma)'))
 
     numero += 1
     subsecao('4.%d Plotter fora da Mapoteca, que o remapeamento manda para a Cia Lev'
@@ -1281,7 +1331,26 @@ def gerar_sql(plano, usuario_uuid, nome_planilha):
     partes.append('$carga$;')
     partes.append('')
 
-    partes.append('-- Guarda 3: esta é carga INICIAL, e roda uma vez só.')
+    partes.append('-- Guarda 3: a coluna `patrimonio_pendente` tem de estar lá.')
+    partes.append('-- Ela nasce na migração 2026-08-10_o_patrimonio_pendente.sql (3.1.0).')
+    partes.append('-- Num banco 3.0.0 o INSERT abaixo falharia com "column')
+    partes.append('-- patrimonio_pendente of relation equipamento does not exist", que não')
+    partes.append('-- diz qual migração falta.')
+    partes.append('DO $carga$')
+    partes.append('BEGIN')
+    partes.append('  IF NOT EXISTS (')
+    partes.append('    SELECT 1 FROM information_schema.columns')
+    partes.append("     WHERE table_schema = 'equipamento' AND table_name = 'equipamento'")
+    partes.append("       AND column_name = 'patrimonio_pendente') THEN")
+    partes.append("    RAISE EXCEPTION 'Falta a coluna equipamento.equipamento."
+                  "patrimonio_pendente. Aplique migrations/"
+                  "2026-08-10_o_patrimonio_pendente.sql antes desta carga.';")
+    partes.append('  END IF;')
+    partes.append('END')
+    partes.append('$carga$;')
+    partes.append('')
+
+    partes.append('-- Guarda 4: esta é carga INICIAL, e roda uma vez só.')
     partes.append('DO $carga$')
     partes.append('BEGIN')
     partes.append('  IF EXISTS (SELECT 1 FROM equipamento.equipamento) THEN')
@@ -1297,16 +1366,19 @@ def gerar_sql(plano, usuario_uuid, nome_planilha):
                   % len(plano['bens']))
     partes.append('-- divergir, ela devolve NULL e a coluna NOT NULL derruba a transação.')
     partes.append('INSERT INTO equipamento.equipamento')
-    partes.append('  (nr_patrimonio, classe_id, tipo_id, modelo, nr_serie,')
-    partes.append('   data_entrada_carga, vida_util_meses, secao_detentora_id, ativo,')
-    partes.append('   observacao, usuario_cadastramento_uuid)')
+    partes.append('  (nr_patrimonio, patrimonio_pendente, classe_id, tipo_id, modelo,')
+    partes.append('   nr_serie, data_entrada_carga, vida_util_meses, secao_detentora_id,')
+    partes.append('   ativo, observacao, usuario_cadastramento_uuid)')
     partes.append('VALUES')
     valores = []
     for registro in plano['bens']:
         valores.append(
-            '  (%s, %d, (SELECT id FROM equipamento.tipo_equipamento WHERE nome = %s),\n'
+            '  (%s, %s, %d,\n'
+            '   (SELECT id FROM equipamento.tipo_equipamento WHERE nome = %s),\n'
             '   %s, %s, %s, %s, %d, %s, %s, %s)'
-            % (sql_texto(registro['nr_patrimonio']), registro['classe_id'],
+            % (sql_texto(registro['nr_patrimonio']),
+               'TRUE' if registro['patrimonio_pendente'] else 'FALSE',
+               registro['classe_id'],
                sql_texto(registro['tipo_nome']), sql_texto(registro['modelo']),
                sql_texto(registro['nr_serie']), sql_data(registro['data_entrada_carga']),
                sql_numero(registro['vida_util_meses']), registro['secao_id'],
@@ -1412,6 +1484,16 @@ def gerar_sql(plano, usuario_uuid, nome_planilha):
         partes.append("    RAISE EXCEPTION '%s deveria ficar com %d linha(s), e ficou "
                       "com %%.', achados;" % (tabela, quantidade))
         partes.append('  END IF;')
+    # A CONTAGEM DOS MARCADOS ENTRA NA CONFERENCIA, e nao so no relatorio: marcar
+    # um bem a mais poria em duvida um numero que o chefe nao pos, e marcar um a
+    # menos deixaria um numero provisorio passando por verdadeiro em toda tela.
+    marcados = sum(1 for r in plano['bens'] if r['patrimonio_pendente'])
+    partes.append('  SELECT count(*) INTO achados FROM equipamento.equipamento')
+    partes.append('   WHERE patrimonio_pendente;')
+    partes.append('  IF achados <> %d THEN' % marcados)
+    partes.append("    RAISE EXCEPTION 'Deveriam ficar %d bem(ns) com patrimônio por "
+                  "conferir, e ficaram %%.', achados;" % marcados)
+    partes.append('  END IF;')
     partes.append('END')
     partes.append('$carga$;')
     partes.append('')
@@ -1438,9 +1520,18 @@ Uso:
   --saida <caminho>     onde gravar o SQL. Obrigatório com --aplicar, e recusado
                         se apontar para dentro do repositório: o SQL traz dado
                         real, e o repositório é público.
-  --correcoes <arq>     JSON {"<linha>": "<patrimônio>"} que corrige o número de
-                        patrimônio de uma linha, para o dia em que o chefe disser
-                        qual das duas linhas repetidas está errada.
+  --correcoes <arq>     JSON que corrige o número de patrimônio de uma linha, em
+                        dois formatos:
+                          {"57": "104821500017430"}
+                            o número CERTO, conferido. Entra sem marca.
+                          {"57": {"nr_patrimonio": "PENDENTE-01",
+                                  "pendente": true,
+                                  "observacao": "por que é provisório"}}
+                            número PROVISÓRIO, para quando ninguém sabe o certo.
+                            Grava patrimonio_pendente = TRUE, e o bem aparece na
+                            seção "Patrimônio por conferir" do painel do módulo.
+                        O campo "pendente" é obrigatório no formato longo, e
+                        "observacao" é opcional.
   --extra-indisponibilidade <arq>
                         JSON {"nr_patrimonio": "<patrimônio>"} que aponta à mão o
                         bem da 12ª indisponibilidade, a que não está na planilha.
@@ -1509,6 +1600,79 @@ def ler_json(caminho, rotulo):
         raise ErroDeCarga('O arquivo de %s não é JSON válido: %s' % (rotulo, erro))
 
 
+def ler_correcoes(caminho):
+    """O arquivo de `--correcoes`, nos DOIS formatos que ele aceita.
+
+    Devolve `{"<linha>": (patrimonio, pendente)}`.
+
+    O formato CURTO e `{"57": "104821500017430"}`: o chefe sabe o numero certo, e
+    o bem entra conferido. O formato LONGO e
+    `{"57": {"nr_patrimonio": "PENDENTE-...", "pendente": true}}`: o numero da
+    planilha esta errado, ninguem sabe qual e o certo, e o bem entra com um numero
+    PROVISORIO ja marcado em `equipamento.equipamento.patrimonio_pendente`.
+
+    Os dois convivem porque as duas situacoes sao reais e pedem coisas opostas do
+    sistema. O curto grava `pendente = false` e a marca nunca aparece; o longo
+    poe o bem na secao "Patrimonio por conferir" do painel ate alguem ir a
+    prateleira ler a etiqueta.
+
+    O `pendente` e OBRIGATORIO no formato longo, e nao tem padrao. Um padrao
+    silencioso aqui decidiria, por omissao, se o sistema confia ou nao num numero,
+    e essa e a unica coisa que este arquivo existe para dizer.
+    """
+    if not caminho:
+        return {}
+
+    cru = ler_json(caminho, 'correções')
+    if not isinstance(cru, dict):
+        raise ErroDeCarga(
+            'O arquivo de correções deve ser um objeto JSON no formato '
+            '{"<linha>": "<patrimônio>"} ou '
+            '{"<linha>": {"nr_patrimonio": "<patrimônio>", "pendente": true}}.')
+
+    saida = {}
+    for chave, valor in cru.items():
+        rotulo = str(chave).strip()
+        observacao = None
+        if isinstance(valor, dict):
+            numero = str(valor.get('nr_patrimonio') or '').strip()
+            # `observacao` OPCIONAL, e ela vai para a coluna do bem. E o lugar de
+            # dizer, em portugues, POR QUE aquele numero e provisorio: a secao
+            # "Patrimonio por conferir" do painel a mostra, e sem ela a linha diz
+            # que ha duvida sem dizer qual.
+            observacao = valor.get('observacao')
+            if observacao is not None:
+                observacao = str(observacao).strip() or None
+            if 'pendente' not in valor:
+                raise ErroDeCarga(
+                    'A correção da linha %s não diz se o número é provisório. '
+                    'Informe "pendente": true (número por conferir, que o painel '
+                    'vai listar) ou "pendente": false (número certo, conferido).'
+                    % rotulo)
+            pendente = valor['pendente']
+            if not isinstance(pendente, bool):
+                raise ErroDeCarga(
+                    'O campo "pendente" da linha %s deve ser true ou false, e veio '
+                    '%r.' % (rotulo, pendente))
+        else:
+            numero = str(valor).strip()
+            pendente = False
+
+        if not numero:
+            raise ErroDeCarga(
+                'A correção informada para a linha %s está vazia.' % rotulo)
+        if len(numero) > 30:
+            raise ErroDeCarga(
+                'A correção da linha %s tem %d caracteres, e a coluna do banco tem '
+                '30.' % (rotulo, len(numero)))
+        if not re.match(r'^[0-9A-Za-z./-]+$', numero):
+            raise ErroDeCarga(
+                'A correção da linha %s tem caractere inesperado: %r.'
+                % (rotulo, numero))
+        saida[rotulo] = (numero, pendente, observacao)
+    return saida
+
+
 def conferir_cabecalho(linhas):
     if len(linhas) <= LINHA_CABECALHO:
         raise ErroDeCarga('A planilha não tem a linha de cabeçalho esperada.')
@@ -1568,14 +1732,7 @@ def principal(argv):
                 '--saida só faz sentido com --aplicar. Sem --aplicar este script não '
                 'escreve nada, em lugar nenhum.')
 
-        correcoes = {}
-        if opcoes.get('correcoes'):
-            cru = ler_json(opcoes['correcoes'], 'correções')
-            if not isinstance(cru, dict):
-                raise ErroDeCarga(
-                    'O arquivo de correções deve ser um objeto JSON no formato '
-                    '{"<linha>": "<patrimônio>"}.')
-            correcoes = {str(chave).strip(): str(valor) for chave, valor in cru.items()}
+        correcoes = ler_correcoes(opcoes.get('correcoes'))
 
         extra_patrimonio = None
         if opcoes.get('extra_indisponibilidade'):

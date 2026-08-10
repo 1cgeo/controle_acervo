@@ -162,9 +162,20 @@ INSERT INTO equipamento.tipo_equipamento (nome, vida_util_meses) VALUES
 -- `ativo` FALSE e o bem BAIXADO, o degrau 50 da situacao. Ele nao sai da tabela:
 -- a manutencao, a indisponibilidade e a transferencia dele continuam sendo
 -- historia da Divisao, e o RPCMTec de um mes passado ainda o conta.
+--
+-- `patrimonio_pendente` DIZ QUE O NUMERO ACIMA NAO VALE. O UNIQUE obriga o
+-- cadastro a ter um numero por bem, e ha bem cujo numero esta errado na fonte: no
+-- Relatorio DMT de 2026-08-03 duas linhas declaram o mesmo patrimonio, e sao dois
+-- bens de tipos e anos diferentes. Sem esta coluna as saidas seriam deixar o
+-- segundo bem de fora (o acervo passaria a dizer 104 onde ha 105) ou inventar um
+-- numero indistinguivel de um verdadeiro. Com ela, o bem entra com numero
+-- provisorio e o proprio sistema carrega o aviso ate alguem conferir a etiqueta.
+-- Ela NAO afrouxa o UNIQUE: dois bens com o mesmo numero e o defeito que ela
+-- denuncia, nunca o que ela acomoda.
 CREATE TABLE equipamento.equipamento(
   id SERIAL NOT NULL PRIMARY KEY,
   nr_patrimonio VARCHAR(30) NOT NULL UNIQUE,
+  patrimonio_pendente BOOLEAN NOT NULL DEFAULT FALSE,
   classe_id SMALLINT NOT NULL REFERENCES equipamento.classe_suprimento (code),
   tipo_id INTEGER NOT NULL REFERENCES equipamento.tipo_equipamento (id),
   modelo VARCHAR(255) NOT NULL,
@@ -188,6 +199,14 @@ COMMENT ON COLUMN equipamento.equipamento.nr_patrimonio IS
 
 CREATE INDEX idx_equipamento_tipo ON equipamento.equipamento (tipo_id);
 CREATE INDEX idx_equipamento_secao ON equipamento.equipamento (secao_detentora_id);
+
+-- PARCIAL: ele indexa so as linhas marcadas, que sao a excecao (uma em 105 na
+-- carga de 2026-08-10). Um indice cheio sobre uma coluna quase toda falsa nao
+-- seria usado pelo planejador e ainda custaria escrita a cada cadastro. Ele serve
+-- a consulta do painel, que abre a secao "Patrimonio por conferir".
+CREATE INDEX idx_equipamento_patrimonio_pendente
+  ON equipamento.equipamento (id)
+  WHERE patrimonio_pendente;
 
 -- ---------------------------------------------------------------------------
 -- INDISPONIBILIDADE: um INTERVALO, e nao uma marca

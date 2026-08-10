@@ -251,8 +251,15 @@ dotenv.config({
 // 3.0.0 que `er/versao.sql` carimba na instalação nova. Um banco 3.0.0 já tem a
 // tabela de identidade e já não tem o booleano, então o piso continua certo onde
 // está.
-const VERSION = '3.0.0'
-const MIN_DATABASE_VERSION = '3.0.0'
+//
+// A 3.1.0 SOBE O PISO. Ela acrescenta `equipamento.equipamento.patrimonio_pendente`,
+// e este código passa a LER a coluna em quatro lugares: o `SELECT` do bem (lista e
+// ficha), o `INSERT`, o `UPDATE` e a consulta do painel que nomeia os bens com
+// patrimônio por conferir. Num banco 3.0.0 a lista de equipamentos inteira falharia
+// com "column e.patrimonio_pendente does not exist", que é 500 sem explicação numa
+// tela que hoje funciona.
+const VERSION = '3.1.0'
+const MIN_DATABASE_VERSION = '3.1.0'
 
 /**
  * Tira do objeto as chaves cujo valor e vazio (ausente, '' ou so espaco).

@@ -1,4 +1,4 @@
-import { el } from '@utils/dom.js';
+import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { formatNumber } from '@utils/format.js';
 
 /**
@@ -135,6 +135,39 @@ export function chipDias(dias) {
     className: `chip ${variante} equip-dias`,
     textContent: n === 1 ? '1 dia' : `${formatNumber(n)} dias`,
   });
+}
+
+/** O texto que explica a marca, num lugar só: ele sai na lista e na ficha. */
+export const AVISO_PATRIMONIO_PENDENTE =
+  'Número de patrimônio por conferir: ele é provisório e não vale como '
+  + 'identidade do bem no SIAFI. Confira a etiqueta colada no equipamento, grave '
+  + 'o número certo e desmarque a caixa na edição.';
+
+/**
+ * A célula do número de patrimônio, com o aviso quando ele está por conferir.
+ *
+ * A MARCA É ÍCONE MAIS COR, e não só cor: o número provisório tem a mesma cara de
+ * um verdadeiro, e quem varre a lista não tem como saber que aquela linha pede
+ * conferência. O `title` carrega a frase inteira, para quem parar o ponteiro.
+ *
+ * `equip-patrimonio` é a classe monoespaçada que já alinha os 15 dígitos de uma
+ * linha para a outra.
+ *
+ * @param {Object} bem - a linha, com `nr_patrimonio` e `patrimonio_pendente`
+ * @returns {HTMLElement}
+ */
+export function celulaPatrimonio(bem) {
+  const numero = (bem && bem.nr_patrimonio) || '-';
+  if (!bem || bem.patrimonio_pendente !== true) {
+    return el('span', { className: 'equip-patrimonio', textContent: numero });
+  }
+  return el('span', {
+    className: 'equip-patrimonio equip-patrimonio--pendente',
+    title: AVISO_PATRIMONIO_PENDENTE,
+  }, [
+    svgIcon(ICONS.warning, 14),
+    el('span', { textContent: numero }),
+  ]);
 }
 
 /**

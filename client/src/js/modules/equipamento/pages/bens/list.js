@@ -12,7 +12,12 @@ import {
   getTipos,
   baixarRelatorioDmt,
 } from '@modules/equipamento/services/equipamento-service.js';
-import { chipSituacao, classeDaLinha, textoVidaUtil } from '@modules/equipamento/situacao.js';
+import {
+  celulaPatrimonio,
+  chipSituacao,
+  classeDaLinha,
+  textoVidaUtil,
+} from '@modules/equipamento/situacao.js';
 import { abrirBemDialog } from './bem-dialog.js';
 
 /**
@@ -89,10 +94,11 @@ export async function renderBensList(container, _ctx) {
         // 15 dígitos conferidos contra a etiqueta colada no equipamento: com
         // largura proporcional os dígitos desalinham de uma linha para a outra,
         // e conferir vira contar com o dedo na tela.
-        render: (r) => el('span', {
-          className: 'equip-patrimonio',
-          textContent: r.nr_patrimonio || '-',
-        }),
+        //
+        // A célula MARCA o número por conferir (`patrimonio_pendente`). Sem a
+        // marca, o número provisório se lê como qualquer outro, que é o defeito
+        // que a coluna existe para impedir.
+        render: (r) => celulaPatrimonio(r),
       },
       {
         key: 'tipo',

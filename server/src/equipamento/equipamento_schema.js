@@ -84,6 +84,14 @@ const camposEquipamento = {
   // texto, e algumas terminam em '\n'. O numero e a UNIQUE da tabela: espaco
   // sobrando faria dois cadastros do mesmo bem conviverem.
   nr_patrimonio: Joi.string().trim().max(30).required(),
+  // "O NUMERO ACIMA NAO FOI CONFERIDO". Ele existe porque a fonte erra: no
+  // Relatorio DMT de 2026-08-03 duas linhas declaram o mesmo patrimonio, e sao
+  // dois bens diferentes. O bem entra com numero provisorio e marcado, e a marca
+  // cai quando alguem conferir a etiqueta e gravar o numero certo.
+  //
+  // `default(false)` e nao `required()`: o caso normal e o numero conferido, e
+  // cliente antigo que nao mande o campo continua cadastrando bem valido.
+  patrimonio_pendente: Joi.boolean().default(false),
   classe_id: Joi.number().integer().required(),
   tipo_id: Joi.number().integer().required(),
   modelo: Joi.string().max(255).required(),

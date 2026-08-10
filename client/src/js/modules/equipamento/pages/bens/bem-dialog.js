@@ -52,6 +52,19 @@ export function abrirBemDialog({ bem = null, dominio = {}, tipos = [], onSaved }
     value: bem?.nr_patrimonio ?? '',
   });
 
+  // A CAIXA QUE DIZ QUE O NÚMERO ACIMA NÃO VALE. Ela fica COLADA no campo do
+  // patrimônio, e não lá embaixo junto de "Ativo": as duas falam do mesmo dado, e
+  // separá-las faria marcar uma sem olhar a outra.
+  //
+  // Desmarcar é o gesto de FECHAR a pendência, e por isso a ajuda diz o que fazer
+  // antes: conferir a etiqueta colada no bem e gravar o número dela.
+  const patrimonioPendenteField = createCheckboxField({
+    label: 'Número de patrimônio por conferir',
+    checked: bem ? bem.patrimonio_pendente === true : false,
+    helpText: 'Marque quando o número for provisório ou estiver em dúvida. '
+      + 'O painel do módulo passa a listar o bem até alguém conferir a etiqueta e desmarcar.',
+  });
+
   const classeField = createSelectField({
     label: 'Classe de suprimento',
     required: true,
@@ -130,6 +143,7 @@ export function abrirBemDialog({ bem = null, dominio = {}, tipos = [], onSaved }
 
   const content = el('div', { className: 'form-grid' }, [
     patrimonioField.element,
+    patrimonioPendenteField.element,
     classeField.element,
     el('div', { className: 'form-grid__full' }, [tipoField.element]),
     modeloField.element,
@@ -186,6 +200,7 @@ export function abrirBemDialog({ bem = null, dominio = {}, tipos = [], onSaved }
 
           const body = {
             nr_patrimonio: nrPatrimonio,
+            patrimonio_pendente: patrimonioPendenteField.getValue(),
             classe_id: classeId,
             tipo_id: tipoId,
             modelo,

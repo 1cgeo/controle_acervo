@@ -309,6 +309,42 @@ describe('o bem', () => {
       'number.positive'
     )
   })
+
+  it('nasce com o patrimônio CONFERIDO quando ninguém diz o contrário', () => {
+    // O caso normal é o número certo, e o campo tem `default(false)` justamente
+    // para cliente antigo (que não conhece a coluna) continuar cadastrando bem
+    // válido. `false` e não `undefined`: a coluna do banco é NOT NULL.
+    const value = aceita(
+      equipamentoSchema.equipamentoCriar.validate(corpo('equipamento'))
+    )
+    expect(value.patrimonio_pendente).toBe(false)
+  })
+
+  it.each(['equipamentoCriar', 'equipamentoAtualizar'])(
+    '%s aceita marcar o patrimônio como por conferir',
+    (nome) => {
+      // A marca existe porque a fonte erra: no Relatório DMT de 2026-08-03 duas
+      // linhas declaram o mesmo patrimônio, e são dois bens diferentes.
+      const value = aceita(
+        equipamentoSchema[nome].validate(
+          corpo('equipamento', { patrimonio_pendente: true })
+        )
+      )
+      expect(value.patrimonio_pendente).toBe(true)
+    }
+  )
+
+  it('recusa patrimonio_pendente que não seja booleano', () => {
+    // 'talvez' não é um terceiro estado: a pergunta ("este número está por
+    // conferir?") só tem duas respostas, e a coluna é NOT NULL.
+    recusaPor(
+      equipamentoSchema.equipamentoCriar.validate(
+        corpo('equipamento', { patrimonio_pendente: 'talvez' })
+      ),
+      'patrimonio_pendente',
+      'boolean.base'
+    )
+  })
 })
 
 describe('a manutenção e o dinheiro', () => {

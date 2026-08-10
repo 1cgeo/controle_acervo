@@ -19,7 +19,13 @@ import {
   getTransferencias,
   deleteTransferencia,
 } from '@modules/equipamento/services/equipamento-service.js';
-import { chipSituacao, chipSituacaoTransferencia, textoVidaUtil } from '@modules/equipamento/situacao.js';
+import {
+  AVISO_PATRIMONIO_PENDENTE,
+  celulaPatrimonio,
+  chipSituacao,
+  chipSituacaoTransferencia,
+  textoVidaUtil,
+} from '@modules/equipamento/situacao.js';
 import { abrirBemDialog } from './bem-dialog.js';
 import { abrirIndisponibilidadeDialog } from './indisponibilidade-dialog.js';
 import { abrirAfastamentoDialog } from './afastamento-dialog.js';
@@ -222,6 +228,22 @@ export async function renderBemDetails(container, { params }) {
 
   linhaObservacao.element.classList.add('detail-card__row--longo');
   linhaObservacao.valor.classList.add('equip-ficha__observacao');
+
+  // A TARJA DO PATRIMÔNIO POR CONFERIR, acima dos cartões.
+  //
+  // Ela mora num nó VAZIO que está sempre montado, e `pintarBem` o preenche ou o
+  // esvazia. Montá-la condicionalmente na lista de filhos faria a recarga de uma
+  // ficha que acabou de ter a pendência fechada continuar mostrando o aviso, já
+  // que `root.replaceChildren` só roda uma vez (`montado`). O nó vazio não ocupa
+  // espaço na ficha sem pendência, que é a esmagadora maioria.
+  const areaTarja = el('div', {});
+
+  function tarjaPatrimonio() {
+    return el('div', { className: 'equip-ficha__tarja' }, [
+      svgIcon(ICONS.warning, 18),
+      el('span', { textContent: AVISO_PATRIMONIO_PENDENTE }),
+    ]);
+  }
 
   const cartoes = el('div', { className: 'detail-cards' }, [
     el('div', { className: 'detail-card' }, [
@@ -522,10 +544,8 @@ export async function renderBemDetails(container, { params }) {
       : `Equipamento #${bem.id}`;
     situacaoNo.replaceChildren(chipSituacao(bem.situacao_id, bem.situacao));
 
-    linhaPatrimonio.valor.replaceChildren(el('span', {
-      className: 'equip-patrimonio',
-      textContent: bem.nr_patrimonio || '-',
-    }));
+    areaTarja.replaceChildren(...(bem.patrimonio_pendente === true ? [tarjaPatrimonio()] : []));
+    linhaPatrimonio.valor.replaceChildren(celulaPatrimonio(bem));
     linhaClasse.valor.textContent = bem.classe || (bem.classe_id != null ? `Classe ${bem.classe_id}` : '-');
     linhaTipo.valor.textContent = bem.tipo || '-';
     linhaModelo.valor.textContent = bem.modelo || '-';
@@ -544,6 +564,7 @@ export async function renderBemDetails(container, { params }) {
     if (!montado) {
       root.replaceChildren(
         cabecalho,
+        areaTarja,
         cartoes,
         secaoIndisponibilidade.element,
         secaoManutencao.element,

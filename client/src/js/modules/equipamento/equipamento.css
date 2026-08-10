@@ -71,6 +71,50 @@
   white-space: nowrap;
 }
 
+/* O numero PROVISORIO, o que `patrimonio_pendente` marca.
+ *
+ * ICONE MAIS COR, e nunca so cor: o numero provisorio tem a mesma forma de um
+ * verdadeiro, e quem nao distingue as duas cores continuaria sem ver a diferenca.
+ * A borda tracejada e a terceira pista, e e a que sobrevive a impressao em preto
+ * e branco. */
+.equip-patrimonio--pendente {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 0 var(--space-xs);
+  border: 1px dashed var(--color-warning);
+  border-radius: var(--radius-sm);
+  color: var(--color-warning);
+  cursor: help;
+}
+
+.equip-patrimonio--pendente svg {
+  flex-shrink: 0;
+}
+
+/* A tarja da ficha do bem. Ela vem ACIMA dos cartoes, porque a duvida e sobre a
+ * identificacao do bem, e nao sobre um dos campos dele. */
+.equip-ficha__tarja {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-left: 4px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  /* Fundo em rgba LITERAL, e nao token: o sistema nao tem token de fundo
+   * esmaecido de aviso, e o alfa baixo funciona sobre o claro e sobre o escuro
+   * sem precisar de par por tema. */
+  background: rgba(237, 108, 2, 0.12);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.equip-ficha__tarja svg {
+  flex-shrink: 0;
+  color: var(--color-warning);
+}
+
 .equip-dias {
   font-variant-numeric: tabular-nums;
 }

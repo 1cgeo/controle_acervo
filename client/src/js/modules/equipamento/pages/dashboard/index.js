@@ -5,7 +5,7 @@ import { createStatsCard } from '@components/stats-card.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { mostrarErro } from '@components/estado-erro.js';
 import { getDashboard } from '@modules/equipamento/services/equipamento-service.js';
-import { SITUACAO, chipDias } from '@modules/equipamento/situacao.js';
+import { SITUACAO, celulaPatrimonio, chipDias } from '@modules/equipamento/situacao.js';
 
 /**
  * Painel do modulo EQUIPAMENTO (#/equipamento).
@@ -147,14 +147,7 @@ export async function renderEquipamentoDashboard(container, _ctx) {
   // ---- Parados ha mais tempo ----------------------------------------------
   const tabelaParados = createDataTable({
     columns: [
-      {
-        key: 'nr_patrimonio',
-        label: 'Patrimônio',
-        render: (r) => el('span', {
-          className: 'equip-patrimonio',
-          textContent: r.nr_patrimonio || '-',
-        }),
-      },
+      { key: 'nr_patrimonio', label: 'Patrimônio', render: (r) => celulaPatrimonio(r) },
       { key: 'tipo', label: 'Tipo', className: 'data-table__cell--truncate', render: (r) => r.tipo || '-' },
       { key: 'modelo', label: 'Modelo', className: 'data-table__cell--truncate', render: (r) => r.modelo || '-' },
       { key: 'data_inicio', label: 'Parado desde', render: (r) => formatDate(r.data_inicio) },
@@ -200,10 +193,60 @@ export async function renderEquipamentoDashboard(container, _ctx) {
     tabelaParados.element,
   ]);
 
+  // ---- Patrimônio por conferir ---------------------------------------------
+  // A FILA DE TRABALHO DE QUEM VAI À PRATELEIRA. Ela NOMEIA os bens cujo número
+  // de patrimônio o sistema não garante, e não os conta: um cartão com "1" não
+  // diz qual etiqueta ler.
+  //
+  // A seção inteira SOME quando não há pendência, e isso é deliberado. Uma tabela
+  // vazia com "Nenhum" ensinaria o olho a pular aquele espaço, e no dia em que
+  // uma linha aparecesse ali ninguém a veria. Ausência é a notícia boa; presença
+  // é a que precisa ser vista.
+  const tabelaPendentes = createDataTable({
+    columns: [
+      { key: 'nr_patrimonio', label: 'Patrimônio provisório', render: (r) => celulaPatrimonio(r) },
+      { key: 'tipo', label: 'Tipo', className: 'data-table__cell--truncate', render: (r) => r.tipo || '-' },
+      { key: 'modelo', label: 'Modelo', className: 'data-table__cell--truncate', render: (r) => r.modelo || '-' },
+      { key: 'data_entrada_carga', label: 'Entrada em carga', render: (r) => formatDate(r.data_entrada_carga) },
+      {
+        key: 'observacao',
+        label: 'Observação',
+        className: 'data-table__cell--truncate',
+        render: (r) => r.observacao || '-',
+      },
+    ],
+    rows: [],
+    loading: false,
+    paginated: false,
+    searchable: false,
+    emptyMessage: 'Nenhum patrimônio por conferir',
+    actions: [{
+      icon: ICONS.visibility,
+      title: 'Abrir a ficha do bem',
+      onClick: (r) => { location.hash = `/equipamento/bens/${r.id}`; },
+    }],
+  });
+
+  const secaoPendentes = el('div', { className: 'dashboard-section equip-pendentes' }, [
+    el('div', { className: 'dashboard-section__header' }, [
+      el('h2', { className: 'dashboard-section__title', textContent: 'Patrimônio por conferir' }),
+    ]),
+    el('p', {
+      className: 'equip-parados__nota',
+      textContent: 'O número destes bens é provisório e não vale como identidade no SIAFI. '
+        + 'Confira a etiqueta colada no equipamento, grave o número certo e desmarque a caixa na edição do bem.',
+    }),
+    tabelaPendentes.element,
+  ]);
+  secaoPendentes.hidden = true;
+
   // ---- Montagem ------------------------------------------------------------
   // O corpo inteiro vive num no proprio para o estado de erro poder tomar o
   // lugar dele e devolve-lo depois (ver `mostrarErro`).
-  const corpo = el('div', {}, [cartoes, blocosQuebra, secaoParados]);
+  // A pendência de patrimônio vem ANTES dos parados: ela é a única seção que
+  // pede ação sobre o CADASTRO, e não sobre o equipamento, e some quando não há
+  // o que fazer.
+  const corpo = el('div', {}, [cartoes, blocosQuebra, secaoPendentes, secaoParados]);
 
   const page = el('div', { className: 'dashboard' }, [
     el('div', { className: 'dashboard-section__header' }, [
@@ -224,6 +267,9 @@ export async function renderEquipamentoDashboard(container, _ctx) {
     } catch (err) {
       if (disposed) return;
       tabelaParados.update({ rows: [], loading: false });
+      // A seção some na falha: mantê-la visível e vazia afirmaria "não há
+      // patrimônio por conferir", que é uma resposta que esta carga não deu.
+      secaoPendentes.hidden = true;
       mostrarErro(corpo, err, carregar);
       showError(err.message || 'Erro ao carregar o painel de equipamentos');
       return;
@@ -235,6 +281,10 @@ export async function renderEquipamentoDashboard(container, _ctx) {
     pintarQuebra(quebraSecao, dados.porSecao, (i) => i.secao_detentora || `Seção ${i.secao_detentora_id}`);
     pintarQuebra(quebraTipo, dados.porTipo, (i) => i.tipo || `Tipo ${i.tipo_id}`);
     tabelaParados.update({ rows: dados.indisponiveisHa || [], loading: false });
+
+    const pendentes = dados.patrimoniosPendentes || [];
+    tabelaPendentes.update({ rows: pendentes, loading: false });
+    secaoPendentes.hidden = pendentes.length === 0;
   }
 
   await carregar();
@@ -242,5 +292,6 @@ export async function renderEquipamentoDashboard(container, _ctx) {
   return () => {
     disposed = true;
     tabelaParados._cleanup();
+    tabelaPendentes._cleanup();
   };
 }

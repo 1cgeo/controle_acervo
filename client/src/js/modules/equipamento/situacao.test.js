@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import {
-  SITUACAO, SITUACAO_TRANSFERENCIA, TIPO_TRANSFERENCIA,
-  chipSituacao, chipSituacaoTransferencia, classeDaLinha, chipDias, textoVidaUtil,
+  SITUACAO, SITUACAO_TRANSFERENCIA, TIPO_TRANSFERENCIA, AVISO_PATRIMONIO_PENDENTE,
+  celulaPatrimonio, chipSituacao, chipSituacaoTransferencia, classeDaLinha,
+  chipDias, textoVidaUtil,
 } from './situacao.js';
 
 // A ESCADA DA SITUAÇÃO, e por que ela não é uniforme.
@@ -178,5 +179,46 @@ describe('situacao: a vida útil diz de onde o número veio', () => {
   test('sem vida útil nenhuma, traço', () => {
     expect(textoVidaUtil(null, false)).toBe('-');
     expect(textoVidaUtil(undefined, true)).toBe('-');
+  });
+});
+
+describe('situacao: o patrimônio por conferir se distingue do verdadeiro', () => {
+  // O número provisório tem a MESMA FORMA de um verdadeiro. Sem marca, ele se lê
+  // como identidade do bem no SIAFI em toda tela, que é exatamente o que a coluna
+  // `patrimonio_pendente` existe para impedir.
+
+  test('o número conferido sai limpo, sem marca nenhuma', () => {
+    const no = celulaPatrimonio({ nr_patrimonio: '104820700014462' });
+    expect(no.className).toBe('equip-patrimonio');
+    expect(no.textContent).toBe('104820700014462');
+    expect(no.querySelector('svg')).toBeNull();
+    expect(no.title).toBe('');
+  });
+
+  test('o número por conferir ganha classe, ícone e a frase inteira no title', () => {
+    const no = celulaPatrimonio({ nr_patrimonio: 'PENDENTE-01', patrimonio_pendente: true });
+    expect(no.className).toContain('equip-patrimonio--pendente');
+    // ÍCONE MAIS COR, e nunca só cor: quem não distingue as duas cores continuaria
+    // sem ver a diferença.
+    expect(no.querySelector('svg')).not.toBeNull();
+    expect(no.textContent).toContain('PENDENTE-01');
+    expect(no.title).toBe(AVISO_PATRIMONIO_PENDENTE);
+  });
+
+  test('só o booleano verdadeiro marca, e não o valor "quase verdadeiro"', () => {
+    // O servidor devolve booleano. Marcar por veracidade solta faria uma string
+    // vazia ou um 0 vindos de outro caminho decidirem a marca.
+    for (const valor of [false, null, undefined, 'true', 1]) {
+      const no = celulaPatrimonio({ nr_patrimonio: '104820700014462', patrimonio_pendente: valor });
+      expect(no.className).toBe('equip-patrimonio');
+    }
+  });
+
+  test('a marca sobrevive à impressão em preto e branco', () => {
+    // Terceira pista, além do ícone e da cor: a borda tracejada. O CSS é a prova,
+    // porque a classe sozinha não diz o que ela pinta.
+    const bloco = blocoDaClasse(CSS_MODULO, 'equip-patrimonio--pendente');
+    expect(bloco).not.toBeNull();
+    expect(bloco).toContain('dashed');
   });
 });

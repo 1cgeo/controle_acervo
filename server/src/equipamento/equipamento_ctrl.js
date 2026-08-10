@@ -229,7 +229,7 @@ controller.deletarTipo = async (id, usuarioUuid, contexto) => {
 // motivo de `pit.meta_em(d)`: a pergunta "qual era a situacao em 31/07" tem de
 // ter resposta, e a view so sabe hoje.
 const SELECT_EQUIPAMENTO = `
-  SELECT e.id, e.nr_patrimonio,
+  SELECT e.id, e.nr_patrimonio, e.patrimonio_pendente,
          e.classe_id, c.nome AS classe,
          e.tipo_id, t.nome AS tipo,
          e.modelo, e.nr_serie,
@@ -259,9 +259,9 @@ const SELECT_EQUIPAMENTO = `
 // orcamento.
 
 const COLUNAS_EQUIPAMENTO = [
-  'nr_patrimonio', 'classe_id', 'tipo_id', 'modelo', 'nr_serie',
-  'data_entrada_carga', 'vida_util_meses', 'secao_detentora_id', 'ativo',
-  'observacao'
+  'nr_patrimonio', 'patrimonio_pendente', 'classe_id', 'tipo_id', 'modelo',
+  'nr_serie', 'data_entrada_carga', 'vida_util_meses', 'secao_detentora_id',
+  'ativo', 'observacao'
 ]
 
 const ERROS_EQUIPAMENTO = {
@@ -362,12 +362,17 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
     () =>
       db.conn.tx(async t => {
         const criado = await t.one(
+          // O COALESCE de `patrimonio_pendente` guarda a coluna NOT NULL: o Joi
+          // ja poe `false` no corpo validado, e `normaliza` transformaria em NULL
+          // um campo que chegasse por outro caminho. Sem ele, o INSERT falharia
+          // com violacao de NOT NULL em vez de gravar o caso normal.
           `INSERT INTO equipamento.equipamento
-             (nr_patrimonio, classe_id, tipo_id, modelo, nr_serie, data_entrada_carga,
-              vida_util_meses, secao_detentora_id, ativo, observacao,
-              usuario_cadastramento_uuid)
+             (nr_patrimonio, patrimonio_pendente, classe_id, tipo_id, modelo,
+              nr_serie, data_entrada_carga, vida_util_meses, secao_detentora_id,
+              ativo, observacao, usuario_cadastramento_uuid)
            VALUES
-             ($<nr_patrimonio>, $<classe_id>, $<tipo_id>, $<modelo>, $<nr_serie>,
+             ($<nr_patrimonio>, COALESCE($<patrimonio_pendente>, FALSE),
+              $<classe_id>, $<tipo_id>, $<modelo>, $<nr_serie>,
               $<data_entrada_carga>, $<vida_util_meses>, $<secao_detentora_id>,
               $<ativo>, $<observacao>, $<usuarioUuid>)
            RETURNING *`,
@@ -403,7 +408,9 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
 
         const depois = await t.one(
           `UPDATE equipamento.equipamento SET
-             nr_patrimonio = $<nr_patrimonio>, classe_id = $<classe_id>,
+             nr_patrimonio = $<nr_patrimonio>,
+             patrimonio_pendente = COALESCE($<patrimonio_pendente>, FALSE),
+             classe_id = $<classe_id>,
              tipo_id = $<tipo_id>, modelo = $<modelo>, nr_serie = $<nr_serie>,
              data_entrada_carga = $<data_entrada_carga>,
              vida_util_meses = $<vida_util_meses>,
@@ -696,7 +703,8 @@ controller.getDashboard = async () => {
       porTipo,
       indisponiveisHa,
       custoManutencao,
-      descargas
+      descargas,
+      patrimoniosPendentes
     ] = await Promise.all([
       // LEFT JOIN a partir do DOMINIO, e nao GROUP BY do que existe: a situacao
       // com zero bem tem de aparecer com zero. Um painel que some a coluna
@@ -734,7 +742,8 @@ controller.getDashboard = async () => {
       // `situacao_em`: um bem que so fica indisponivel semana que vem ainda esta
       // disponivel hoje, e as duas leituras tem de concordar.
       t.any(
-        `SELECT e.id, e.nr_patrimonio, e.modelo, tp.nome AS tipo,
+        `SELECT e.id, e.nr_patrimonio, e.patrimonio_pendente, e.modelo,
+                tp.nome AS tipo,
                 i.data_inicio, (CURRENT_DATE - i.data_inicio)::integer AS dias,
                 i.motivo
            FROM equipamento.indisponibilidade AS i
@@ -766,6 +775,23 @@ controller.getDashboard = async () => {
           descarga: TIPO_TRANSFERENCIA.DESCARGA,
           solicitada: SITUACAO_TRANSFERENCIA.SOLICITADA
         }
+      ),
+      // OS BENS CUJO NUMERO DE PATRIMONIO ESTA POR CONFERIR, e NOMEADOS, e nao
+      // contados. Um cartao com "1" nao diz a quem for a prateleira qual etiqueta
+      // ler; a lista da o tipo, o modelo e a entrada em carga, que e o que
+      // distingue os dois bens que brigam pelo mesmo numero.
+      //
+      // SEM LIMIT, de proposito. A lista e a fila de trabalho, e ela e curta por
+      // natureza: um numero por conferir e defeito, e nao estado. No dia em que
+      // ela crescer, o tamanho dela e a noticia, e cortar em 10 esconderia
+      // justamente essa noticia.
+      t.any(
+        `SELECT e.id, e.nr_patrimonio, e.modelo, e.data_entrada_carga,
+                tp.nome AS tipo, e.observacao
+           FROM equipamento.equipamento AS e
+           INNER JOIN equipamento.tipo_equipamento AS tp ON tp.id = e.tipo_id
+          WHERE e.patrimonio_pendente
+          ORDER BY tp.nome, e.modelo, e.id`
       )
     ])
 
@@ -775,7 +801,8 @@ controller.getDashboard = async () => {
       porTipo,
       indisponiveisHa,
       custoManutencao,
-      descargasSolicitadas: descargas.quantidade
+      descargasSolicitadas: descargas.quantidade,
+      patrimoniosPendentes
     }
   })
 }
@@ -809,6 +836,7 @@ controller.linhasDoRelatorioDmt = async () => {
             tp.nome AS tipo,
             e.modelo,
             e.nr_patrimonio,
+            e.patrimonio_pendente,
             e.data_entrada_carga,
             COALESCE(e.vida_util_meses, tp.vida_util_meses) AS vida_util_meses,
             sd.nome AS secao_detentora,
@@ -931,7 +959,16 @@ controller.linhasDoRelatorioDmt = async () => {
       transferido_siafi: linha.transferido_siafi,
       apropriado_siafi: linha.apropriado_siafi,
       transferencia_publicacao: linha.transferencia_publicacao,
-      transferencia_descricao: linha.transferencia_descricao
+      // O AVISO DE PATRIMONIO POR CONFERIR SAI NA COLUNA 'Descricao', e nao numa
+      // coluna nova. O documento e contrato de saida, e coluna 27 onde ha 26
+      // quebraria a conferencia de quem o recebe. O aviso VEM NA FRENTE do texto
+      // que ja houvesse: sem ele, a planilha entregaria um numero provisorio
+      // indistinguivel de um verdadeiro, que e exatamente o que a coluna
+      // `patrimonio_pendente` existe para impedir.
+      transferencia_descricao: linha.patrimonio_pendente
+        ? ['Patrimônio por conferir: o número acima é provisório.',
+            linha.transferencia_descricao].filter(Boolean).join(' ')
+        : linha.transferencia_descricao
     }
   })
 }
