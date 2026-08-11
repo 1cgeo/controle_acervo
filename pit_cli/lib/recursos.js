@@ -635,10 +635,21 @@ const RECURSOS = {
         acesso: 'admin',
         envelope: 'mensagem'
       },
+      // O CORPO EXISTE, e sem ele o CLI não fechava nada. A rota aceita
+      // `fecharEdicao` desde que a conferência por subseção nasceu: com bloco
+      // em `porRevisar` ou `revisaoVencida` ela responde 409 e nomeia quais,
+      // e `ciente_revisao: true` é o "eu li a lista" que a deixa fechar.
+      //
+      // Sem esta linha o executor não montava corpo nenhum (ver
+      // `comandos/operacao.js`, `resolverCorpo`), então `--data` era ignorado
+      // em silêncio e o 409 não tinha saída pelo terminal. `porRevisar` cobre
+      // os 33 blocos, inclusive os calculados, então o caso normal de uma
+      // edição recém-preenchida é justamente esse 409.
       fechar: {
         metodo: 'POST',
         caminho: '/rpcmtec/:id/fechar',
         params: 'idParams',
+        corpo: 'fecharEdicao',
         acesso: 'admin',
         envelope: 'registro',
         confirmar: {
@@ -646,7 +657,10 @@ const RECURSOS = {
           motivo: 'CONGELA os 34 blocos: a partir daí o documento não muda mais ' +
             'quando o banco mudar. Recusa com subseção por preencher e sem ' +
             'assinante definido'
-        }
+        },
+        nota: 'com bloco por conferir a rota responde 409 e diz quais são. ' +
+          'Confira-os por `subsecao revisao`, ou mande ' +
+          '--data \'{"ciente_revisao":true}\' para fechar ciente da lista'
       },
       reabrir: {
         metodo: 'POST',
@@ -759,6 +773,29 @@ const RECURSOS = {
           motivo: 'a subseção volta a NÃO EXISTIR, que não é o mesmo que ficar ' +
             'vazia: o fechamento a cobra de novo'
         }
+      },
+      // A MARCA DE CONFERÊNCIA, e ela é o que destrava o fechamento. Vale para
+      // as TRÊS origens, então alcança os 33 blocos e não só os digitados: uma
+      // tabela calculada nasce preenchida e continua precisando de olho humano,
+      // porque o número pode estar certo e o cadastro que o alimenta, errado.
+      //
+      // O ACESSO É GERENTE, e não admin, apesar de este recurso ser de admin no
+      // resto. A rota cobra `verifyGerente` mais `verifyModuloSubsecao`, ou
+      // seja, o gerente carimba o bloco do módulo dele. Declarar admin aqui
+      // faria o CLI mentir sobre quem entra.
+      //
+      // `revisado` é obrigatório de propósito: assumir `true` marcaria por
+      // engano quem quis desmarcar, e assumir `false` faria o contrário.
+      revisao: {
+        metodo: 'PUT',
+        caminho: '/rpcmtec/:id/subsecao/:numero/revisao',
+        params: 'subsecaoParams',
+        corpo: 'revisarSubsecao',
+        acesso: 'gerente',
+        envelope: 'registro',
+        nota: 'marca ou desmarca a conferência daquele bloco. A impressão ' +
+          'digital do conteúdo é do SERVIDOR: mudou o conteúdo depois da ' +
+          'marca, o bloco cai em `revisaoVencida` e volta a barrar o fechamento'
       }
       // NÃO HÁ OPERAÇÃO QUE TRAGA O MÊS PASSADO, desde 2026-08-06. Havia aqui
       // uma que chamava a rota de cópia do servidor, e as duas saíram juntas. O

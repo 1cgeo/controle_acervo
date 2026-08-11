@@ -754,18 +754,46 @@ const gerarCreditosRecebidos = async (ano, inicio, cutoff, classificacaoId) => {
 
 // 4.3: restos a pagar não processados carregados para o ano. O empenho é o
 // rótulo gravado ("2025NE000001 (Secundária)"), com queda no número da NE.
-const gerarRpnp = async ano => {
+//
+// O "A LIQUIDAR" É CALCULADO NO CORTE, e não lido de `r.valor_a_liquidar`.
+// Aquela coluna guarda o saldo de HOJE, sobrescrito a cada atualização do
+// demonstrativo, e por isso a 4.3 saía igual nas doze edições do ano: a de
+// janeiro reportava o saldo de agosto. O saldo do mês é o resíduo que entrou no
+// ano menos o que se liquidou até o último dia dele.
+//
+// A COLUNA `valor_a_liquidar` FICA, e continua sendo o que a tela mostra e o que
+// o gestor digita do SIAFI. Ela é o saldo corrente; esta subseção quer o saldo
+// de um mês, que é outra pergunta.
+//
+// SÓ LIQUIDAÇÃO COM DATA ENTRA, e aqui NÃO vale o `data IS NULL OR ...` que a
+// 4.1 e a 4.2 usam. A razão é que `r.valor_empenhado` já é o resíduo LÍQUIDO
+// que atravessou a virada do ano: liquidação sem data é do exercício anterior,
+// já descontada dele, e somá-la de novo subtrairia duas vezes. Medido em
+// 2026-08-11: as 37 liquidações de NE de 2025 no banco não têm data, e são
+// exatamente as de 2025.
+//
+// A SÉRIE DE 2026 FOI CONFERIDA CONTRA OS SEIS RPCMTec ASSINADOS: 72 das 75
+// células (15 empenhos por 5 meses) batem ao centavo. As três que não batem
+// (2025NE000116 em fevereiro e março, 2025NE000266 em maio) são de quem
+// escreveu o documento ter fechado o número em dia diferente do da liquidação.
+const gerarRpnp = async (ano, inicio, cutoff) => {
   const linhas = await db.conn.any(
     `SELECT
        COALESCE(r.empenho_label, ne.numero) AS empenho,
        r.finalidade,
        r.valor_empenhado,
-       r.valor_a_liquidar
+       r.valor_empenhado - COALESCE((
+         SELECT SUM(lq.valor_liquidado)
+         FROM orcamento.liquidacao AS lq
+         WHERE lq.nota_empenho_id = r.nota_empenho_id
+           AND lq.data IS NOT NULL
+           AND lq.data >= $<inicio> AND lq.data <= $<cutoff>
+       ), 0) AS valor_a_liquidar
      FROM orcamento.rpnp AS r
      LEFT JOIN orcamento.nota_empenho AS ne ON ne.id = r.nota_empenho_id
      WHERE r.ano = $<ano>
      ORDER BY r.id`,
-    { ano }
+    { ano, inicio, cutoff }
   )
 
   return linhas.map(l => [
@@ -790,16 +818,38 @@ const gerarRpnp = async ano => {
 // de imagens satelitais") tem `fase_id = 3` (Homologado) e `fase_atual =
 // 'Renovando o contrato vigente'`. A tela mostrava "Homologado" e a 4.4
 // mostrava "Renovando o contrato vigente", para a MESMA licitacao.
-const gerarLicitacoes = async (ano, tipos) => {
+// A HOMOLOGAÇÃO POSTERIOR AO CORTE NÃO ENTRA. `fase_id`, `fase_atual` e
+// `valor_final_homologado` guardam o estado de HOJE, e sem o corte a 4.4 de
+// janeiro anunciava homologação de julho. `data_homologacao` é o único carimbo
+// de tempo que a licitação tem, e é ele que separa os dois casos.
+//
+// QUANDO A HOMOLOGAÇÃO É POSTERIOR AO CORTE, A FASE SAI '-', e não a fase
+// anterior. É a diferença entre não saber e chutar: a tabela NÃO guarda
+// histórico de fase, então o sistema sabe que a licitação ainda não estava
+// homologada naquele mês e não sabe se ela estava "Previsto" ou "Em elaboração".
+// O '-' diz isso, e é a mesma convenção do estoque da 7.2 sem mês anterior
+// fechado. Quem quiser a fase exata de cada mês precisa de uma tabela de
+// histórico, que é cadastro novo e não recorte.
+//
+// `data_homologacao` NULA é o caso normal de licitação não homologada, e a linha
+// sai inteira: não há homologação para esconder.
+const gerarLicitacoes = async (ano, tipos, cutoff) => {
   const linhas = await db.conn.any(
     `SELECT l.objeto,
-            COALESCE(fl.nome, l.fase_atual) AS fase,
-            l.valor_total_estimado, l.valor_final_homologado
+            CASE WHEN l.data_homologacao IS NOT NULL AND l.data_homologacao > $<cutoff>
+                 THEN NULL
+                 ELSE COALESCE(fl.nome, l.fase_atual)
+            END AS fase,
+            l.valor_total_estimado,
+            CASE WHEN l.data_homologacao IS NOT NULL AND l.data_homologacao > $<cutoff>
+                 THEN NULL
+                 ELSE l.valor_final_homologado
+            END AS valor_final_homologado
      FROM orcamento.licitacao AS l
      LEFT JOIN dominio.fase_licitacao AS fl ON fl.code = l.fase_id
      WHERE l.ano = $<ano> AND l.tipo_id IN ($<tipos:csv>)
      ORDER BY l.id`,
-    { ano, tipos }
+    { ano, tipos, cutoff }
   )
 
   return linhas.map(l => [
@@ -813,14 +863,24 @@ const gerarLicitacoes = async (ano, tipos) => {
 // 4.6: o ano é o `ano_referencia` do recebimento (quando o material chegou),
 // com queda no ano da NE. Assim, item de RPNP (empenho de ano anterior) recebido
 // neste ano consta na 4.6 do ano do RECEBIMENTO, e não do empenho.
-const gerarRecebimentoMaterial = async ano => {
+//
+// O MÊS SAI DE `data_recebimento`, coluna criada em 2026-08-11 (migração
+// `a_data_do_recebimento`). Antes dela esta tabela só sabia o ano, e a edição de
+// JANEIRO listava material recebido em abril, junho e julho.
+//
+// DATA NULA CONTINUA APARECENDO, pela mesma regra que a 4.1 e a 4.2 aplicam à
+// `data_emissao` nula: nulo é "o dia não é conhecido", e esconder a linha faria
+// o material sumir do relatório inteiro em vez de aparecer no mês errado. As dez
+// linhas de 2025 estão nesse caso, e o filtro de ano já as mantém fora de 2026.
+const gerarRecebimentoMaterial = async (ano, cutoff) => {
   const linhas = await db.conn.any(
     `SELECT ne.numero AS empenho, rm.material, rm.prazo_entrega, rm.situacao
      FROM orcamento.recebimento_material AS rm
      INNER JOIN orcamento.nota_empenho AS ne ON ne.id = rm.nota_empenho_id
      WHERE COALESCE(rm.ano_referencia, ne.ano) = $<ano>
+       AND (rm.data_recebimento IS NULL OR rm.data_recebimento <= $<cutoff>)
      ORDER BY rm.id`,
-    { ano }
+    { ano, cutoff }
   )
 
   return linhas.map(l => [
@@ -1461,10 +1521,15 @@ controller.calcular = async ({ ano, mes }) => {
     mapotecaCtrl.getConsumoMensalPorTipo(ano - 1),
     gerarExecucaoPorNd(ano, inicio, cutoff),
     gerarCreditosRecebidos(ano, inicio, cutoff, CLASSIFICACAO_NC.PDR),
-    gerarRpnp(ano),
-    gerarLicitacoes(ano, [TIPO_LICITACAO.GCALC_DSG]),
-    gerarLicitacoes(ano, [TIPO_LICITACAO.PROPRIA, TIPO_LICITACAO.PARTICIPANTE]),
-    gerarRecebimentoMaterial(ano),
+    // AS QUATRO ABAIXO PASSARAM A RECEBER O CORTE em 2026-08-11. Enquanto
+    // recebiam só o `ano`, elas eram as ÚNICAS calculadas que ignoravam o mês da
+    // edição, e por isso saíam idênticas nas doze edições: o relatório mensal
+    // reportava o estado de hoje. Medido nas seis edições de 2026: a 4.3, a 4.4,
+    // a 4.5 e a 4.6 eram byte a byte iguais de janeiro a junho.
+    gerarRpnp(ano, inicio, cutoff),
+    gerarLicitacoes(ano, [TIPO_LICITACAO.GCALC_DSG], cutoff),
+    gerarLicitacoes(ano, [TIPO_LICITACAO.PROPRIA, TIPO_LICITACAO.PARTICIPANTE], cutoff),
+    gerarRecebimentoMaterial(ano, cutoff),
     gerarCreditosRecebidos(ano, inicio, cutoff, CLASSIFICACAO_NC.EXTRA_PDR),
     efetivoCtrl.resumoMensal(ano, mes),
     capacitacaoCtrl.listarDoMes(ano, mes, TIPO_CAPACITACAO.RECEBIDA),

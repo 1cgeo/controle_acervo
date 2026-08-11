@@ -397,6 +397,15 @@ CREATE TABLE orcamento.recebimento_material(
   -- Quando NULL, a 3.6 cai no ano da NE (ne.ano). Permite que um item de RPNP
   -- (empenho de ano anterior) recebido neste ano apareca na 3.6 do ano corrente.
   ano_referencia SMALLINT,
+  -- Dia em que o material chegou. E o que recorta a 4.6 pelo MES da edicao: o
+  -- RPCMTec e mensal, e ate 2026-08-11 esta tabela so sabia o ano, entao toda
+  -- edicao listava o ano inteiro (a de janeiro trazia material recebido em
+  -- julho). O ano da tabela continua saindo de `ano_referencia`, que resolve o
+  -- item de RPNP empenhado num ano e recebido no outro; esta coluna resolve o
+  -- mes dentro dele. NULO quer dizer que o dia nao e conhecido, e a linha
+  -- continua aparecendo, pela mesma regra que a 4.1 e a 4.2 aplicam a
+  -- `data_emissao` nula.
+  data_recebimento DATE,
   data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid),
   data_modificacao TIMESTAMP WITH TIME ZONE,

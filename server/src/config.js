@@ -258,8 +258,15 @@ dotenv.config({
 // patrimônio por conferir. Num banco 3.0.0 a lista de equipamentos inteira falharia
 // com "column e.patrimonio_pendente does not exist", que é 500 sem explicação numa
 // tela que hoje funciona.
-const VERSION = '3.1.0'
-const MIN_DATABASE_VERSION = '3.1.0'
+//
+// A 3.2.0 SOBE O PISO PELA MESMA RAZÃO. Ela acrescenta
+// `orcamento.recebimento_material.data_recebimento`, e o gerador da subseção 4.6
+// do RPCMTec passa a LER a coluna para recortar a tabela pelo mês da edição. Num
+// banco 3.1.0 o documento inteiro falharia, e não só aquele bloco: `calcular`
+// monta os 33 blocos num `Promise.all`, então uma coluna que não existe derruba a
+// montagem toda com "column rm.data_recebimento does not exist".
+const VERSION = '3.2.0'
+const MIN_DATABASE_VERSION = '3.2.0'
 
 /**
  * Tira do objeto as chaves cujo valor e vazio (ausente, '' ou so espaco).
