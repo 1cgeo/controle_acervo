@@ -18,6 +18,42 @@ function nextFieldId() {
   return `ff-${fieldIdCounter}`;
 }
 
+/**
+ * SUGESTÃO NUM CAMPO LIVRE, pelo `<datalist>` do próprio navegador.
+ *
+ * POR QUE ELE, e não o `createSearchableSelect` ao lado. O combo buscável FECHA
+ * a lista: só sai dele o que já está lá. Aqui a lista é apenas uma sugestão, e
+ * digitar valor novo continua valendo, que é o caso da palavra-chave do pedido:
+ * o vocabulário existente evita a variante ('excedentes' ao lado de
+ * 'excedente'), e a etiqueta nova nasce pela tela, sem migração.
+ *
+ * O `datalist` casa por SUBSTRING e ignora a caixa, o que é justamente o que a
+ * busca por etiqueta NÃO faz. É de propósito: sugerir é largo, casar é estrito.
+ *
+ * A LISTA CHEGA DEPOIS, quase sempre: quem monta o campo não espera a rota que
+ * traz as sugestões. Por isso `setSugestoes` existe e o `<datalist>` nasce vazio,
+ * e não por um caminho de erro.
+ *
+ * @param {HTMLInputElement} inputEl
+ * @param {string[]} sugestoes
+ * @returns {{datalist:HTMLElement, setSugestoes:(itens:string[])=>void}}
+ */
+function attachDatalist(inputEl, sugestoes = []) {
+  const id = `${inputEl.id || nextFieldId()}-sugestoes`;
+  const datalist = el('datalist', { id });
+  inputEl.setAttribute('list', id);
+
+  function setSugestoes(itens) {
+    clearChildren(datalist);
+    for (const item of itens || []) {
+      datalist.appendChild(el('option', { value: String(item) }));
+    }
+  }
+  setSugestoes(sugestoes);
+
+  return { datalist, setSugestoes };
+}
+
 function buildField({ label, required = false, helpText = null }, inputEl) {
   const id = inputEl.id || nextFieldId();
   inputEl.id = id;
@@ -56,9 +92,13 @@ function buildField({ label, required = false, helpText = null }, inputEl) {
 
 /**
  * Text input. getValue() returns the trimmed string ('' when empty).
+ * `sugestoes` liga o `<datalist>` do navegador e NÃO fecha o campo: o valor
+ * digitado continua valendo, e a lista só evita a variante de grafia. Passar
+ * `[]` já liga a lista, para quem vai preenchê-la depois com `setSugestoes`.
+ *
  * @param {{label?:string, value?:string, placeholder?:string, required?:boolean,
  *   type?:string, maxLength?:number, disabled?:boolean, helpText?:string,
- *   onInput?:(value:string)=>void}} options
+ *   sugestoes?:string[], onInput?:(value:string)=>void}} options
  */
 export function createTextField({
   label,
@@ -69,6 +109,7 @@ export function createTextField({
   maxLength,
   disabled = false,
   helpText,
+  sugestoes,
   onInput,
 } = {}) {
   const input = el('input', {
@@ -81,13 +122,17 @@ export function createTextField({
   input.disabled = disabled;
   if (onInput) input.addEventListener('input', () => onInput(input.value));
 
+  const lista = sugestoes ? attachDatalist(input, sugestoes) : null;
+
   const { element, setError } = buildField({ label, required, helpText }, input);
+  if (lista) element.appendChild(lista.datalist);
 
   return {
     element,
     input,
     getValue: () => input.value.trim(),
     setValue: (v) => { input.value = v ?? ''; },
+    setSugestoes: lista ? lista.setSugestoes : () => {},
     setError,
   };
 }
@@ -313,7 +358,21 @@ export function createCheckboxField({
  * Chip input for string arrays (e.g. palavras-chave).
  * Enter or comma commits a chip; Backspace on the empty field removes the last.
  * getValue() returns string[].
- * @param {{label?:string, values?:string[], placeholder?:string, required?:boolean, helpText?:string}} options
+ *
+ * `sugestoes` liga o `<datalist>` com as etiquetas que JÁ existem, e é o que
+ * segura o vocabulário. O campo continua livre de propósito: etiqueta nova nasce
+ * aqui, sem migração. O que a lista evita é a VARIANTE, e ela custou caro: em
+ * três dias de 2026 a coluna do pedido juntou 34 grafias em 50 usos, com
+ * 'excedente', 'excedentes' e 'exemplares excedentes' partindo sete pedidos do
+ * mesmo assunto em três buscas que não se encontram.
+ *
+ * A DUPLICATA POR CAIXA TAMBÉM É RECUSADA (`chips.includes` só pegava a exata):
+ * 'Excedente' num pedido que já tem 'excedente' seria a mesma etiqueta em duas
+ * linhas do banco, e a busca é sensível a maiúscula. Quando o texto digitado bate
+ * com uma sugestão a menos de caixa, entra a GRAFIA DA SUGESTÃO, e não a digitada.
+ *
+ * @param {{label?:string, values?:string[], placeholder?:string, required?:boolean,
+ *   helpText?:string, sugestoes?:string[]}} options
  */
 export function createChipInput({
   label,
@@ -321,8 +380,10 @@ export function createChipInput({
   placeholder = 'Digite e pressione Enter',
   required = false,
   helpText,
+  sugestoes,
 } = {}) {
   let chips = [...values];
+  let vocabulario = [...(sugestoes || [])];
 
   const input = el('input', {
     className: 'chip-input__field',
@@ -358,8 +419,13 @@ export function createChipInput({
   }
 
   function commit() {
-    const text = input.value.trim().replace(/,+$/, '').trim();
-    if (text && !chips.includes(text)) {
+    const digitado = input.value.trim().replace(/,+$/, '').trim();
+    // A grafia do VOCABULARIO ganha da digitada quando as duas so diferem na
+    // caixa: e o que impede 'Excedente' de virar a segunda etiqueta de um
+    // assunto que ja tem 'excedente', numa busca que diferencia maiuscula.
+    const canonica = vocabulario.find(s => s.toLowerCase() === digitado.toLowerCase());
+    const text = canonica || digitado;
+    if (text && !chips.some(c => c.toLowerCase() === text.toLowerCase())) {
       chips.push(text);
       renderChips();
     }
@@ -384,7 +450,13 @@ export function createChipInput({
 
   renderChips();
 
+  // O `datalist` pende do input INTERNO, e nao do container: `list` so vale em
+  // <input>. Por isso o id sai daqui, antes de o `buildField` carimbar o dele no
+  // container.
+  const lista = sugestoes ? attachDatalist(input, vocabulario) : null;
+
   const { element, setError } = buildField({ label, required, helpText }, container);
+  if (lista) element.appendChild(lista.datalist);
 
   return {
     element,
@@ -393,6 +465,13 @@ export function createChipInput({
     setValue: (newValues) => {
       chips = Array.isArray(newValues) ? [...newValues] : [];
       renderChips();
+    },
+    // A lista quase sempre chega DEPOIS de a tela montar, porque quem a busca e
+    // uma rota. Sem isto o campo ficaria sem sugestao em toda abertura de
+    // formulario, que e justamente onde a etiqueta se digita.
+    setSugestoes: (itens) => {
+      vocabulario = [...(itens || [])];
+      if (lista) lista.setSugestoes(vocabulario);
     },
     setError,
   };

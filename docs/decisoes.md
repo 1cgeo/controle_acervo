@@ -1618,6 +1618,33 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
 - **`core/api_client.py` é gêmeo do de `ferramentas_acervo/`, com duas diferenças deliberadas:** o
   default de `pode()` é `mapoteca`, e aqui não há o cache de `core/dominios.py`, cujas rotas são todas
   do acervo e voltariam 403.
+- **O QUE JÁ TEM COLUNA NÃO VIRA PALAVRA-CHAVE** (chefe, 2026-08-11). É a régua que decide se uma
+  etiqueta de `mapoteca.pedido.palavras_chave` deve existir, e ela nasceu de uma medição: em três dias
+  de uso o campo livre juntou **34 grafias em 50 usos**, com 27 delas usadas UMA vez, e o mesmo assunto
+  em três ("excedente", "excedentes", "exemplares excedentes"), o que a busca por etiqueta inteira e
+  sensível a maiúscula separa em três listas que não se encontram. As 34 eram nome de OM (já é
+  `cliente_id`), lugar e contexto (já está na `observacao`), número de documento (já é
+  `documento_solicitacao`, com `previsto_pit` ao lado) e o assunto. **Sobrou UMA, `excedente`**, o fio
+  da redistribuição de exemplares excedentes aberto pelo DIEx 1724-DGEO/1º CGEO: ele não tem coluna,
+  atravessa OM, documento e data, e em três dos oito pedidos a `operacao` está vazia. **`ARANDU` saiu,
+  e é o caso que mostra a régua funcionando:** parecia a segunda etiqueta boa, mas o exercício já é a
+  coluna `operacao`, preenchida em oito dos onze pedidos do Arandu. **A prova de que a etiqueta
+  duplicada não servia:** oito pedidos com "Extra-PIT NN" em `documento_solicitacao` (142 a 149) nunca
+  receberam a etiqueta "Extra-PIT" que outros cinco tinham, e ninguém notou. Migração
+  `2026-08-11_o_vocabulario_da_etiqueta.sql`.
+- **O campo continua LIVRE, com sugestão, e não virou `select` fechado** (chefe, 2026-08-11). Limpar
+  o dado sem mexer no cadastro deixaria a bagunça voltar na semana seguinte; fechar o vocabulário
+  faria etiqueta nova exigir migração. O meio-termo é `GET /pedido/palavras_chave` (as etiquetas
+  existentes, com a contagem, da mais usada para a menos) alimentando um `<datalist>` no cadastro e na
+  busca. **O chip input adota a grafia da lista quando só a caixa difere**, porque a busca é sensível a
+  maiúscula e "Excedente" ao lado de "excedente" seriam dois grupos. A rota **NÃO normaliza**: ela
+  mostra o banco como ele está, e duas linhas quase iguais na sugestão são o sinal de que uma precisa
+  sumir. Ela atravessa o ano, ao contrário da lista de pedidos, senão a grafia resolvida em dezembro
+  renasceria em janeiro.
+- **A coluna Palavras-chave da lista tem largura máxima e as etiquetas quebram linha.** O `.chip` é
+  `white-space: nowrap` e a célula era um `.flex` sem `flex-wrap`: quatro etiquetas numa linha só
+  empurravam Situação, Prazo e Impressão para fora da tela, e uma coluna acessória roubava o espaço
+  das que dizem se o pedido está atrasado. Crescer para baixo cabe; crescer para a direita não.
 
 ## Interface
 

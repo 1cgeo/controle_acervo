@@ -83,6 +83,25 @@
   background: rgba(255, 167, 38, 0.15);
 }
 
+/* AS ETIQUETAS DENTRO DE UMA CELULA DE TABELA.
+   Cresce para BAIXO, nunca para a direita: `.chip` tem `white-space: nowrap` e
+   `.flex` sem `flex-wrap` punha quatro etiquetas numa linha so, alargando a
+   coluna e empurrando Situacao, Prazo e Impressao para fora da tela. O
+   `max-width` e o teto, e o `flex-wrap` e a valvula. */
+.etiquetas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  max-width: 220px;
+}
+
+/* O teto vale na CELULA tambem, e nao so no `span` de dentro: sem ele o `td`
+   ainda pediria a largura do conteudo, e o `max-width` do filho nao chegaria a
+   valer numa tabela que distribui coluna pelo que cabe. */
+.celula-etiquetas {
+  max-width: 220px;
+}
+
 /* Solid badge (e.g. "Abaixo do mínimo") */
 .badge {
   display: inline-flex;

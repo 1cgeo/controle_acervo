@@ -11,6 +11,7 @@ import {
 } from '@components/form-fields/form-fields.js';
 import { toIsoDate } from '@utils/format.js';
 import { rotuloMetaPit } from '@services/plataforma-service.js';
+import { getPalavrasChave } from '@modules/mapoteca/services/mapoteca-service.js';
 
 /**
  * Shared pedido form (wizard steps 1-2 and the edit dialog on the details
@@ -265,10 +266,24 @@ export function createPedidoFormFields({
     // o que se digita aqui é o termo de busca de amanhã: escrever 'Extra-PIT'
     // hoje e 'extra-pit' na semana que vem cria duas etiquetas, e cada busca
     // acha metade dos pedidos.
+    //
+    // POR ISSO O CAMPO SUGERE. A lista de etiquetas já usadas chega logo abaixo
+    // e aparece ao digitar: escolher a que existe é o caminho curto, e digitar
+    // uma nova continua valendo. Sem a sugestão, três dias de 2026 bastaram para
+    // 34 grafias em 50 usos, com 'excedente', 'excedentes' e 'exemplares
+    // excedentes' partindo sete pedidos do mesmo assunto em três buscas.
+    //
+    // A REGRA QUE DECIDE SE UMA ETIQUETA DEVE EXISTIR (chefe, 2026-08-11): o que
+    // JÁ TEM COLUNA não vira etiqueta. Foi ela que podou 33 das 34, inclusive
+    // 'ARANDU', que parecia boa e era o exercício que a coluna `operacao` já
+    // nomeia. Sobrou 'excedente', que não tem coluna: ele é um fio de pedidos
+    // que atravessa OM, documento e data.
     palavras_chave: createChipInput({
       label: 'Palavras-chave',
       values: (pedido && pedido.palavras_chave) || [],
-      helpText: 'Etiquetas para achar o pedido depois. A busca da lista casa a etiqueta inteira e diferencia maiúscula de minúscula.',
+      sugestoes: [],
+      placeholder: 'Escolha uma etiqueta ou digite e pressione Enter',
+      helpText: 'Etiquetas para achar o pedido depois. Prefira uma da lista: a busca casa a etiqueta inteira e diferencia maiúscula de minúscula. Não etiquete o que já tem campo próprio: cliente, documento, operação e o lugar, que fica na observação.',
     }),
     observacao_envio: createTextareaField({
       label: 'Observação de envio',
@@ -318,6 +333,18 @@ export function createPedidoFormFields({
       helpText: 'Contagem de imagens/produtos entregues (LAI não usa folha MI).',
     }),
   };
+
+  // AS ETIQUETAS QUE JA EXISTEM, buscadas SOZINHAS e com `catch` proprio.
+  //
+  // Fora de qualquer `Promise.all` de proposito: a sugestao e conforto, e o
+  // formulario inteiro nao pode morrer porque a lista de etiquetas nao veio. Sem
+  // ela o campo continua livre e funcionando, que e o estado de antes.
+  //
+  // Nao se espera por ela para montar o campo: a rota leva o seu tempo, e quem
+  // abre o dialogo veria um formulario em branco enquanto isso.
+  getPalavrasChave()
+    .then(lista => fields.palavras_chave.setSugestoes(lista.map(p => p.etiqueta)))
+    .catch(() => {});
 
   fields.cliente_id.element.classList.add('form-grid__full');
   fields.endereco_entrega.element.classList.add('form-grid__full');

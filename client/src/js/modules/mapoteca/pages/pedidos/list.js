@@ -5,7 +5,7 @@ import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { chip, chipSituacaoPedido } from '@components/status-chip.js';
 import { criarFiltroAno } from '@components/filtro-ano.js';
 import {
-  getPedidos, deletePedidos, getAnosMapoteca,
+  getPedidos, deletePedidos, getAnosMapoteca, getPalavrasChave,
 } from '@modules/mapoteca/services/mapoteca-service.js';
 import { formatDate, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
@@ -27,7 +27,7 @@ import { criarAvisoDeErro } from '../aviso-carga.js';
  *
  * Aceita tambem `?palavra_chave=<etiqueta>`, que abre a tela ja com a busca do
  * servidor feita. E o que permite mandar a alguem o link de um recorte
- * ("os pedidos do Extra-PIT") em vez de instrucoes de como chegar nele.
+ * ("os pedidos de excedente") em vez de instrucoes de como chegar nele.
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} ctx
  * @returns {Function} cleanup
@@ -104,14 +104,25 @@ export async function renderPedidosList(container, ctx) {
   // atende e o `@>` (continencia), e um `ILIKE` ou um `lower()` abandonariam o
   // indice e leriam a tabela inteira. Sem o aviso, quem digitar 'extra' e nao
   // achar 'Extra-PIT' conclui que a busca esta quebrada.
+  //
+  // O CAMPO SUGERE AS ETIQUETAS QUE EXISTEM, e a sugestao e a resposta pratica a
+  // exigencia acima: quem escolhe da lista nao tem grafia para errar. A lista
+  // chega de `getPalavrasChave`, logo abaixo, e nao segura a tela.
   const buscaEtiqueta = createTextField({
     label: 'Palavra-chave',
     value: palavraChave || '',
-    placeholder: 'Ex.: Extra-PIT',
+    placeholder: 'Ex.: excedente',
     maxLength: 255,
-    helpText: 'Busca no servidor pela etiqueta inteira, com maiúscula e minúscula contando: "extra" não acha "Extra-PIT". Enter busca, campo vazio traz o ano todo.',
+    sugestoes: [],
+    helpText: 'Busca no servidor pela etiqueta inteira, com maiúscula e minúscula contando: "exced" não acha "excedente". Escolha uma da lista. Enter busca, campo vazio traz o ano todo.',
   });
   buscaEtiqueta.element.classList.add('filtro-barra__busca');
+  // SOZINHA e com `catch` proprio, fora da carga da lista: a sugestao e
+  // conforto, e a tela de pedidos nao morre porque ela nao veio. Sem ela o campo
+  // volta a ser o que era, um texto livre que casa a etiqueta inteira.
+  getPalavrasChave()
+    .then(lista => buscaEtiqueta.setSugestoes(lista.map(p => p.etiqueta)))
+    .catch(() => {});
   // Enter BUSCA. Sem isto o campo pareceria filtrar enquanto se digita, como o
   // da tabela ao lado, e nunca buscaria nada.
   buscaEtiqueta.input.addEventListener('keydown', (e) => {
@@ -223,10 +234,18 @@ export async function renderPedidosList(container, ctx) {
         // O CLIQUE NA ETIQUETA BUSCA POR ELA. E a unica forma de acertar a
         // grafia sem adivinhar: o texto vai para o campo exatamente como esta
         // gravado, e a busca sai de la.
+        //
+        // A COLUNA TEM LARGURA MAXIMA, e as etiquetas QUEBRAM em varias linhas.
+        // Ate 2026-08-11 ela era um `.flex` sem `flex-wrap`, e quatro etiquetas
+        // numa linha so empurravam Situacao, Prazo e Impressao para fora da tela:
+        // uma coluna acessoria roubava o espaco das que dizem se o pedido esta
+        // atrasado. A altura da linha e o preco, e e o preco certo: crescer para
+        // baixo cabe, crescer para a direita nao.
+        className: 'celula-etiquetas',
         render: (row) => {
           const etiquetas = row.palavras_chave || [];
           if (!etiquetas.length) return '-';
-          return el('span', { className: 'flex gap-sm' }, etiquetas.map((etiqueta) => {
+          return el('span', { className: 'etiquetas' }, etiquetas.map((etiqueta) => {
             const alvo = chip(etiqueta, 'secondary');
             alvo.title = `Buscar os pedidos com a palavra-chave "${etiqueta}"`;
             alvo.style.cursor = 'pointer';

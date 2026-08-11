@@ -216,7 +216,7 @@ CREATE TABLE mapoteca.pedido(
 COMMENT ON COLUMN mapoteca.pedido.demandante IS
     'Quem encaminhou o pedido (ex: CMS encaminhando pedido do 18º BI Mtz).';
 COMMENT ON COLUMN mapoteca.pedido.palavras_chave IS
-    'Etiquetas livres do pedido. Consultadas pelo filtro da lista por continência (@>), que é o que o índice GIN atende; ILIKE não o usaria.';
+    'Etiquetas do pedido, para agrupar pedidos do mesmo assunto quando NENHUMA outra coluna já o faz. Consultadas pelo filtro da lista por continência (@>), que é o que o índice GIN atende; ILIKE não o usaria, e por isso a busca casa a etiqueta inteira e diferencia maiúscula. O cadastro sugere as etiquetas já usadas (GET /pedido/palavras_chave) e etiqueta nova nasce pela tela. NÃO etiquete o que já tem coluna: cliente, documento, operacao, previsto_pit e o lugar, que mora na observação. Podada em 2026-08-11 de 34 grafias para uma (excedente).';
 COMMENT ON COLUMN mapoteca.pedido.previsto_pit IS
     'Pedido previsto no Plano Interno de Trabalho (PIT vs Extra-PIT).';
 COMMENT ON COLUMN mapoteca.pedido.meta_pit_id IS

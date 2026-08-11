@@ -123,6 +123,32 @@ export function getPedidos(ano, palavraChave = null) {
 }
 
 /**
+ * AS ETIQUETAS QUE JA EXISTEM, com a contagem de pedidos de cada uma, da mais
+ * usada para a menos.
+ *
+ * PARA SUGERIR, e nao para filtrar: e o que o cadastro e a busca oferecem num
+ * `datalist`. A busca casa a etiqueta INTEIRA e diferencia maiuscula de
+ * minuscula, entao errar a grafia nao devolve resultado parecido, devolve nada,
+ * e a lista e a unica forma de acertar sem adivinhar.
+ *
+ * DE TODOS OS ANOS, sem o filtro de ano da lista: a etiqueta atravessa o ano, e
+ * sugerir so as do ano corrente faria a grafia velha renascer em janeiro.
+ *
+ * CACHE DE LISTA, e a chave entra no prefixo 'pedidos' de proposito: toda
+ * escrita de pedido ja chama `invalidate('pedidos')`, entao a etiqueta cadastrada
+ * agora aparece na sugestao seguinte sem codigo novo.
+ *
+ * @returns {Promise<Array<{etiqueta:string, pedidos:number}>>}
+ */
+export function getPalavrasChave() {
+  return cachedFetch(
+    'pedidos:palavras_chave',
+    () => apiGet(`${BASE}/pedido/palavras_chave`),
+    TTL_LISTA
+  );
+}
+
+/**
  * Full order details: items (with quantidade_impressa/quantidade_restante/
  * impressao_concluida), resumo `impressao` and audit trail.
  */

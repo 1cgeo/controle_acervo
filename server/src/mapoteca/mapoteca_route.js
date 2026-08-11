@@ -159,7 +159,7 @@ router.delete(
 // `pedido.palavras_chave`, usando o índice GIN que a coluna tem desde a
 // instalação e que até 2026-08-08 não servia consulta nenhuma. Ele NÃO
 // substitui o filtro de ano: os dois somam, porque a etiqueta se repete de um
-// ano para o outro ('Extra-PIT', '5ª DE') e a lista continua sendo do ano.
+// ano para o outro ('excedente') e a lista continua sendo do ano.
 router.get(
   '/pedido',
   verifyPerfil('consulta', 'mapoteca'),
@@ -215,6 +215,26 @@ router.get(
       incluirRemetidos: req.query.incluir_remetidos
     })
     const msg = 'Pedidos em aberto retornados com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
+  })
+)
+
+// AS ETIQUETAS QUE JÁ EXISTEM, com a contagem de pedidos de cada uma.
+//
+// ANTES de '/pedido/:id', pela mesma disciplina de '/pedido/em_aberto' acima:
+// 'palavras_chave' casaria com ':id' e o erro sairia como "id de pedido
+// inválido", que não diz nada a quem chamou.
+//
+// PERFIL CONSULTA, e sem parâmetro nenhum: é a lista que o cadastro e a busca
+// oferecem como sugestão, para que a etiqueta seja ESCOLHIDA em vez de digitada
+// por aproximação. A busca casa o texto inteiro e diferencia maiúscula de
+// minúscula, então errar a grafia não devolve resultado parecido, devolve nada.
+router.get(
+  '/pedido/palavras_chave',
+  verifyPerfil('consulta', 'mapoteca'),
+  asyncHandler(async (req, res, next) => {
+    const dados = await mapotecaCtrl.getPalavrasChave()
+    const msg = 'Palavras-chave retornadas com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })
 )

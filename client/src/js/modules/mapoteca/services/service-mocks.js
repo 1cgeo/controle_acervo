@@ -28,6 +28,10 @@ const LISTAS = [
   'getPendingOrders', 'getStockByLocation', 'getEntregasPorTipoProduto',
   'getEntregasPorMidia', 'getOperacoesApoiadas', 'getEntregasPorMes',
   'getAnexosPedido', 'uploadAnexoPedido', 'getAnosMapoteca',
+  // A lista de etiquetas que a busca e o cadastro sugerem. Entra aqui como
+  // LISTA, e o default `[]` importa: as duas telas a chamam soltas, com `catch`
+  // proprio, e um mock que devolvesse `undefined` quebraria o `.map` delas.
+  'getPalavrasChave',
 ];
 
 /** Leituras que devolvem objeto. O default e `{}`. */

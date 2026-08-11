@@ -505,6 +505,36 @@ controller.getPedidos = async (ano, palavraChave = null) => {
 };
 
 /**
+ * AS ETIQUETAS QUE JÁ EXISTEM, com quantos pedidos cada uma tem.
+ *
+ * POR QUE ELA EXISTE. A busca por etiqueta casa o texto INTEIRO e diferencia
+ * maiúscula de minúscula (é o que o índice GIN atende), e o cadastro era um
+ * campo livre sem sugestão nenhuma. As duas coisas juntas produziram, em três
+ * dias de 2026, 34 grafias em 50 usos, com 'excedente', 'excedentes' e
+ * 'exemplares excedentes' separando sete pedidos do mesmo assunto em três
+ * listas que não se encontram. Esta rota é o que o cadastro consulta para
+ * oferecer a etiqueta que já existe ANTES de a pessoa inventar a variante.
+ *
+ * SEM FILTRO DE ANO, ao contrário da lista de pedidos. A etiqueta atravessa o
+ * ano de propósito, e sugerir só as do ano corrente faria renascer em janeiro a
+ * grafia que dezembro já tinha resolvido.
+ *
+ * ORDENADA PELA CONTAGEM, e o desempate é alfabético. A etiqueta usada em sete
+ * pedidos é a que tem mais chance de ser a certa, e o `datalist` do navegador
+ * respeita a ordem em que as opções chegam.
+ *
+ * @returns {Promise<Array<{etiqueta:string, pedidos:number}>>}
+ */
+controller.getPalavrasChave = async () => {
+  return db.conn.any(`
+    SELECT etiqueta, COUNT(*)::int AS pedidos
+      FROM mapoteca.pedido AS p, unnest(p.palavras_chave) AS etiqueta
+     GROUP BY etiqueta
+     ORDER BY COUNT(*) DESC, etiqueta
+  `);
+};
+
+/**
  * A FILA de pedidos abertos, do mais urgente para o menos.
  *
  * DUAS FILAS, UMA CONSULTA. O parâmetro `incluirRemetidos` escolhe qual. Falso

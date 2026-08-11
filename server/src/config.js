@@ -265,7 +265,16 @@ dotenv.config({
 // banco 3.1.0 o documento inteiro falharia, e não só aquele bloco: `calcular`
 // monta os 33 blocos num `Promise.all`, então uma coluna que não existe derruba a
 // montagem toda com "column rm.data_recebimento does not exist".
-const VERSION = '3.2.0'
+//
+// A 3.3.0 NÃO SOBE O PISO, e é a regra do parágrafo da 1.26.0 aplicada a uma
+// migração que nem remove: ela só reescreve DADO. A etiqueta do pedido vira
+// vocabulário (34 grafias em 50 usos caem para duas), e a rota nova que sugere
+// as etiquetas lê `mapoteca.pedido.palavras_chave`, coluna que existe desde a
+// instalação. Um banco carimbado 3.2.0 roda este código inteiro sem faltar nada,
+// e cobrar a migração obrigaria toda instalação a migrar para não ganhar coluna
+// nenhuma. O que ela ganharia é a limpeza do próprio dado, e isso é escolha de
+// quem opera o banco, não condição para o serviço subir.
+const VERSION = '3.3.0'
 const MIN_DATABASE_VERSION = '3.2.0'
 
 /**
