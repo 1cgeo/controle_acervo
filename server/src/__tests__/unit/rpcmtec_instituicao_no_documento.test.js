@@ -66,6 +66,11 @@ const edicaoCom = instituicao => ({
 
 // Todo texto da definição, achatado: a capa e a assinatura são listas de nós, e
 // o que se quer perguntar é "esta frase está no documento?".
+//
+// O `stack` ENTRA NA VARREDURA desde 2026-08-11, quando o bloco de assinatura
+// virou um só nó indivisível: sem ele, o nome do Centro na assinatura sairia da
+// vista deste arquivo e a asserção do segundo Centro passaria a valer por menos
+// do que diz.
 const textosDe = definicao => {
   const achatar = no => {
     if (no == null) return []
@@ -75,6 +80,7 @@ const textosDe = definicao => {
     return [
       ...(typeof no.text === 'string' ? [no.text] : achatar(no.text)),
       ...achatar(no.columns),
+      ...achatar(no.stack),
       ...achatar(no.content)
     ]
   }

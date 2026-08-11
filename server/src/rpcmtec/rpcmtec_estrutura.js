@@ -183,7 +183,9 @@ const SECOES = [
         // "Previsto" faria duas colunas com o mesmo nome dizerem números
         // diferentes. "Planejado" seria fiel a `quantidade_planejada`, mas a
         // palavra sozinha ocupa 1.077 twip em Carlito 12 negrito e não cabe numa
-        // coluna de número sem roubar largura de quem tem texto.
+        // coluna de número sem roubar largura de quem tem texto. (A MEDIDA É DE
+        // 2026-08-08: em 2026-08-11 o cabeçalho da tabela desceu para 10 e o PDF
+        // trocou de fonte, e a folga é outra. A grade não mudou.)
         cabecalhos: ['Meta', 'Item', 'Produto ou serviço', 'Quantidade',
           'Prontos no mês', 'Prontos', 'Plano até o mês', 'Previsão de término'],
         // A GRADE FOI REFEITA, e não acrescida: a soma é a LARGURA DA TABELA na
@@ -345,7 +347,8 @@ const SECOES = [
           'Situação', 'Documento autorização', 'Descrição'],
         // A soma continua 9825, a largura da tabela no modelo. Os 630 twip da
         // antiga "Qtd" não comportam a palavra 'acervo' (701 twip em Carlito 12
-        // negrito, mais 126 de recuo), então a coluna foi a 945 e os 315 saíram
+        // negrito, mais 126 de recuo -- medida de 2026-08-08, antes de o
+        // cabeçalho da tabela cair para 10), então a coluna foi a 945 e os 315 saíram
         // de "Descrição", a única com folga: "Demandante" tem 110 twip de sobra
         // sobre o próprio cabeçalho e "Documento autorização", 113.
         grade: [1590, 1575, 945, 1215, 1455, 3045]

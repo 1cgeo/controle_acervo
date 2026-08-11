@@ -955,10 +955,25 @@ describe('RPCMTec: o PDF', () => {
   test('a edição aberta sai marcada como rascunho, e a fechada não', async () => {
     // Um PDF de edição aberta pode ser assinado, e aí o documento assinado
     // afirma números que ainda vão mudar.
+    //
+    // A MARCA SE PROVA NO TEXTO, e não no TAMANHO do arquivo. Até 2026-08-11
+    // este teste comparava os bytes dos dois PDF, porque o texto sai comprimido
+    // e não se lê: os dois documentos, porém, não diferem só na marca -- o
+    // definitivo sai DEPOIS de `preencherTudo`, com mais conteúdo. A diferença
+    // chegou a dois bytes na mudança de fonte, e o teste reprovou sem que a
+    // marca tivesse mexido. Quem responde a pergunta certa é `montarDefinicao`,
+    // que é o mesmo caminho que o download percorre.
+    const rpcmtecPdf = require('../../rpcmtec/rpcmtec_pdf')
+    const edicaoCtrl = require('../../rpcmtec/rpcmtec_edicao_ctrl')
+    const marcaDe = definicao => JSON.stringify(definicao.header(1, 2))
+
     const id = await criarEdicao()
 
     const rascunho = await comoBinario(request(app)
       .get(`/api/rpcmtec/${id}/pdf`).set('Authorization', admin()))
+    expect(rascunho.body.subarray(0, 4).toString()).toBe('%PDF')
+    expect(marcaDe(rpcmtecPdf.montarDefinicao(await edicaoCtrl.montar(id))))
+      .toContain('RASCUNHO')
 
     await preencherTudo(id)
     await request(app).post(`/api/rpcmtec/${id}/fechar`).set('Authorization', admin())
@@ -966,10 +981,9 @@ describe('RPCMTec: o PDF', () => {
 
     const definitivo = await comoBinario(request(app)
       .get(`/api/rpcmtec/${id}/pdf`).set('Authorization', admin()))
-
-    // O texto do PDF é comprimido, então o que se compara é o TAMANHO: a marca
-    // sai em toda página, e some inteira quando a edição fecha.
-    expect(rascunho.body.length).toBeGreaterThan(definitivo.body.length)
+    expect(definitivo.body.subarray(0, 4).toString()).toBe('%PDF')
+    expect(marcaDe(rpcmtecPdf.montarDefinicao(await edicaoCtrl.montar(id))))
+      .not.toContain('RASCUNHO')
   })
 })
 
@@ -1551,8 +1565,17 @@ describe('RPCMTec: o segundo Centro', () => {
     const id = await criarEdicao()
     const definicao = rpcmtecPdf.montarDefinicao(await edicaoCtrl.montar(id))
 
+    // O `stack` entra na conta desde 2026-08-11: o bloco de assinatura virou um
+    // nó só, indivisível, para não se partir entre duas folhas, e sem descer
+    // nele o nome do Centro sairia da vista deste teste.
     const textos = definicao.content
-      .map(no => (no && typeof no.text === 'string' ? no.text : ''))
+      .flatMap(no => {
+        if (!no) return ['']
+        if (Array.isArray(no.stack)) {
+          return no.stack.map(n => (n && typeof n.text === 'string' ? n.text : ''))
+        }
+        return [typeof no.text === 'string' ? no.text : '']
+      })
     const cabecalho = definicao.header(1, 2)[0].columns
       .map(c => c.text)
 

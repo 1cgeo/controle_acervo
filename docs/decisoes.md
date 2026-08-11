@@ -1252,6 +1252,32 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
   `rpcmtec_docx.js` são valores LIDOS do documento real, porque cada tabela tem de ser colável na
   subseção de mesmo número sem ninguém reformatar. Só saem as subseções preenchidas INTEIRAS, e o que
   fica de fora aparece na tela com o motivo.
+- **O PDF do RPCMTec saiu da Carlito e foi para a LATO LIGHT, e o preço são seis páginas** (chefe,
+  2026-08-11). O documento da Divisão é Calibri **Light**, e a Carlito -- que é o clone métrico da
+  Calibri, sob a SIL Open Font License -- **não tem peso Light**, só Regular e Negrito. A Calibri
+  Light de verdade é da Microsoft e **não entra num repositório público**, nem como arquivo em
+  `assets/` nem lida da máquina, que faria o mesmo relatório sair diferente conforme quem clica.
+  Entre as candidatas abertas de peso Light nenhuma é tão estreita quanto a Calibri (Lato 108%,
+  Barlow 107%, Fira Sans 109% da largura dela), e a escolhida foi a **Lato Light**, de quem a
+  Carlito descende. **O custo é medido, e não estimado:** a edição de julho/2026 passou de 25 para 31
+  páginas, porque célula estreita quebra uma linha antes. Voltar são três linhas em `FONTES` e
+  `defaultStyle`, e a licença mora ao lado do arquivo (`assets/Lato-OFL.txt`).
+- **A tabela do PDF fecha em 468 pt CONTANDO o que o pdfmake soma por fora, e a régua de fonte é 10
+  na tabela e 12 no resto** (chefe, 2026-08-11). `widths` é largura de CONTEÚDO: o desenhador
+  acrescenta 3 pt de espaçamento de cada lado da célula e o traço de cada linha vertical, então a
+  tabela **crescia com o número de colunas** -- a de 8 terminava a 597 pt numa página de 612, a de 3
+  a 583, todas invadindo a margem direita e cada uma de uma largura. Quem olhava a folha via "margem
+  esquerda demais, direita nenhuma", que era o mesmo defeito. Descontados os dois antes de repartir a
+  proporção da grade medida, **as 29 tabelas fecham nos 468 pt entre as margens de 72**, e é
+  `__tests__/unit/rpcmtec_formato_do_pdf.test.js` quem cobra, tabela a tabela. No mesmo teste: o
+  cabeçalho da tabela desceu de 12 para 10 e acompanha o corpo dela, o cabeçalho institucional da
+  capa fica em 10, todo o resto em 12, e **nenhum texto sai num terceiro tamanho**.
+- **O bloco de assinatura é INDIVISÍVEL.** Em julho/2026 o "Porto Alegre - RS, na data da assinatura."
+  ficou no pé de uma página e o nome do assinante abriu a seguinte, com o cabeçalho de página entre os
+  dois. Documento que alguém assina não tem a assinatura separada do lugar e da data por uma virada de
+  folha: o bloco virou um `stack` com `unbreakable`, e desce inteiro quando não couber. **O vão entre
+  o local e o nome do assinante são 72 pt (2,54 cm), e não os 24 de antes:** o espaço é para a
+  assinatura À CANETA, e em 24 pt a rubrica caía sobre o nome impresso.
 - **Número de relatório só se prova contra PRODUÇÃO.** Três casos passavam nos testes e eram
   plausíveis na tela: a 3.3 vinda de `previsto_pit`, a porcentagem da ASC acima de 100% por contar o
   acervo inteiro, e a versão PLANEJADA entrando como produto entregue.

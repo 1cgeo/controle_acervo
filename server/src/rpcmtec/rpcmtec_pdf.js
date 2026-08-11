@@ -11,10 +11,10 @@
 //
 //   página        Letter (612 x 792 pt), margens 49,5 topo / 72 nos outros
 //   cabeçalho     a 36 pt do topo
-//   fonte         Carlito
+//   fonte         Lato Light
 //   título        seção 12 pt negrito, subseção 12 pt normal
 //   tabela        grade de coluna própria por tabela
-//   cabeçalho     preenchimento DDD9C4, 12 pt negrito, centrado
+//   cabeçalho     preenchimento DDD9C4, 10 pt negrito, centrado
 //   da tabela
 //   corpo         10 pt, centrado
 //   bordas        linha preta de 1 pt nos quatro lados
@@ -27,13 +27,23 @@
 // pt úteis, preservando a proporção entre as colunas: nenhuma tabela estoura, e
 // todas nascem do mesmo tamanho, que é o que o modelo tentava fazer à mão.
 //
-// A FONTE É CARLITO, e não Calibri. O documento é Calibri, que é da Microsoft e
-// não se redistribui; a Carlito foi desenhada com as MESMAS métricas e está sob
-// a SIL Open Font License. Cada linha quebra no mesmo ponto, e o arquivo é
-// idêntico ao olho. Os dois .ttf vivem em `assets/` porque o contêiner não tem
-// fonte instalada.
+// A MOLDURA DA CÉLULA SAI DA LARGURA, e não sobra dela (chefe, 2026-08-11). O
+// pdfmake trata `widths` como largura de CONTEÚDO e soma por fora o espaçamento
+// dos dois lados de cada célula E o traço de cada linha vertical: a tabela de 8
+// colunas terminava em 597 pt e a de 6, em 583 -- as duas invadindo a margem
+// direita, e cada uma um tanto diferente. Quem olhava a página via margem
+// esquerda larga, direita nenhuma e tabela de largura variável, que eram o mesmo
+// defeito. Descontados os dois antes de repartir, TODA tabela fecha em 468 pt e
+// encosta nas duas margens, e é `rpcmtec_formato_do_pdf.test.js` quem cobra.
 //
-// SÓ REGULAR E NEGRITO. O documento não tem uma execução em itálico, e os dois
+// A FONTE É LATO LIGHT, e não Calibri Light. O documento é Calibri Light, que é
+// da Microsoft e não se redistribui; a Lato é do MESMO desenhador de que a
+// Carlito (o clone métrico da Calibri) descende, está sob a SIL Open Font
+// License e tem o peso Light que falta à Carlito. O preço é 8% de largura a mais
+// que a Calibri Light: célula estreita quebra uma linha antes. Os .ttf vivem em
+// `assets/`, com a licença ao lado, porque o servidor não tem fonte instalada.
+//
+// SÓ LIGHT E NEGRITO. O documento não tem uma execução em itálico, e os dois
 // estilos itálicos apontam os mesmos arquivos: um .ttf a mais no repositório
 // para um estilo que ninguém usa custa 1,3 MB.
 
@@ -52,11 +62,11 @@ const { AppError, httpCode } = require('../utils')
 const ASSETS = path.join(__dirname, 'assets')
 
 const FONTES = {
-  Carlito: {
-    normal: path.join(ASSETS, 'Carlito-Regular.ttf'),
-    bold: path.join(ASSETS, 'Carlito-Bold.ttf'),
-    italics: path.join(ASSETS, 'Carlito-Regular.ttf'),
-    bolditalics: path.join(ASSETS, 'Carlito-Bold.ttf')
+  Lato: {
+    normal: path.join(ASSETS, 'Lato-Light.ttf'),
+    bold: path.join(ASSETS, 'Lato-Bold.ttf'),
+    italics: path.join(ASSETS, 'Lato-Light.ttf'),
+    bolditalics: path.join(ASSETS, 'Lato-Bold.ttf')
   }
 }
 
@@ -66,12 +76,26 @@ const BRASAO = path.join(ASSETS, 'brasao.png')
 // guarda.
 const pt = twip => twip / 20
 
-const TAMANHO_TITULO = 12
-const TAMANHO_CORPO = 10
+// DOIS TAMANHOS, e a régua é a do chefe (2026-08-11): a TABELA inteira e o
+// cabeçalho institucional saem em 10, e todo o resto do relatório em 12. O
+// cabeçalho da tabela era 12 e passou a acompanhar o corpo dela: com colunas de
+// 40 a 90 pt, a palavra do cabeçalho é quem estourava.
+const TAMANHO_TEXTO = 12
+const TAMANHO_REDUZIDO = 10
 const PREENCHIMENTO_CABECALHO = '#DDD9C4'
 
 // A área útil da página: 612 pt de largura menos as duas margens de 72.
 const LARGURA_TABELA = 468
+
+// O vão em branco entre o local e o nome do assinante, onde a assinatura à
+// caneta cabe: 72 pt são 2,54 cm.
+const ESPACO_ASSINATURA = 72
+
+// O respiro de cada lado da célula e a espessura do traço da grade. Os dois são
+// aplicados pelo `LAYOUT` e DESCONTADOS da largura: o pdfmake soma os dois por
+// fora do que se declara em `widths`.
+const ESPACO_CELULA = 3
+const LARGURA_BORDA = 1
 
 const MESES = [
   'JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO',
@@ -95,7 +119,7 @@ const corpoDaTabela = (cabecalhos, linhas) => {
   const cabecalho = cabecalhos.map(texto => ({
     text: String(texto == null ? '' : texto),
     bold: true,
-    fontSize: TAMANHO_TITULO,
+    fontSize: TAMANHO_REDUZIDO,
     alignment: 'center'
   }))
 
@@ -106,7 +130,7 @@ const corpoDaTabela = (cabecalhos, linhas) => {
   const corpo = dados.map(linha =>
     cabecalhos.map((_, i) => ({
       text: String(linha[i] == null ? '' : linha[i]),
-      fontSize: TAMANHO_CORPO,
+      fontSize: TAMANHO_REDUZIDO,
       alignment: 'center'
     }))
   )
@@ -122,26 +146,37 @@ const corpoDaTabela = (cabecalhos, linhas) => {
 // Sem grade (edição fechada numa estrutura que mudou de número de colunas),
 // divide-se por igual: é o que sobra quando a largura medida não corresponde
 // mais à tabela.
+//
+// O QUE SE REPARTE NÃO É A LARGURA DA TABELA, e sim o que sobra dela depois da
+// moldura de cada célula: o pdfmake soma ao que se declara aqui os
+// `2 * ESPACO_CELULA` de espaçamento por coluna E o traço de cada linha
+// vertical, que são `colunas + 1`. Sem os dois descontos a tabela cresce com o
+// NÚMERO DE COLUNAS -- era o que punha a de 8 colunas 57 pt dentro da margem
+// direita e deixava cada tabela de uma largura.
 const largurasDa = (grade, quantasColunas) => {
+  const util = LARGURA_TABELA -
+    2 * ESPACO_CELULA * quantasColunas -
+    LARGURA_BORDA * (quantasColunas + 1)
+
   if (!grade || grade.length !== quantasColunas) {
-    return Array.from({ length: quantasColunas }, () => LARGURA_TABELA / quantasColunas)
+    return Array.from({ length: quantasColunas }, () => util / quantasColunas)
   }
 
   const total = grade.reduce((soma, coluna) => soma + coluna, 0)
-  return grade.map(coluna => (coluna / total) * LARGURA_TABELA)
+  return grade.map(coluna => (coluna / total) * util)
 }
 
 const LAYOUT = {
-  hLineWidth: () => 1,
-  vLineWidth: () => 1,
+  hLineWidth: () => LARGURA_BORDA,
+  vLineWidth: () => LARGURA_BORDA,
   hLineColor: () => '#000000',
   vLineColor: () => '#000000',
   // Só a primeira linha é cabeçalho, e é a única preenchida.
   fillColor: rowIndex => (rowIndex === 0 ? PREENCHIMENTO_CABECALHO : null),
-  paddingLeft: () => 3,
-  paddingRight: () => 3,
-  paddingTop: () => 3,
-  paddingBottom: () => 3
+  paddingLeft: () => ESPACO_CELULA,
+  paddingRight: () => ESPACO_CELULA,
+  paddingTop: () => ESPACO_CELULA,
+  paddingBottom: () => ESPACO_CELULA
 }
 
 const tabela = (grade, cabecalhos, linhas) => ({
@@ -161,7 +196,7 @@ const tabela = (grade, cabecalhos, linhas) => ({
 const linhaInstitucional = texto => ({
   text: texto,
   bold: true,
-  fontSize: TAMANHO_CORPO,
+  fontSize: TAMANHO_REDUZIDO,
   alignment: 'center'
 })
 
@@ -204,14 +239,14 @@ const capa = (ano, mes, instituicao) => [
   {
     text: 'RELATÓRIO DE PRESTAÇÃO DE CONTAS MENSAL TÉCNICO (RPCMTec)',
     bold: true,
-    fontSize: TAMANHO_TITULO,
+    fontSize: TAMANHO_TEXTO,
     alignment: 'center'
   },
   { text: '', margin: [0, 6, 0, 0] },
   {
     text: `${instituicao.sigla} - ${MESES[mes - 1]}/${ano}`,
     bold: true,
-    fontSize: TAMANHO_TITULO,
+    fontSize: TAMANHO_TEXTO,
     alignment: 'center',
     margin: [0, 0, 0, 10]
   }
@@ -222,40 +257,49 @@ const capa = (ano, mes, instituicao) => [
 // assinante o bloco não é impresso: uma linha em branco onde vai a assinatura
 // convida alguém a preenchê-la à caneta, e a edição não fecha sem assinante de
 // qualquer forma.
+//
+// O BLOCO É INDIVISÍVEL (`unbreakable`), e na edição de julho/2026 ele não era:
+// a linha do local ficou no pé da página 23 e o nome do assinante abriu a 24,
+// com o cabeçalho de página entre os dois. Documento que alguém assina não tem a
+// assinatura separada do lugar e da data por uma virada de folha. Sendo um
+// `stack`, o bloco desce inteiro para a página seguinte quando não couber.
 const assinatura = (edicao, instituicao) => {
   const bloco = [
     { text: '', margin: [0, 14, 0, 0] },
     {
       // O travessão curto é do documento.
       text: 'Porto Alegre – RS, na data da assinatura.',
-      fontSize: TAMANHO_TITULO,
+      fontSize: TAMANHO_TEXTO,
       alignment: 'center',
-      margin: [0, 0, 0, 24]
+      // O VÃO É PARA A ASSINATURA À CANETA, e por isso são 72 pt (2,54 cm) e
+      // não os 24 de antes (chefe, 2026-08-11): quem assina escreve ENTRE esta
+      // linha e o nome, e em 24 pt a rubrica passava por cima do nome impresso.
+      margin: [0, 0, 0, ESPACO_ASSINATURA]
     }
   ]
 
-  if (!edicao.assinante_nome) return bloco
+  if (!edicao.assinante_nome) return { stack: bloco, unbreakable: true }
 
   const posto = edicao.assinante_posto_extenso || edicao.assinante_posto || ''
   bloco.push(
     {
       text: `${edicao.assinante_nome.toUpperCase()}${posto ? ` - ${posto}` : ''}`,
-      fontSize: TAMANHO_TITULO,
+      fontSize: TAMANHO_TEXTO,
       alignment: 'center'
     },
     {
       text: 'Chefe da Divisão de Geoinformação',
-      fontSize: TAMANHO_TITULO,
+      fontSize: TAMANHO_TEXTO,
       alignment: 'center'
     },
     {
       text: instituicao.nome,
-      fontSize: TAMANHO_TITULO,
+      fontSize: TAMANHO_TEXTO,
       alignment: 'center'
     }
   )
 
-  return bloco
+  return { stack: bloco, unbreakable: true }
 }
 
 // "RPCMTec 1º CGEO Julho/2026 ... Página X de Y".
@@ -269,12 +313,12 @@ const cabecalhoDaPagina = (ano, mes, fechada, sigla) => (paginaAtual, total) => 
       {
         text: `RPCMTec ${sigla} ${mesCapitalizado(mes)}/${ano}`,
         bold: true,
-        fontSize: TAMANHO_CORPO
+        fontSize: TAMANHO_REDUZIDO
       },
       {
         text: `Página ${paginaAtual} de ${total}`,
         bold: true,
-        fontSize: TAMANHO_CORPO,
+        fontSize: TAMANHO_REDUZIDO,
         alignment: 'right'
       }
     ],
@@ -288,7 +332,7 @@ const cabecalhoDaPagina = (ano, mes, fechada, sigla) => (paginaAtual, total) => 
     {
       text: 'RASCUNHO: edição ainda aberta, os números podem mudar',
       bold: true,
-      fontSize: TAMANHO_CORPO,
+      fontSize: TAMANHO_REDUZIDO,
       color: '#B00000',
       alignment: 'center',
       margin: [72, 2, 72, 0]
@@ -307,7 +351,7 @@ const corpoDoDocumento = (edicao, instituicao) => {
     conteudo.push({
       text: secao.titulo,
       bold: true,
-      fontSize: TAMANHO_TITULO,
+      fontSize: TAMANHO_TEXTO,
       alignment: 'justify',
       margin: [0, 4, 0, 2]
     })
@@ -318,7 +362,7 @@ const corpoDoDocumento = (edicao, instituicao) => {
       if (!sub.titulo) {
         conteudo.push({
           text: `${sub.numero}. ${sub.texto || ''}`,
-          fontSize: TAMANHO_TITULO,
+          fontSize: TAMANHO_TEXTO,
           alignment: 'justify',
           margin: [0, 0, 0, 8]
         })
@@ -327,7 +371,7 @@ const corpoDoDocumento = (edicao, instituicao) => {
 
       conteudo.push({
         text: `${sub.numero}. ${sub.titulo}`,
-        fontSize: TAMANHO_TITULO,
+        fontSize: TAMANHO_TEXTO,
         alignment: 'justify',
         margin: [0, 2, 0, 2]
       })
@@ -339,7 +383,7 @@ const corpoDoDocumento = (edicao, instituicao) => {
           // Prosa não preenchida imprime o '-' do modelo, pela mesma razão da
           // tabela vazia: espaço em branco se lê como esquecimento.
           text: sub.texto || '-',
-          fontSize: TAMANHO_TITULO,
+          fontSize: TAMANHO_TEXTO,
           alignment: 'justify',
           margin: [0, 0, 0, 8]
         })
@@ -347,7 +391,7 @@ const corpoDoDocumento = (edicao, instituicao) => {
     }
   }
 
-  conteudo.push(...assinatura(edicao, instituicao))
+  conteudo.push(assinatura(edicao, instituicao))
 
   return conteudo
 }
@@ -375,7 +419,7 @@ const montarDefinicao = edicao => {
     header: cabecalhoDaPagina(
       edicao.ano, edicao.mes, edicao.fechada, instituicao.sigla
     ),
-    defaultStyle: { font: 'Carlito', fontSize: TAMANHO_TITULO },
+    defaultStyle: { font: 'Lato', fontSize: TAMANHO_TEXTO },
     content: corpoDoDocumento(edicao, instituicao)
   }
 }
@@ -409,10 +453,15 @@ module.exports = {
   // Exportados para o teste conferir o formato contra o modelo medido, sem
   // reabrir o documento de referência a cada execução.
   FORMATO: {
-    FONTE: 'Carlito',
-    TAMANHO_TITULO,
-    TAMANHO_CORPO,
+    FONTE: 'Lato',
+    TAMANHO_TEXTO,
+    TAMANHO_REDUZIDO,
     PREENCHIMENTO_CABECALHO,
-    LARGURA_TABELA
-  }
+    LARGURA_TABELA,
+    ESPACO_CELULA,
+    LARGURA_BORDA
+  },
+  // Exportada para o teste somar as colunas e cobrar os 468 pt: a conta do
+  // espaçamento é o que estourava a margem, e ela não se prova pelo PDF pronto.
+  largurasDa
 }
