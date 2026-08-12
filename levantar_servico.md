@@ -74,6 +74,56 @@ coluna `dgeo.login.cliente` guarda. Os arquivos do acervo ficam no volume descri
    Sobe um processo PM2, `controle-acervo`, na porta de `PORT`. A interface fica em `/`.
 3. Auto-start no boot: `pm2 startup` (uma vez, como admin) mais `pm2 save`.
 
+### A instalação da DGEO roda em CONTÊINER, e não pelos passos 2 e 3 acima
+
+Descoberto em 2026-08-12, ao atualizar o serviço depois de uma migração: **este documento descrevia
+só o caminho do PM2 na máquina, e quem o seguisse iria pelo caminho errado.** Os passos 2 e 3
+continuam válidos para uma instalação que rode direto no host; não é o caso da que está no ar.
+
+Lá o serviço é um contêiner Docker, `controle-acervo`, publicado na porta de `PORT`, com um clone
+deste repositório na pasta do serviço no servidor. **O PM2 não sumiu: ele roda DENTRO do contêiner**
+(`CMD ["pm2-runtime", "start", "/app/ecosystem.config.cjs"]`), e é isso que reconcilia os dois
+caminhos. O `config.env` NÃO entra na imagem: ele é montado do host por bind mount, e é por isso que
+trocar credencial não pede build.
+
+**`Dockerfile` e `start_docker.sh` NÃO são versionados: vivem só no servidor.** Quem procurar os dois
+aqui não acha, e a ausência é o estado normal, não arquivo perdido. Leia-os no servidor antes de
+mexer, e guarde cópia antes de editar -- não há de onde restaurar.
+
+**NÃO rode o `start_docker.sh` de lá para atualizar.** Ele faz `stop`, `rm`, `rmi`, `build`, `run`
+nessa ordem: apaga a imagem ANTES de construir a nova, e um build que falhe deixa o serviço fora do
+ar sem imagem para voltar. O ciclo seguro constrói primeiro, com o contêiner atual servindo o tempo
+todo:
+
+```bash
+git pull
+docker build -t controle-acervo:novo .        # o atual continua no ar
+docker tag controle-acervo:latest controle-acervo:anterior   # guarda de onde voltar
+docker stop controle-acervo && docker rm controle-acervo
+docker tag controle-acervo:novo controle-acervo:latest
+docker run -d ... --name controle-acervo controle-acervo     # portas e binds LIDOS do start_docker.sh
+```
+
+A parada real é de poucos segundos, entre o `stop` e o `run`. **Migração aditiva tolera a janela**
+entre migrar o banco e trocar o contêiner (medido: o código anterior serviu horas contra o banco já
+migrado, sem incidente); migração DESTRUTIVA quebra as telas durante a janela inteira, e aí a ordem
+é parar o contêiner, migrar e subir a imagem nova.
+
+**Depois de trocar, prove -- e escolha a prova pelo que o commit tocou.** Contêiner "Up" não prova
+serviço no ar, e `GET /api` devolvendo `version` com o número novo prova que o processo carregou o
+código novo. Se o commit mexeu no client, o nome do bundle
+(`server/src/build/assets/index-<hash>.js`) muda entre a imagem anterior e a nova; se mexeu **só no
+servidor**, ele sai IGUAL nas duas, e cobrar diferença ali acusa um defeito que não existe -- prove
+com o símbolo novo dentro da imagem (`docker run --rm controle-acervo:novo grep ...`).
+
+**O contêiner sobe sem política de reinício**, porque o `start_docker.sh` não passa `--restart`. Um
+reboot do servidor deixa o serviço fora até alguém subir a mão. Está anotado como pendência, e
+mudá-lo é decisão à parte.
+
+O endereço do servidor, o caminho da pasta e a credencial de acesso não entram aqui, porque este
+repositório é público. Eles vivem no `.env` do vault de gestão, junto com a rotina que faz esta
+atualização.
+
 O banco precisa estar na versão **3.0.0**, que é o `MIN_DATABASE_VERSION` de `server/src/config.js`.
 Este número ENVELHECE: leia a constante no arquivo antes de confiar nele.
 O server recusa subir com banco abaixo do piso (`semver.lt`), e aceita banco à frente. Migrações em
