@@ -1484,6 +1484,33 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
 
 ## Mapoteca e plugin
 
+- **A MESMA OM NÃO SE CADASTRA DUAS VEZES** (`unique_cliente_nome_sigla`, 2026-08-12). A restrição
+  nasceu de um caso medido, e não de zelo: o **3º GAC Ap estava em duas linhas** de `mapoteca.cliente`
+  (ids 33 e 59), mesmo nome, mesma sigla, mesmo endereço, com um pedido concluído pendurado em cada.
+  **Nada dava erro** -- não há FK violada, não há teste vermelho, e as duas fichas aparecem lado a
+  lado na lista com o mesmo rótulo. O que quebrava era calado: a contagem de "OM distintas atendidas"
+  respondia **68 onde a resposta era 67**, o histórico da unidade aparecia partido, e o endereço da
+  próxima entrega dependia de qual das duas o operador escolhesse. Descoberto ao montar os números de
+  uma apresentação, que é justamente onde um número errado é caro. A 3.4.0 fundiu as fichas; esta é a
+  segunda metade, sem a qual o conserto tinha prazo de validade -- bastava digitar o nome de novo.
+  - **`NULLS NOT DISTINCT` é o coração, e não um detalhe de sintaxe.** `sigla` é NULA para quem não é
+    OM (órgão público, cidadão da LAI), e no `UNIQUE` comum do Postgres nulo não casa nem consigo
+    mesmo. Um `UNIQUE (nome, sigla)` cru protegeria as fichas com sigla e deixaria as sem sigla
+    livres para se repetir -- a metade errada, porque o cliente civil é o que se cadastra às pressas
+    no meio de um pedido da LAI. Exige PostgreSQL 15+ (a produção está na 16.4).
+  - **O par, e não o nome sozinho:** mesmo nome por extenso com siglas diferentes é erro de digitação
+    que vale deixar visível, e não recusar às cegas.
+  - **O que ela NÃO pega, e é deliberado:** grafia diferente do mesmo nome (`3o GAC Ap` contra
+    `3º GAC Ap`) são textos distintos e passam os dois. Um índice funcional com `lower(trim(...))`
+    foi considerado e recusado: o ganho é pequeno (o `º` contra o `o`, que é a variação real das
+    siglas de OM, sobrevive aos dois) e o custo é uma restrição que não aparece no `\d` da tabela e
+    cuja recusa é mais difícil de explicar na tela. O quase-homônimo continua sendo trabalho de quem
+    cadastra.
+  - **A recusa chega como frase, e não como 500:** `mapoteca_ctrl.js` traduz o 23505 em 409 com o
+    motivo escrito, no INSERT e no UPDATE -- renomear uma ficha para o nome de outra cria a duplicata
+    pelo mesmo caminho. É o mesmo desenho de `unique_tipo_material_nome` (bullet do livro de
+    movimentos), e pela mesma razão: um 500 diria "erro no servidor" para um engano que a própria
+    pessoa conserta em cinco segundos.
 - **ESTOQUE E CONSUMO VIRARAM UM LIVRO SÓ** (`mapoteca.movimento_material`, 2026-08-08, decisão do
   chefe). Havia três portas mexendo no saldo e só uma guardava data: o `POST /estoque_material` era
   um upsert que REDEFINIA a quantidade, o `POST /estoque_material/transferir` eram dois UPDATEs, e

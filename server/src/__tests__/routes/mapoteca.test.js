@@ -273,6 +273,69 @@ describe('Mapoteca Routes', () => {
       expect(res.status).toBe(400)
     })
 
+    it('a mesma OM não se cadastra duas vezes, e a recusa explica por quê', async () => {
+      // A produção tinha o caso: o 3º GAC Ap em duas fichas, com um pedido
+      // concluído em cada. Nada dava erro -- a contagem de OM atendidas é que
+      // somava duas onde há uma. Ver migrations/2026-08-12.
+      await criaCliente({ nome: 'OM Homônima', sigla: 'OM Hom' })
+
+      const res = await request(app)
+        .post('/api/mapoteca/cliente')
+        .set('Authorization', generateAdminToken())
+        .send({ nome: 'OM Homônima', sigla: 'OM Hom', tipo_cliente_id: 1 })
+
+      expect(res.status).toBe(409)
+      expect(res.body.message).toMatch(/Já existe um cliente com este nome/)
+    })
+
+    it('a recusa vale para quem NÃO tem sigla, que é o NULLS NOT DISTINCT', async () => {
+      // O UNIQUE comum do Postgres não casa nulo com nulo, e sem a cláusula a
+      // restrição protegeria só quem tem sigla -- deixando de fora justamente o
+      // cliente civil, que é o que se cadastra às pressas no meio de um pedido.
+      await criaCliente({ nome: 'Órgão Sem Sigla', tipo_cliente_id: 4 })
+
+      const res = await request(app)
+        .post('/api/mapoteca/cliente')
+        .set('Authorization', generateAdminToken())
+        .send({ nome: 'Órgão Sem Sigla', tipo_cliente_id: 4 })
+
+      expect(res.status).toBe(409)
+    })
+
+    it('sigla diferente NÃO é duplicata, e o cadastro passa', async () => {
+      // A variância: uma restrição que recusasse pelo nome sozinho barraria duas
+      // unidades distintas cujo nome por extenso coincide, e o teste acima
+      // passaria do mesmo jeito.
+      await criaCliente({ nome: 'OM Com Duas Siglas', sigla: 'OM A' })
+
+      const res = await request(app)
+        .post('/api/mapoteca/cliente')
+        .set('Authorization', generateAdminToken())
+        .send({ nome: 'OM Com Duas Siglas', sigla: 'OM B', tipo_cliente_id: 1 })
+
+      expect(res.status).toBe(201)
+    })
+
+    it('renomear uma ficha para o nome de outra também é recusado', async () => {
+      // O UPDATE cria a duplicata pelo mesmo caminho do INSERT, e um `catch` só
+      // no `criaCliente` deixaria a porta aberta pela tela de edição.
+      await criaCliente({ nome: 'OM Destino', sigla: 'OM Dst' })
+      const origem = await criaCliente({ nome: 'OM Origem', sigla: 'OM Org' })
+
+      const res = await request(app)
+        .put('/api/mapoteca/cliente')
+        .set('Authorization', generateAdminToken())
+        .send({
+          id: origem,
+          nome: 'OM Destino',
+          sigla: 'OM Dst',
+          tipo_cliente_id: 1
+        })
+
+      expect(res.status).toBe(409)
+      expect(res.body.message).toMatch(/Já existe um cliente com este nome/)
+    })
+
     it('POST /api/mapoteca/cliente should require admin', async () => {
       const res = await request(app)
         .post('/api/mapoteca/cliente')

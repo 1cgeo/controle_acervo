@@ -281,7 +281,16 @@ dotenv.config({
 // devolve, e este código lê `nome`, `sigla` e `cliente_id` desde a instalação.
 // Um banco 3.2.0 roda tudo -- só continua contando 68 OM onde há 67, que é
 // defeito do DADO daquela instalação e não do contrato do schema.
-const VERSION = '3.4.0'
+//
+// A 3.5.0 TAMBÉM NÃO SOBE, e o precedente é exatamente ela: a 1.48.0 acrescentou
+// `unique_tipo_material_nome` com a mesma tradução de 23505 no controlador e não
+// subiu o piso. Aqui nasce `unique_cliente_nome_sigla`, e o código não QUEBRA num
+// banco que não a tem -- ele nunca vê o 23505, e o cadastro repetido continua
+// possível lá. Não é o caso da linha 6 de `dominio.modulo` na 1.46.0, que quebrava
+// CALADO uma funcionalidade inteira: o que uma instalação sem a migração perde é
+// uma garantia sobre o DADO dela, e migrar para ganhá-la é escolha de quem opera
+// o banco.
+const VERSION = '3.5.0'
 const MIN_DATABASE_VERSION = '3.2.0'
 
 /**

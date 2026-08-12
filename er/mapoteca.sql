@@ -101,7 +101,32 @@ CREATE TABLE mapoteca.cliente(
 	sigla VARCHAR(50),
     ponto_contato_principal VARCHAR(255),
     endereco_entrega_principal VARCHAR(255),
-	tipo_cliente_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_cliente (code)
+	tipo_cliente_id SMALLINT NOT NULL REFERENCES mapoteca.tipo_cliente (code),
+
+    -- A MESMA OM NAO SE CADASTRA DUAS VEZES.
+    --
+    -- Ate 2026-08-11 nada impedia, e a producao tinha o caso: o 3o GAC Ap em
+    -- duas linhas, com um pedido concluido em cada. Nada dava erro. O que
+    -- quebrava era calado -- a contagem de "OM distintas atendidas" respondia 68
+    -- onde a resposta era 67, o historico da unidade aparecia partido em duas
+    -- fichas, e o endereco da proxima entrega dependia de qual das duas o
+    -- operador escolhesse numa lista onde as duas se chamam igual.
+    --
+    -- NULLS NOT DISTINCT, e e o que faz a restricao valer para TODO cliente.
+    -- `sigla` e NULA para quem nao e OM (orgao publico, cidadao da LAI), e no
+    -- UNIQUE comum do Postgres NULO nao casa nem consigo mesmo: sem esta
+    -- clausula, dois cadastros identicos de orgao civil passariam direto e a
+    -- restricao so protegeria quem tem sigla. Exige PostgreSQL 15 ou mais novo.
+    --
+    -- O QUE ELA NAO PEGA, e e preciso dizer: grafia diferente do mesmo nome
+    -- ('3o GAC Ap' e '3º GAC Ap') sao dois textos distintos e passam as duas.
+    -- Ela fecha a repeticao EXATA, que e o caso que aconteceu; o quase-homonimo
+    -- continua sendo trabalho de quem cadastra.
+    --
+    -- Nome explicito, e nao o que o Postgres geraria: a migracao cria a
+    -- constraint com o MESMO nome, senao instalacao nova divergiria da migrada
+    -- e o ensaiar_migracao.cjs reprovaria.
+    CONSTRAINT unique_cliente_nome_sigla UNIQUE NULLS NOT DISTINCT (nome, sigla)
 );
 
 -- Cliente padrão para demanda de civil anônima / LAI de cidadão: distingue-se

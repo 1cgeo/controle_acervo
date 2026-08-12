@@ -305,6 +305,31 @@ controller.getClienteById = async (clienteId) => {
   });
 };
 
+// SQLSTATE de violacao de UNIQUE (23505). O par (nome, sigla) do cliente virou
+// UNICO em 2026-08-12, contando nulo como igual, depois que a producao mostrou a
+// mesma OM cadastrada duas vezes (ver a 3.4.0 e a 3.5.0 em migrations/).
+//
+// A traducao existe porque a recusa CRUA seria um 500 dizendo "erro no servidor"
+// para quem so repetiu um nome que ja existe -- e o conserto esta na mao da
+// pessoa. Vale no INSERT e no UPDATE: renomear uma ficha para o nome de outra
+// cria a duplicata pelo mesmo caminho.
+const UNIQUE_VIOLATION_CLIENTE = '23505';
+
+const traduzirErroCliente = err => {
+  if (err && err.code === UNIQUE_VIOLATION_CLIENTE &&
+      /unique_cliente_nome_sigla/.test(err.message || '')) {
+    throw new AppError(
+      'Já existe um cliente com este nome e esta sigla. A mesma OM cadastrada ' +
+      'duas vezes parte o histórico dela entre as duas fichas e faz a contagem ' +
+      'de OM atendidas somar duas onde há uma. Se for outra unidade, diferencie ' +
+      'o nome ou a sigla; se for a mesma, use a ficha que já existe.',
+      httpCode.Conflict,
+      err
+    );
+  }
+  throw err;
+};
+
 // `mapoteca.cliente` NAO tem coluna de escrituracao (nem `usuario_criacao_id`
 // nem `data_criacao`), e por isso as tres funcoes abaixo nao resolvem o id
 // inteiro do usuario: ele nao teria onde ser gravado. Quem responde "quem mexeu"
@@ -327,7 +352,7 @@ controller.criaCliente = async (cliente, usuarioUuid, contexto) => {
       schema: 'mapoteca'
     }) + ' RETURNING *';
 
-    const criado = await t.one(query);
+    const criado = await t.one(query).catch(traduzirErroCliente);
 
     await auditoriaCtrl.registrar(t, {
       tabela: 'mapoteca.cliente',
@@ -370,7 +395,7 @@ controller.atualizaCliente = async (cliente, usuarioUuid, contexto) => {
 
     const query = db.pgp.helpers.update(cliente, cs) + ' WHERE id = $1 RETURNING *';
 
-    const depois = await t.one(query, [cliente.id]);
+    const depois = await t.one(query, [cliente.id]).catch(traduzirErroCliente);
 
     await auditoriaCtrl.registrar(t, {
       tabela: 'mapoteca.cliente',
