@@ -274,7 +274,14 @@ dotenv.config({
 // e cobrar a migração obrigaria toda instalação a migrar para não ganhar coluna
 // nenhuma. O que ela ganharia é a limpeza do próprio dado, e isso é escolha de
 // quem opera o banco, não condição para o serviço subir.
-const VERSION = '3.3.0'
+//
+// A 3.4.0 TAMBÉM NÃO SOBE O PISO, e é a mesma regra outra vez: ela só funde duas
+// linhas de `mapoteca.cliente` que eram a mesma OM cadastrada duas vezes, e move
+// o pedido de uma para a outra. Não nasce coluna, não muda o que view nenhuma
+// devolve, e este código lê `nome`, `sigla` e `cliente_id` desde a instalação.
+// Um banco 3.2.0 roda tudo -- só continua contando 68 OM onde há 67, que é
+// defeito do DADO daquela instalação e não do contrato do schema.
+const VERSION = '3.4.0'
 const MIN_DATABASE_VERSION = '3.2.0'
 
 /**
