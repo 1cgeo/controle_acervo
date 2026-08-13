@@ -47,6 +47,10 @@ const PAGE_LIMIT = 5;
  */
 export async function openProdutoPedidoDialog({
   item = null, title, submitLabel, onSubmit, pedido = null, metasPit = [],
+  // Grava VARIOS produtos de uma vez. Opcional: sem ele a tela nao mostra as
+  // caixas de selecao, e o dialogo se comporta como sempre. E o que mantem o
+  // modo EDICAO (que edita um item) livre da selecao multipla.
+  onSubmitLote = null,
 }) {
   let tiposMidia, tiposProduto, tiposEscala;
   try {
@@ -65,6 +69,186 @@ export async function openProdutoPedidoDialog({
   // ---------------------------------------------------------------------------
   let produtoSelecionado = null; // { id, nome, mi, inom, escala, versoes }
   let currentPage = 1;
+
+  // A selecao multipla so existe ao ADICIONAR, e so quando o chamador sabe
+  // gravar um lote. Editar um item e sobre UM item, e mostrar caixas ali
+  // prometeria algo que a tela nao faz.
+  const podeLote = !item && typeof onSubmitLote === 'function';
+
+  // Preenchido pelo openModal la embaixo. O caminho de lote fecha o dialogo por
+  // conta propria, porque ele nao passa pela acao "Adicionar" do rodape.
+  let fecharModal = () => {};
+
+  // ---------------------------------------------------------------------------
+  // SELECAO MULTIPLA: varios produtos, um formulario so
+  // ---------------------------------------------------------------------------
+  //
+  // POR QUE. A demanda da mapoteca e de CONJUNTO: das 219 vezes em que um pedido
+  // levou folhas 25k da mesma folha 50k, 59 levaram as quatro e 62 levaram duas
+  // (medido na producao em 2026-08-13). Uma por uma, "as 4 do 2951-2" custavam
+  // quatro passagens pelo dialogo inteiro.
+  //
+  // NAO E UM BOTAO "ADICIONAR AS 4". O padrao mais comum e pedir UM quadrante
+  // (90 dos 219 grupos), e o segundo e pedir DOIS. Um atalho que so faz "as 4"
+  // atenderia 27% dos casos; a selecao atende os quatro padroes com o mesmo
+  // gesto, e ainda serve para folhas que nao sao vizinhas.
+  //
+  // O CAMINHO DE UM ITEM SO CONTINUA INTEIRO. O botao "Selecionar" da linha leva
+  // a escolha da VERSAO, que a selecao multipla resolve sozinha. Quem precisa de
+  // uma versao especifica (a historica, por exemplo) usa aquele.
+  const selecionados = new Map();
+
+  const loteResumo = el('span', { className: 'detail-card__label' });
+
+  const loteBtn = el('button', {
+    className: 'btn btn--primary btn--sm',
+    type: 'button',
+    onClick: () => adicionarSelecionados(),
+  }, ['Adicionar selecionados']);
+
+  const loteBar = el('div', {
+    className: 'flex gap-sm hidden',
+    style: { alignItems: 'center', marginTop: 'var(--space-sm)' },
+  }, [loteBtn, loteResumo]);
+
+  function atualizarLoteBar() {
+    const n = selecionados.size;
+    loteBar.classList.toggle('hidden', n === 0);
+    loteBtn.textContent = n === 1 ? 'Adicionar 1 item' : `Adicionar ${n} itens`;
+    loteResumo.textContent = n
+      ? 'A quantidade e a mídia de "Dados do item" valem para todos.'
+      : '';
+  }
+
+  /**
+   * A versao que a selecao multipla escolhe: a mais recente COM ARQUIVO.
+   *
+   * A regra nao e nova, e nem e daqui: e a mesma que o `mapoteca_cli` aplica
+   * ("vale a versao mais recente por data de edicao QUE TENHA ARQUIVO; versao
+   * sem arquivo e registro historico e nao serve para imprimir"). Medido no
+   * acervo em 2026-08-13, nas 1.158 Cartas Topograficas 25k: 1.046 (90%) tem
+   * exatamente UMA versao com arquivo, entao na quase totalidade dos casos nao
+   * ha desempate nenhum a fazer. Em 88 ha duas ou mais, e ai a data decide.
+   *
+   * Devolve null quando NENHUMA versao tem arquivo (24 produtos): o item nao
+   * entra, e quem selecionou fica sabendo por que.
+   * @param {Array} versoes
+   */
+  function versaoParaLote(versoes) {
+    const comArquivo = (versoes || []).filter(v => !versaoSemArquivo(v));
+    if (!comArquivo.length) return null;
+    return [...comArquivo].sort((a, b) =>
+      String(b.versao_data_edicao || '').localeCompare(String(a.versao_data_edicao || ''))
+    )[0];
+  }
+
+  /**
+   * Grava os produtos marcados como itens do pedido, numa chamada so.
+   *
+   * O `pedido_id` vai fora do array e a gravacao e uma transacao: ou entram
+   * todos, ou nenhum. N chamadas do client deixariam o pedido com duas folhas
+   * das quatro se a terceira falhasse, e ninguem saberia que faltam duas.
+   */
+  async function adicionarSelecionados() {
+    if (submitting || !selecionados.size) return;
+
+    midiaField.setError(null);
+    quantidadeField.setError(null);
+
+    // A validacao do formulario compartilhado ANTES de ir ao servidor buscar
+    // versao: descobrir que a quantidade esta vazia depois de quatro requisicoes
+    // e fazer a pessoa esperar para nada.
+    let ok = true;
+    if (midiaField.getValue() === null) {
+      midiaField.setError('Campo obrigatório');
+      ok = false;
+    }
+    const quantidade = quantidadeField.getValue();
+    if (quantidade === null || quantidade < 1) {
+      quantidadeField.setError('Informe uma quantidade maior que zero');
+      ok = false;
+    }
+    if (!ok) return;
+
+    submitting = true;
+    loteBtn.disabled = true;
+    try {
+      const escolhidos = [...selecionados.values()];
+      const detalhes = await Promise.all(
+        escolhidos.map(p => getProdutoDetalhado(p.id).catch(() => null))
+      );
+
+      const itens = [];
+      const semArquivo = [];
+      const semDetalhe = [];
+
+      escolhidos.forEach((p, i) => {
+        const rotulo = p.mi || p.nome || `#${p.id}`;
+        const detalhe = detalhes[i];
+        if (!detalhe) { semDetalhe.push(rotulo); return; }
+        const versao = versaoParaLote(detalhe.versoes || []);
+        if (!versao) { semArquivo.push(rotulo); return; }
+
+        // O MESMO FORMATO do `onSubmit` de um item so ({payload, display}), e
+        // nao um formato proprio do lote. E o que deixa o WIZARD empilhar os
+        // itens na lista em memoria dele sem traduzir nada: la a linha da tabela
+        // se desenha a partir do `display`.
+        const tipoMidiaSel = tiposMidia.find(t => t.code === midiaField.getValue());
+        itens.push({
+          payload: {
+            uuid_versao: versao.uuid_versao,
+            quantidade,
+            tipo_midia_id: midiaField.getValue(),
+            ...(midiaFornecidaField.getValue() != null
+              ? { tipo_midia_fornecida_id: midiaFornecidaField.getValue() }
+              : {}),
+          },
+          display: {
+            produto_id: detalhe.id,
+            produto_nome: detalhe.nome,
+            mi: detalhe.mi,
+            inom: detalhe.inom,
+            escala: detalhe.escala,
+            versao: versao.versao,
+            item_avulso: false,
+            tipo_midia_nome: tipoMidiaSel ? tipoMidiaSel.nome : '-',
+          },
+        });
+      });
+
+      // O QUE FICOU DE FORA SE DIZ, e nao se descarta em silencio: folha sem
+      // versao com arquivo e lacuna de catalogacao, e quem selecionou precisa
+      // saber que ela nao entrou.
+      if (semArquivo.length) {
+        showWarning(
+          `Sem versão com arquivo no acervo, e por isso fora do pedido: ${semArquivo.join(', ')}.`
+        );
+      }
+      if (semDetalhe.length) {
+        showWarning(`Não foi possível ler no acervo: ${semDetalhe.join(', ')}.`);
+      }
+      if (!itens.length) {
+        showError('Nenhum dos produtos selecionados tem versão com arquivo para imprimir.');
+        return;
+      }
+
+      // QUEM GRAVA E O CHAMADOR, e nao este dialogo -- igual ao `onSubmit` de um
+      // item so. Nao e cerimonia: o WIZARD usa este mesmo dialogo no passo 3,
+      // ANTES de o pedido existir, e la os itens vao para uma lista em memoria.
+      // Um `createProdutosPedido` chamado daqui exigiria um pedido_id que no
+      // wizard ainda nao ha.
+      await onSubmitLote(itens);
+      selecionados.clear();
+      atualizarLoteBar();
+      fecharModal();
+    } catch (err) {
+      showError(err.message || 'Erro ao adicionar os produtos ao pedido');
+    } finally {
+      submitting = false;
+      loteBtn.disabled = false;
+    }
+  }
+
 
   // ---------------------------------------------------------------------------
   // Catalog search section
@@ -108,6 +292,7 @@ export async function openProdutoPedidoDialog({
     ]),
     el('div', { className: 'flex gap-sm', style: { marginBottom: 'var(--space-md)' } }, [buscarBtn]),
     resultsArea,
+    loteBar,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -216,9 +401,6 @@ export async function openProdutoPedidoDialog({
     showSelected();
   }
 
-  // ---------------------------------------------------------------------------
-  // Search results (server-side pagination)
-  // ---------------------------------------------------------------------------
   function paginationRow(result) {
     const start = (currentPage - 1) * PAGE_LIMIT + 1;
     const end = Math.min(currentPage * PAGE_LIMIT, result.total);
@@ -258,26 +440,47 @@ export async function openProdutoPedidoDialog({
     }
 
     const header = el('thead', {}, [
-      el('tr', {}, ['Nome', 'MI', 'INOM', 'Escala', 'Tipo', 'Versões', ''].map(h =>
+      el('tr', {}, [...(podeLote ? [''] : []), 'Nome', 'MI', 'INOM', 'Escala', 'Tipo', 'Versões', ''].map(h =>
         el('th', { textContent: h })
       )),
     ]);
 
-    const body = el('tbody', {}, result.dados.map(p => el('tr', {}, [
-      el('td', { textContent: p.nome || '-' }),
-      el('td', { textContent: p.mi || '-' }),
-      el('td', { textContent: p.inom || '-' }),
-      el('td', { textContent: p.escala || '-' }),
-      el('td', { textContent: p.tipo_produto || '-' }),
-      el('td', { textContent: String(p.num_versoes ?? '-') }),
-      el('td', { className: 'data-table__actions-cell' }, [
-        el('button', {
-          className: 'btn btn--secondary btn--sm',
-          type: 'button',
-          onClick: () => selectProduto(p),
-        }, 'Selecionar'),
-      ]),
-    ])));
+    const body = el('tbody', {}, result.dados.map(p => {
+      // A CAIXA SOBREVIVE A TROCA DE PAGINA, porque a selecao mora num Map por
+      // id e nao no DOM da linha. Marcar dois quadrantes na pagina 1 e dois na
+      // pagina 2 e caso real: a busca por MI de 50k traz o 50k e os quatro 25k,
+      // e com cinco tipos de produto por folha isso passa de uma pagina.
+      const caixa = podeLote
+        ? el('input', {
+          type: 'checkbox',
+          className: 'data-table__checkbox',
+          'aria-label': `Selecionar ${p.nome || p.mi || 'produto'}`,
+          onChange: (e) => {
+            if (e.target.checked) selecionados.set(p.id, p);
+            else selecionados.delete(p.id);
+            atualizarLoteBar();
+          },
+        })
+        : null;
+      if (caixa) caixa.checked = selecionados.has(p.id);
+
+      return el('tr', {}, [
+        ...(podeLote ? [el('td', { className: 'data-table__checkbox-cell' }, [caixa])] : []),
+        el('td', { textContent: p.nome || '-' }),
+        el('td', { textContent: p.mi || '-' }),
+        el('td', { textContent: p.inom || '-' }),
+        el('td', { textContent: p.escala || '-' }),
+        el('td', { textContent: p.tipo_produto || '-' }),
+        el('td', { textContent: String(p.num_versoes ?? '-') }),
+        el('td', { className: 'data-table__actions-cell' }, [
+          el('button', {
+            className: 'btn btn--secondary btn--sm',
+            type: 'button',
+            onClick: () => selectProduto(p),
+          }, 'Selecionar'),
+        ]),
+      ]);
+    }));
 
     resultsArea.appendChild(el('div', { className: 'data-table-wrapper' }, [
       el('div', { className: 'data-table-scroll' }, [
@@ -514,7 +717,7 @@ export async function openProdutoPedidoDialog({
   // ---------------------------------------------------------------------------
   let submitting = false;
 
-  openModal({
+  const modal = openModal({
     title: title || (item ? 'Editar item do pedido' : 'Adicionar produto ao pedido'),
     content,
     width: '860px',
@@ -625,4 +828,6 @@ export async function openProdutoPedidoDialog({
       },
     ],
   });
+
+  fecharModal = modal.close;
 }

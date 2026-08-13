@@ -1275,6 +1275,101 @@ controller.criaProdutoPedido = async (produtoPedido, usuarioUuid, contexto) => {
   });
 };
 
+// VARIOS itens de UMA VEZ, no mesmo pedido.
+//
+// POR QUE EXISTE. A tela de adicionar item era de um produto por vez, e a
+// demanda real e de conjunto: das 219 vezes em que um pedido levou folhas 25k da
+// mesma folha 50k, 59 levaram as QUATRO e 62 levaram duas (medido na producao em
+// 2026-08-13). Quatro folhas custavam quatro passagens pelo dialogo inteiro.
+//
+// UMA TRANSACAO, e nao N chamadas do client. Se a terceira falhasse, o pedido
+// ficaria com duas folhas e ninguem saberia que faltam duas: e meia gravacao.
+// Mesma razao do `registrarImpressao`, e o desenho aqui e o dele.
+//
+// O PEDIDO E UM SO, e vem de fora do array. Itens de pedidos diferentes no mesmo
+// lote nao sao um lote: sao dois, e a auditoria de cada um tem agregado proprio.
+//
+// AS CONFERENCIAS SAO DE TODOS ANTES DE GRAVAR QUALQUER UM. Conferir dentro do
+// laco de insercao gravaria os primeiros e so entao descobriria o defeito do
+// ultimo -- dentro da transacao o ROLLBACK desfaria, mas a mensagem de erro
+// nomearia o item errado e o custo de rede ja teria sido pago.
+controller.criaProdutosPedido = async (pedidoId, itens, usuarioUuid, contexto) => {
+  const usuarioId = await getUsuarioId(usuarioUuid);
+
+  return db.conn.tx(async t => {
+    const pedidoExiste = await t.oneOrNone(
+      `SELECT id FROM mapoteca.pedido WHERE id = $1`,
+      [pedidoId]
+    );
+    if (!pedidoExiste) {
+      throw new AppError('Pedido não encontrado', httpCode.NotFound);
+    }
+
+    // As versoes conferidas de UMA VEZ, e nao uma consulta por item: quatro
+    // folhas dariam quatro idas ao banco para a mesma pergunta.
+    const uuids = [...new Set(itens.map(i => i.uuid_versao).filter(Boolean))];
+    if (uuids.length) {
+      const achadas = await t.any(
+        `SELECT uuid_versao FROM acervo.versao WHERE uuid_versao IN ($<uuids:csv>)`,
+        { uuids }
+      );
+      if (achadas.length !== uuids.length) {
+        const vivas = new Set(achadas.map(v => v.uuid_versao));
+        const faltantes = uuids.filter(u => !vivas.has(u));
+        throw new AppError(
+          `As seguintes versões não foram encontradas: ${faltantes.join(', ')}`,
+          httpCode.NotFound
+        );
+      }
+    }
+
+    // A meta se confere uma vez por valor distinto, e nao por item: a pergunta
+    // que ela faz e sobre o PEDIDO, e o pedido e o mesmo para o lote inteiro.
+    for (const meta of new Set(itens.map(i => i.meta_pit_id).filter(m => m != null))) {
+      await conferirMetaDoItem(t, pedidoId, meta);
+    }
+
+    const linhas = itens.map(item => ({
+      ...item,
+      pedido_id: pedidoId,
+      usuario_criacao_id: usuarioId,
+      usuario_atualizacao_id: usuarioId
+    }));
+
+    const cs = new db.pgp.helpers.ColumnSet([
+      ...PRODUTO_PEDIDO_COLS,
+      'usuario_criacao_id', 'usuario_atualizacao_id'
+    ]);
+
+    const query = db.pgp.helpers.insert(linhas, cs, {
+      table: 'produto_pedido',
+      schema: 'mapoteca'
+    }) + ' RETURNING *';
+
+    const criados = await t.many(query);
+
+    // UM EVENTO POR ITEM, e nao um do lote. Quem abre o historico do pedido
+    // pergunta "quando esta folha entrou", e um evento de quatro linhas nao
+    // responde por nenhuma delas.
+    //
+    // SEM `entidadeId`, igual ao caminho de um item so: o mapa de auditoria
+    // deriva o agregado de `linha.pedido_id` (mapa/mapoteca.js). Passar o id a
+    // mao aqui criaria um segundo caminho para a mesma resposta.
+    for (const criado of criados) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'mapoteca.produto_pedido',
+        registroId: criado.id,
+        operacao: 'I',
+        depois: criado,
+        usuarioUuid,
+        contexto
+      });
+    }
+
+    return criados.length;
+  });
+};
+
 controller.atualizaProdutoPedido = async (produtoPedido, usuarioUuid, contexto) => {
   const usuarioId = await getUsuarioId(usuarioUuid);
 

@@ -185,6 +185,9 @@ const COBERTAS = new Set([
   'PUT /pedido',
   'DELETE /pedido',
   'POST /produto_pedido',
+  // O LOTE: varios itens num POST so, numa transacao. Ele audita UM evento por
+  // item, e nao um do lote -- ver os casos em 'item em lote' mais abaixo.
+  'POST /produto_pedido/lote',
   'PUT /produto_pedido',
   'DELETE /produto_pedido',
   'POST /impressao',
@@ -579,6 +582,116 @@ describe('Rastreabilidade da mapoteca - pedido', () => {
       .get('/api/mapoteca/pedido/1/auditoria')
       .set('Authorization', generateAdminToken())
     expect(res.status).toBe(404)
+  })
+})
+
+// O LOTE de itens: POST /produto_pedido/lote.
+//
+// O que se guarda aqui nao e "grava varios", e sim que a gravacao e ATOMICA e
+// que a auditoria continua por ITEM. Meia gravacao e o defeito que a rota existe
+// para impedir: o client disparando N chamadas deixaria o pedido com duas folhas
+// das quatro, sem ninguem saber que faltam duas.
+describe('Rastreabilidade da mapoteca - item em lote', () => {
+  const corpoDoLote = (pedidoId, quantos = 3) => ({
+    pedido_id: pedidoId,
+    itens: Array.from({ length: quantos }, (_, i) => ({
+      nome_avulso: `Folha ${i + 1}`,
+      quantidade: 3,
+      tipo_midia_id: 6
+    }))
+  })
+
+  const postLote = (corpo, token = generateAdminToken()) => request(app)
+    .post('/api/mapoteca/produto_pedido/lote')
+    .set('Authorization', token)
+    .send(corpo)
+
+  it('grava os tres itens e audita UM evento por item, sob o pedido', async () => {
+    const clienteId = await criaCliente()
+    const pedidoId = await criaPedido(clienteId)
+
+    const res = await postLote(corpoDoLote(pedidoId, 3))
+    expect(res.status).toBe(201)
+
+    const itens = await conn.any(
+      'SELECT id, quantidade, tipo_midia_id FROM mapoteca.produto_pedido WHERE pedido_id = $1 ORDER BY id',
+      [pedidoId]
+    )
+    expect(itens).toHaveLength(3)
+    expect(itens.map(i => i.quantidade)).toEqual([3, 3, 3])
+
+    const criacoes = eventosDe(
+      await historico('pedido', pedidoId), 'mapoteca.produto_pedido', 'I'
+    )
+    expect(criacoes).toHaveLength(3)
+    // Cada evento aponta a SUA linha: um evento do lote nao responderia
+    // "quando esta folha entrou" por nenhuma delas.
+    expect(criacoes.map(e => Number(e.registro_id)).sort((a, b) => a - b))
+      .toEqual(itens.map(i => Number(i.id)))
+    for (const e of criacoes) expect(e.usuario_uuid).toBe(ADMIN_UUID)
+  })
+
+  it('o pedido_id vem de FORA do array, e vale para todos', async () => {
+    const clienteId = await criaCliente()
+    const pedidoId = await criaPedido(clienteId)
+
+    expect((await postLote(corpoDoLote(pedidoId, 2))).status).toBe(201)
+
+    const { count } = await conn.one(
+      'SELECT count(*)::int AS count FROM mapoteca.produto_pedido WHERE pedido_id = $1',
+      [pedidoId]
+    )
+    expect(count).toBe(2)
+  })
+
+  // A ATOMICIDADE, que e a razao da rota existir. O terceiro item aponta uma
+  // versao que nao existe: os dois primeiros NAO podem sobrar no pedido.
+  it('um item invalido derruba o lote inteiro, sem gravar nenhum', async () => {
+    const clienteId = await criaCliente()
+    const pedidoId = await criaPedido(clienteId)
+
+    const corpo = corpoDoLote(pedidoId, 2)
+    corpo.itens.push({
+      uuid_versao: '11111111-1111-1111-1111-111111111111',
+      quantidade: 1,
+      tipo_midia_id: 6
+    })
+
+    const res = await postLote(corpo)
+    expect(res.status).toBe(404)
+
+    const { count } = await conn.one(
+      'SELECT count(*)::int AS count FROM mapoteca.produto_pedido WHERE pedido_id = $1',
+      [pedidoId]
+    )
+    expect(count).toBe(0)
+
+    const criacoes = eventosDe(
+      await historico('pedido', pedidoId), 'mapoteca.produto_pedido', 'I'
+    )
+    expect(criacoes).toHaveLength(0)
+  })
+
+  it('pedido inexistente recusa, e nao grava', async () => {
+    const res = await postLote(corpoDoLote(99999999, 2))
+    expect(res.status).toBe(404)
+  })
+
+  it('array vazio nao passa do schema', async () => {
+    const clienteId = await criaCliente()
+    const pedidoId = await criaPedido(clienteId)
+
+    const res = await postLote({ pedido_id: pedidoId, itens: [] })
+    expect(res.status).toBe(400)
+  })
+
+  // Mesmo gate do POST de um item so: `verifyPerfil('gerente', 'mapoteca')`.
+  it('operador NAO adiciona item em lote', async () => {
+    const clienteId = await criaCliente()
+    const pedidoId = await criaPedido(clienteId)
+
+    const res = await postLote(corpoDoLote(pedidoId, 2), generateUserToken())
+    expect(res.status).toBe(403)
   })
 })
 

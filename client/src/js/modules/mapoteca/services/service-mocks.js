@@ -45,7 +45,7 @@ const OBJETOS = [
 const ACOES = [
   'createCliente', 'updateCliente', 'deleteClientes',
   'createPedido', 'updatePedido', 'deletePedidos',
-  'createProdutoPedido', 'updateProdutoPedido', 'deleteProdutosPedido',
+  'createProdutoPedido', 'createProdutosPedido', 'updateProdutoPedido', 'deleteProdutosPedido',
   'registrarImpressao', 'corrigirDataImpressao', 'deleteImpressoes',
   'createTipoMaterial', 'updateTipoMaterial', 'deleteTiposMaterial',
   // O estoque nao tem mutacao: o saldo e o acumulado do LIVRO, e quem o move e

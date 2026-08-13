@@ -207,6 +207,30 @@ models.produtoPedidoAtualizacao = Joi.object()
   })
   .xor('uuid_versao', 'nome_avulso')
 
+// VARIOS itens de uma vez, no MESMO pedido.
+//
+// O `pedido_id` sobe para FORA do array, e nao se repete em cada item. Repetido,
+// ele admitiria um lote com itens de pedidos diferentes -- que nao e um lote, e
+// sim dois, cada um com o seu agregado de auditoria. Aqui a forma do corpo
+// impede o caso em vez de o controller o recusar.
+//
+// Por isso os itens usam `produtoPedidoBase` SEM `pedido_id`, e o `.xor` de cada
+// um continua valendo: item de acervo OU avulso, exatamente um.
+//
+// Sem teto no array de proposito. O maior pedido da producao tem 132 itens
+// (2026-08-13), o corpo e pequeno e a gravacao e um INSERT de varias linhas numa
+// transacao. Um teto inventado aqui reprovaria o caso legitimo antes de existir
+// um numero medido que o justifique.
+const { pedido_id: _pedidoIdDoItem, ...itemDoLote } = produtoPedidoBase
+
+models.produtoPedidoLote = Joi.object().keys({
+  pedido_id: Joi.number().integer().required(),
+  itens: Joi.array()
+    .items(Joi.object().keys(itemDoLote).xor('uuid_versao', 'nome_avulso'))
+    .min(1)
+    .required()
+})
+
 models.produtoPedidoId = Joi.object().keys({
   id: Joi.number().integer().required()
 })

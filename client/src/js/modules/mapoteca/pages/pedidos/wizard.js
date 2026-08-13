@@ -284,6 +284,17 @@ export async function renderPedidoWizard(container, _ctx) {
         refreshItens();
         showSuccess('Produto adicionado à lista do pedido');
       },
+      // Aqui o pedido AINDA NAO EXISTE, entao o lote nao vai ao servidor: ele
+      // empilha na mesma lista em memoria que o botao de um item usa. Os itens
+      // chegam no formato {payload, display}, igual ao de cima, e por isso a
+      // tabela do passo 3 os desenha sem traducao nenhuma.
+      onSubmitLote: (novosItens) => {
+        itens.push(...novosItens);
+        refreshItens();
+        showSuccess(novosItens.length === 1
+          ? 'Produto adicionado à lista do pedido'
+          : `${novosItens.length} produtos adicionados à lista do pedido`);
+      },
     });
   }
 

@@ -444,6 +444,33 @@ router.delete(
 )
 
 // Rotas para Produto do Pedido
+
+// VARIOS itens de uma vez, no mesmo pedido.
+//
+// ROTA PROPRIA, e nao o POST de baixo passando a aceitar array. A de baixo e o
+// CRUD generico que o `mapoteca_cli` consome pelo mapa de recursos
+// (`recursos.js`), e ele posta UM objeto: trocar o contrato dela por um array
+// quebraria o CLI sem erro de sintaxe. Duas portas, com a de lote dizendo no
+// nome o que faz.
+//
+// ANTES da rota de baixo, e isso importa: o Express casa na ordem de registro, e
+// um dia em que alguem acrescentar POST '/produto_pedido/:id' o '/lote' cairia
+// nele se viesse depois.
+router.post(
+  '/produto_pedido/lote',
+  verifyPerfil('gerente', 'mapoteca'),
+  schemaValidation({
+    body: mapotecaSchema.produtoPedidoLote
+  }),
+  asyncHandler(async (req, res, next) => {
+    const total = await mapotecaCtrl.criaProdutosPedido(
+      req.body.pedido_id, req.body.itens, req.usuarioUuid, req.contexto
+    )
+    const msg = `${total} produto(s) adicionado(s) ao pedido com sucesso`
+    return res.sendJsonAndLog(true, msg, httpCode.Created)
+  })
+)
+
 router.post(
   '/produto_pedido',
   verifyPerfil('gerente', 'mapoteca'),

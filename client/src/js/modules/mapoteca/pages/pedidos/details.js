@@ -9,6 +9,7 @@ import {
   updatePedido,
   deletePedidos,
   createProdutoPedido,
+  createProdutosPedido,
   updateProdutoPedido,
   deleteProdutosPedido,
   getImpressaoItem,
@@ -350,6 +351,15 @@ export async function renderPedidoDetails(container, { params }) {
       onSubmit: async ({ payload }) => {
         await createProdutoPedido({ ...payload, pedido_id: pedidoId });
         showSuccess('Item adicionado ao pedido');
+        load();
+      },
+      // VARIOS produtos de uma vez, numa transacao. O `pedido_id` vai fora do
+      // array: um lote e de um pedido so.
+      onSubmitLote: async (itens) => {
+        await createProdutosPedido(pedidoId, itens.map(i => i.payload));
+        showSuccess(itens.length === 1
+          ? 'Item adicionado ao pedido'
+          : `${itens.length} itens adicionados ao pedido`);
         load();
       },
     });

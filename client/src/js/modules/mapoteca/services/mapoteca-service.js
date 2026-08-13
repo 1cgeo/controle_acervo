@@ -214,6 +214,25 @@ export function createProdutoPedido(item) {
   return apiPost(`${BASE}/produto_pedido`, item);
 }
 
+/**
+ * VÁRIOS itens de uma vez, no mesmo pedido, numa transação só.
+ *
+ * O `pedido_id` vai FORA do array e não se repete em cada item: um lote é de um
+ * pedido, e itens de pedidos diferentes seriam dois lotes.
+ *
+ * Rota própria (`/produto_pedido/lote`), e não o POST de um item aceitando
+ * array: aquele é o CRUD genérico que o `mapoteca_cli` consome, e ele posta um
+ * objeto.
+ *
+ * @param {number} pedidoId
+ * @param {Array<{uuid_versao?:string, nome_avulso?:string, quantidade:number, tipo_midia_id:number}>} itens
+ */
+export function createProdutosPedido(pedidoId, itens) {
+  invalidate('pedidos');
+  invalidate('dashboard');
+  return apiPost(`${BASE}/produto_pedido/lote`, { pedido_id: pedidoId, itens });
+}
+
 /** Same payload as createProdutoPedido plus `id`. */
 export function updateProdutoPedido(item) {
   invalidate('pedidos');
