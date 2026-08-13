@@ -8,11 +8,28 @@
 // ao default e reverte o que estava gravado. O valor errado entra calado, porque
 // ninguem o digitou.
 //
-// Este modulo tem TRES campos assim, e os tres respondem perguntas de sim ou
+// Este modulo tem QUATRO campos assim, e os quatro respondem perguntas de sim ou
 // nao que nao tem terceiro estado:
-//   equipamento.ativo             default true   (falso = bem BAIXADO)
+//   equipamento.ativo                default true   (falso = bem BAIXADO)
+//   equipamento.patrimonio_pendente  default false  (verdadeiro = numero por conferir)
 //   transferencia.transferido_siafi  default false
 //   transferencia.apropriado_siafi   default false
+//
+// O QUARTO ENTROU EM 2026-08-10, com a coluna `patrimonio_pendente`, e este
+// arquivo so foi atualizado em 2026-08-13: por tres dias o censo abaixo esteve
+// vermelho, dizendo TRES onde havia QUATRO. O guarda funcionou -- ele nao deixou
+// o campo novo passar calado --, e o que faltou foi ler o vermelho.
+//
+// O QUE ESTES CASOS GUARDAM, E O QUE ELES NAO GUARDAM. Eles substituem a rede,
+// entao provam o ciclo do CLI: dado um registro lido que TRAZ o campo, o PUT o
+// reenvia em vez de deixar o default reescreve-lo. Falsificado desligando o
+// reaproveitamento em `corpo.recortar`, e ai cinco casos ficam vermelhos.
+//
+// Eles NAO provam que a rota devolve a coluna, porque a resposta aqui e escrita
+// a mao. Que `SELECT_EQUIPAMENTO` (equipamento_ctrl.js) traz `patrimonio_pendente`
+// foi conferido por leitura do fonte, e nao por este arquivo. Se um dia a rota
+// parar de devolve-la, quem acusa e o aviso `ausentesComDefault` na hora do uso,
+// e nao um teste daqui.
 //
 // O que protege e o ciclo LER-MESCLAR-REENVIAR dos comandos de alteracao. Estes
 // casos rodam esse ciclo de ponta a ponta, com a rede substituida.
@@ -62,10 +79,10 @@ const corpoDoPut = (chamadas) => chamadas.find(c => c.metodo === 'PUT').corpo
 // O que o schema declara
 // ---------------------------------------------------------------------------
 
-test('sao exatamente TRES campos com default no modulo, e o CLI os enxerga', () => {
+test('sao exatamente QUATRO campos com default no modulo, e o CLI os enxerga', () => {
   assert.deepStrictEqual(
     esquema.camposComDefault(models.equipamentoAtualizar),
-    [{ nome: 'ativo', valor: true }]
+    [{ nome: 'patrimonio_pendente', valor: false }, { nome: 'ativo', valor: true }]
   )
   assert.deepStrictEqual(
     esquema.camposComDefault(models.transferenciaAtualizar),
@@ -91,7 +108,7 @@ test('DEFAULT E VALOR, e nao ausencia: o Joi o grava em quem o omite', () => {
   assert.strictEqual(r.ok, true)
   assert.strictEqual(r.valor.ativo, true, 'o default nao foi aplicado; o teste perdeu o sentido')
   // E o CLI ACUSA quem foi preenchido sem ninguem digitar.
-  assert.deepStrictEqual(r.preenchidos, ['ativo=true'])
+  assert.deepStrictEqual(r.preenchidos, ['patrimonio_pendente=false', 'ativo=true'])
 })
 
 test('a leitura que NAO traz o campo com default vira aviso, nunca silencio', () => {
@@ -102,7 +119,8 @@ test('a leitura que NAO traz o campo com default vira aviso, nunca silencio', ()
     modelo: 'TOPCON', secao_detentora_id: 1
   })
   assert.ok(!('ativo' in base))
-  assert.deepStrictEqual(ausentesComDefault, ['ativo=true'])
+  assert.ok(!('patrimonio_pendente' in base))
+  assert.deepStrictEqual(ausentesComDefault, ['patrimonio_pendente=false', 'ativo=true'])
 })
 
 // ---------------------------------------------------------------------------
@@ -172,6 +190,67 @@ test('`baixar` grava ativo = false e preserva o resto da linha', () => {
     assert.strictEqual(corpo.nr_serie, 'SP60-001')
     // E nada de `situacao_id` no corpo: ela e DERIVADA de `ativo`.
     assert.ok(!('situacao_id' in corpo))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// `patrimonio_pendente`: o aviso que nao pode se apagar sozinho
+// ---------------------------------------------------------------------------
+//
+// A coluna existe porque o Relatorio DMT de 2026-08-03 declarava o MESMO numero
+// de patrimonio em duas linhas, de bens diferentes. O bem entra com numero
+// provisorio e o sistema carrega o aviso ate alguem conferir a etiqueta.
+//
+// O default `false` e o mesmo modo de falha do `ativo`, e ao contrario: aqui o
+// PUT sem o campo APAGARIA o aviso. O bem passaria a se declarar conferido sem
+// que ninguem tivesse olhado a etiqueta, e a secao "Patrimonio por conferir" do
+// painel esvaziaria sozinha.
+const BEM_PENDENTE = {
+  id: 55,
+  nr_patrimonio: 'PROVISORIO-55',
+  patrimonio_pendente: true,
+  classe_id: 6, classe: 'VI',
+  tipo_id: 4, tipo: 'Conjunto de Rastreamento Satelital GNSS',
+  modelo: 'RUIDE RTK QUASAR R93I',
+  nr_serie: 'R93I-001',
+  data_entrada_carga: '2023-10-17T03:00:00.000Z',
+  vida_util_meses: 120, vida_util_herdada: true,
+  secao_detentora_id: 1, secao_detentora: 'Cia Lev',
+  ativo: true,
+  situacao_id: 1, situacao: 'Disponível',
+  observacao: null
+}
+
+test('alterar o modelo NAO apaga a marca de patrimonio por conferir', () => {
+  return comRede({
+    'GET /equipamento/55': { dados: BEM_PENDENTE },
+    'PUT /equipamento/55': { message: 'ok' }
+  }, async (chamadas) => {
+    await executar(comandoBem, ['alterar'], { id: '55', modelo: 'RUIDE RTK QUASAR R93I (rev)' })
+
+    const corpo = corpoDoPut(chamadas)
+    assert.strictEqual(
+      corpo.patrimonio_pendente, true,
+      'o aviso de patrimonio por conferir foi apagado pelo default'
+    )
+    assert.strictEqual(corpo.modelo, 'RUIDE RTK QUASAR R93I (rev)')
+    // E o bem continua ativo: os dois defaults do mesmo schema nao se atrapalham.
+    assert.strictEqual(corpo.ativo, true)
+  })
+})
+
+test('conferir a etiqueta e ato EXPLICITO: --patrimonio_pendente false', () => {
+  return comRede({
+    'GET /equipamento/55': { dados: BEM_PENDENTE },
+    'PUT /equipamento/55': { message: 'ok' }
+  }, async (chamadas) => {
+    await executar(comandoBem, ['alterar'], {
+      id: '55', nr_patrimonio: '104821500017430', patrimonio_pendente: 'false'
+    })
+
+    const corpo = corpoDoPut(chamadas)
+    assert.strictEqual(corpo.patrimonio_pendente, false)
+    assert.strictEqual(corpo.nr_patrimonio, '104821500017430')
   })
 })
 
