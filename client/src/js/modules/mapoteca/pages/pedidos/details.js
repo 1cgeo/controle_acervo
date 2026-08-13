@@ -997,6 +997,45 @@ export async function renderPedidoDetails(container, { params }) {
   ]);
 
   // --- Produtos do pedido ----------------------------------------------------
+  // --- Impressao em LOTE -----------------------------------------------------
+  //
+  // O caso que justifica: 43 dos 132 pedidos com item tem MAIS DE 20 itens, a
+  // mediana e 10 e o maior tem 132 (medido na producao em 2026-08-13). Um a um,
+  // preencher a impressao de um pedido desses e uma abertura de dialogo por
+  // item.
+  //
+  // NAO E ROTA NOVA. `POST /mapoteca/impressao` sempre recebeu `registros: [...]`
+  // e grava as N linhas numa transacao -- era o que o plugin QGIS ja usava, e a
+  // web era o unico client que mandava um array de um.
+  //
+  // A SELECAO SOBREVIVE a paginacao, a busca e a ordenacao, porque o data-table
+  // guarda CHAVES num Set e nao as linhas visiveis. E por isso que dava para
+  // acumular entre paginas mesmo antes do `selecionarTodos`.
+  const registrarSelecionados = () => {
+    const selecionados = produtosTable.getSelected();
+    if (!selecionados.length) return;
+    openRegistrarImpressaoDialog(selecionados, () => {
+      produtosTable.clearSelection();
+      load();
+    });
+  };
+
+  const registrarLoteBtn = el('button', {
+    className: 'btn btn--primary btn--sm hidden',
+    type: 'button',
+    onClick: registrarSelecionados,
+  }, [svgIcon(ICONS.print, 14), 'Registrar impressão']);
+
+  // "Selecionar todos os N" existe porque a caixa do cabecalho marca a PAGINA,
+  // e com pageSize 10 um pedido de 132 itens exigiria 14 viradas de pagina --
+  // justamente o pedido que mais precisa do lote. Ele respeita a BUSCA: filtrar
+  // por '25k' e mandar selecionar todos seleciona os 25k.
+  const selecionarTodosBtn = el('button', {
+    className: 'btn btn--text btn--sm hidden',
+    type: 'button',
+    onClick: () => produtosTable.selectAll(),
+  }, ['Selecionar todos']);
+
   const produtosTable = createDataTable({
     columns: [
       {
@@ -1085,6 +1124,18 @@ export async function renderPedidoDetails(container, { params }) {
     searchable: true,
     pageSize: 10,
     emptyMessage: 'Nenhum produto neste pedido',
+    // MESMO GATE do botao de registrar impressao da linha, e pelo mesmo motivo:
+    // ele espelha o verifyPerfil('operador') da rota. Sem escrita a coluna de
+    // selecao nao serviria para nada, entao quem so consulta nao a ve.
+    selectable: pode.operador,
+    onSelectionChange: (selecionados) => {
+      registrarLoteBtn.classList.toggle('hidden', selecionados.length === 0);
+      registrarLoteBtn.textContent = '';
+      registrarLoteBtn.appendChild(svgIcon(ICONS.print, 14));
+      registrarLoteBtn.appendChild(
+        document.createTextNode(`Registrar impressão (${selecionados.length})`)
+      );
+    },
     actions: [
       {
         icon: ICONS.schedule,
@@ -1133,6 +1184,11 @@ export async function renderPedidoDetails(container, { params }) {
       // /produto_pedido e gerente.
       el('div', { className: 'dashboard-section__controls' }, [
         resumoImpressao,
+        // Os dois de LOTE nascem escondidos: o "selecionar todos" aparece quando
+        // ha mais itens do que cabe numa pagina, e o "registrar" quando ha
+        // selecao. Ver o bloco "Impressao em LOTE" acima.
+        selecionarTodosBtn,
+        registrarLoteBtn,
         ...(pode.gerente ? [
           el('button', {
             className: 'btn btn--primary btn--sm',
@@ -1358,7 +1414,16 @@ export async function renderPedidoDetails(container, { params }) {
     textoImpressao.textContent =
       `${impressao.itens_concluidos ?? 0}/${impressao.total_itens ?? 0} itens impressos`;
 
-    produtosTable.update({ rows: pedido.produtos || [], loading: false });
+    const produtos = pedido.produtos || [];
+    produtosTable.update({ rows: produtos, loading: false });
+
+    // "Selecionar todos os N" so paga o espaco quando ha mais itens do que cabe
+    // numa pagina: com 10 ou menos, a caixa do cabecalho ja marca a tabela
+    // inteira e um segundo botao seria ruido. O numero vai no rotulo porque
+    // "todos" sem quantidade nao diz o tamanho do que se vai registrar.
+    const cabeNumaPagina = produtos.length <= 10;
+    selecionarTodosBtn.classList.toggle('hidden', !pode.operador || cabeNumaPagina);
+    selecionarTodosBtn.textContent = `Selecionar todos (${produtos.length})`;
   }
 
   async function load() {

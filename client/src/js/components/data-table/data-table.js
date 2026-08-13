@@ -49,7 +49,9 @@ function normalizeText(value) {
  * @param {(selected:Array<Object>)=>void} [options.onSelectionChange]
  * @param {string} [options.emptyMessage]
  * @param {boolean} [options.loading]
- * @returns {{element:HTMLElement, update:(rowsOrState:Array|{rows?:Array, loading?:boolean})=>void, getSelected:()=>Array<Object>, clearSelection:()=>void, _cleanup:()=>void}}
+ * @returns {{element:HTMLElement, update:(rowsOrState:Array|{rows?:Array, loading?:boolean})=>void, getSelected:()=>Array<Object>, selectAll:()=>void, clearSelection:()=>void, _cleanup:()=>void}}
+ *        - selectAll() marca todas as linhas do FILTRO atual, e não só as da
+ *          página. A caixa do cabeçalho continua sendo a da página.
  */
 export function createDataTable({
   columns,
@@ -198,6 +200,25 @@ export function createDataTable({
 
   function clearSelection() {
     selected.clear();
+    notifySelection();
+    render();
+  }
+
+  /**
+   * Marca TODAS as linhas que o filtro atual deixa passar, e nao so as da
+   * pagina.
+   *
+   * A caixa do cabecalho marca a PAGINA, de proposito: ela e a unica que pode
+   * desmarcar o que se ve. Mas com pageSize 10 um conjunto de 132 linhas exige
+   * 14 visitas de pagina para marcar tudo, e e justamente o conjunto grande que
+   * precisa da operacao em lote. Por isso a chamada existe separada, para a tela
+   * oferecer "selecionar todos os N" ao lado do botao de lote.
+   *
+   * Respeita a BUSCA: quem filtrou por '25k' e mandou selecionar todos quer os
+   * 25k, e nao a tabela inteira. Por isso le `getFilteredRows()` e nao `allRows`.
+   */
+  function selectAll() {
+    getFilteredRows().forEach(r => selected.add(keyOf(r)));
     notifySelection();
     render();
   }
@@ -626,5 +647,5 @@ export function createDataTable({
 
   render();
 
-  return { element: wrapper, update, getSelected, clearSelection, _cleanup };
+  return { element: wrapper, update, getSelected, selectAll, clearSelection, _cleanup };
 }
