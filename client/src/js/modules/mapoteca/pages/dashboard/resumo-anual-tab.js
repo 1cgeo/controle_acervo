@@ -1,5 +1,5 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { formatNumber, formatCurrency } from '@utils/format.js';
+import { formatNumber } from '@utils/format.js';
 import { showError, showSuccess } from '@utils/toast.js';
 import { createBarChart } from '@components/charts/bar-chart.js';
 import { mostrarErroNoGrafico } from '@components/estado-erro.js';
@@ -86,7 +86,10 @@ export async function renderResumoAnualTab(container, getAno) {
     totalEntregas: summaryCard('Produtos entregues'),
     omsDistintas: summaryCard('OMs distintas'),
     operacoesDistintas: summaryCard('Operações apoiadas'),
-    custoManutencao: summaryCard('Custo de manutenção'),
+    // SEM "Custo de manutenção" desde 2026-08-13. Ele somava
+    // `mapoteca.manutencao_plotter`, tabela vazia na produção, e por isso dizia
+    // "Sem registro" todo ano. O cartão existe no painel do módulo Equipamento,
+    // lendo `equipamento.manutencao`, que é onde a manutenção do plotter mora.
   };
 
   // A CURVA DE ENTREGA do ano, que faltava na tela.
@@ -244,15 +247,6 @@ export async function renderResumoAnualTab(container, getAno) {
       cards.totalEntregas.setValue(formatNumber(resumo.total_entregas));
       cards.omsDistintas.setValue(formatNumber(resumo.oms_distintas_count));
       cards.operacoesDistintas.setValue(formatNumber(resumo.operacoes_distintas_count));
-      // Ausência de fonte não é zero. O servidor manda null quando o ano não
-      // tem NENHUM registro de manutenção, e o cartão diz "Sem registro". O
-      // R$ 0,00 fica reservado para registro que soma zero. Com
-      // `mapoteca.manutencao_plotter` vazia, R$ 0,00 se leria como custo medido.
-      cards.custoManutencao.setValue(
-        resumo.custo_manutencao_total == null
-          ? 'Sem registro'
-          : formatCurrency(resumo.custo_manutencao_total)
-      );
     } else {
       showError(resumoRes.reason?.message || 'Erro ao carregar o resumo anual');
     }

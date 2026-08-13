@@ -1621,11 +1621,27 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
   a etiqueta se repete de um ano para o outro ('Extra-PIT', '5ª DE'). E a lista passou a MOSTRAR
   `palavras_chave`: lista que filtra por algo que não mostra deixa quem filtrou sem saber por que
   aquela linha entrou.
-- **`impressao_item`, `plotter` e `manutencao_plotter` NÃO foram podadas** (chefe), embora a
-  cardinalidade de hoje seja 1:1 e convide a isso. A impressão é ATO FÍSICO: um soldado imprime, pode
-  levar mais de um dia, pode parar no meio, e é preciso saber quem imprimiu o quê e quando. A
-  cardinalidade atual é acidente da carga inicial, e não do processo, e colapsar a tabela numa coluna
-  do item trocaria o histórico por um número que só responde "quanto", nunca "quem" nem "quando".
+- **`impressao_item` NÃO foi podada** (chefe), embora a cardinalidade de hoje seja 1:1 e convide a
+  isso. A impressão é ATO FÍSICO: um soldado imprime, pode levar mais de um dia, pode parar no meio,
+  e é preciso saber quem imprimiu o quê e quando. A cardinalidade atual é acidente da carga inicial,
+  e não do processo, e colapsar a tabela numa coluna do item trocaria o histórico por um número que
+  só responde "quanto", nunca "quem" nem "quando".
+- **A mapoteca NÃO tem plotter, e isso é decisão do chefe de 2026-08-13.** `mapoteca.plotter` e
+  `mapoteca.manutencao_plotter` saíram do banco, junto com dez rotas, a tela de lista, a ficha, o
+  diálogo, dez funções de serviço, dois recursos do `mapoteca_cli` e dois agregados do mapa de
+  auditoria. Elas estavam **VAZIAS na produção**, e sempre estiveram: zero linhas em cada uma, e zero
+  eventos em `auditoria.evento`. O plotter é EQUIPAMENTO, e são 5 dos 105 bens de
+  `equipamento.equipamento`, com número de patrimônio, classe de suprimento e seção detentora que
+  aqui não havia onde escrever. A manutenção dele é `equipamento.manutencao`, que guarda `data_fim`,
+  `valor_orcado`, `valor_pdr` e o vínculo com a indisponibilidade que a subseção 7.1 do RPCMTec
+  conta. A migração `2026-08-08_modulo_equipamento.sql` já anunciava a fase no item 4 dela; o que
+  parecia migração de dado virou poda, porque não havia linha para mover.
+- **O cartão "Custo de manutenção" saiu do Resumo Anual da mapoteca, e fica só no painel do
+  Equipamento** (chefe, 2026-08-13). Os dois existiam ao mesmo tempo e respondiam a mesma pergunta
+  com números diferentes: o da mapoteca somava a tabela vazia e dizia "Sem registro", e o do
+  Equipamento lê `equipamento.manutencao`. Ficou o que tem fonte. O que a mapoteca guarda de
+  impressão continua dela, e é outra coisa: os INSUMOS (cartucho, papel, cabeçote) e o que saiu da
+  impressora em `impressao_item`.
 - **A ESCALA de item de pedido nunca sai NULA, e quem garante isso é UM fragmento de SQL.** O item
   avulso não tem carta e por isso não tem escala, e a ausência vira `'Sem escala'` no `COALESCE` do
   `ESCALA_DISPLAY_ITEM`, e não em cada consulta: repetido consulta a consulta, o relatório que

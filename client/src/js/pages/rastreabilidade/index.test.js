@@ -225,7 +225,7 @@ describe('rastreabilidade: rota, destino e filtro', () => {
     const DO_SERVIDOR = [
       'campo', 'capacitacao', 'cliente', 'dfd', 'dominio', 'edicao', 'equipamento',
       'exercicio', 'extra_pit', 'licitacao', 'manutencao', 'material', 'meta',
-      'nota_credito', 'nota_empenho', 'pdr', 'pedido', 'plotter', 'ponto',
+      'nota_credito', 'nota_empenho', 'pdr', 'pedido', 'ponto',
       'produto', 'projeto', 'rpnp', 'tipo_equipamento', 'usuario', 'volume',
     ];
 

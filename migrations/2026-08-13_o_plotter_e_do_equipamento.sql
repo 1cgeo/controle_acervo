@@ -1,0 +1,134 @@
+-- O PLOTTER SAI DA MAPOTECA. ELE E EQUIPAMENTO.
+--
+-- O QUE HAVIA. `mapoteca.plotter` e `mapoteca.manutencao_plotter`, com dez rotas
+-- de API, uma tela de lista, uma ficha, um dialogo, dez funcoes de servico, dois
+-- recursos no `mapoteca_cli` e dois agregados no mapa de auditoria. As duas
+-- tabelas nasceram porque quem conserta o plotter e quem atende a mapoteca, e na
+-- epoca nao havia outro lugar para por um bem da Divisao.
+--
+-- ELAS ESTAVAM VAZIAS. Medido na producao em 2026-08-13:
+--
+--   mapoteca.plotter              0 linhas
+--   mapoteca.manutencao_plotter   0 linhas
+--
+-- Nunca tiveram uma linha sequer, e `auditoria.evento` confirma: zero eventos
+-- para as duas tabelas, desde que a auditoria existe. A tela de Plotters abria,
+-- listava nada e oferecia o botao de cadastrar. Quem clicasse nele criaria um
+-- SEXTO plotter, invisivel para o Relatorio DMT.
+--
+-- ONDE OS PLOTTERES ESTAO DE VERDADE. Em `equipamento.equipamento`, como 5 dos
+-- 105 bens, todos do tipo 'Impressora de Grande Formato (Plotter)': o HP Latex
+-- 335 da Cia Lev e quatro HP DesignJet T1700 da Cia Prod. La eles tem numero de
+-- patrimonio, classe de suprimento, secao detentora e data de entrada em carga,
+-- que aqui nao havia onde escrever.
+--
+-- ESTA E A FASE QUE A 2026-08-08 ANUNCIOU, no item 4 do cabecalho dela: "OS
+-- PLOTTERES FICAM ONDE ESTAO, POR ENQUANTO... Move-los e uma fase propria, com
+-- migracao propria". A fase chegou, e ela nao move NADA: nao ha linha para
+-- mover. O que parecia migracao de dado e apenas poda.
+--
+-- O QUE O EQUIPAMENTO FAZ MELHOR, e por isso a mapoteca nao fica devendo:
+--
+--   `mapoteca.plotter` tinha ativo, nr_serie, modelo, data_aquisicao e
+--   vida_util. `equipamento.equipamento` tem os cinco e mais o patrimonio, a
+--   classe, o tipo e a secao. A situacao nao e coluna la: e
+--   `equipamento.situacao_em(dia)`, que responde pelo DIA perguntado.
+--
+--   `mapoteca.manutencao_plotter` tinha data_manutencao, valor e descricao.
+--   `equipamento.manutencao` tem data_inicio E data_fim (a de la sabia so
+--   quando comecou), valor, valor_orcado, valor_pdr, certame, e o vinculo com a
+--   indisponibilidade que a subsecao 7.1 do RPCMTec conta todo mes.
+--
+-- O CARTAO DE CUSTO DE MANUTENCAO SAI DO RESUMO ANUAL DA MAPOTECA, e nao morre:
+-- ele ja existe no painel do modulo Equipamento, lendo `equipamento.manutencao`
+-- (o proprio `equipamento_ctrl.js` o cita como "o cartao que veio do Resumo
+-- Anual da mapoteca"). Ate hoje as duas telas respondiam a mesma pergunta com
+-- numeros diferentes: a da mapoteca dizia "Sem registro", por ler a tabela
+-- vazia, e a do Equipamento dizia o que a fonte tem. Decisao do chefe em
+-- 2026-08-13: fica so a que tem fonte.
+--
+-- O RAIO DE EXPLOSAO. Dois DROP TABLE de tabelas VAZIAS. Conferido contra a
+-- producao em 2026-08-13, por tres consultas ao catalogo:
+--
+--   pg_depend juntado a pg_rewrite    0 views ou regras dependentes
+--   pg_constraint por confrelid       1 FK, `manutencao_plotter_plotter_id_fkey`,
+--                                     que e entre as DUAS e cai junto
+--   pg_trigger (nao internos)         0 gatilhos
+--
+-- Nenhum objeto de fora as alcanca. O que se perde e a ESTRUTURA, nunca dado.
+-- Sem o DROP CASCADE de proposito: se alguma dependencia nascer entre esta
+-- medicao e a aplicacao, o DROP tem de FALHAR e me avisar, nunca arrastar junto
+-- um objeto que eu nao contei.
+--
+-- A ORDEM IMPORTA, E ESTA E DESTRUTIVA. O container que roda hoje ainda tem as
+-- dez rotas, e elas fazem SELECT nestas tabelas: com o banco migrado e o codigo
+-- velho no ar, a tela de Plotters cai em 500 em vez de listar vazio.
+--
+-- Migracao ADITIVA tolera a janela entre migrar e trocar o container, e o
+-- `levantar_servico.md` registra a medida (o codigo anterior serviu horas contra
+-- o banco ja migrado, sem incidente). Esta NAO e aditiva, entao vale a outra
+-- ordem do mesmo documento:
+--
+--   1. `docker build` da imagem nova, com o container ATUAL ainda servindo
+--   2. `docker stop` do container
+--   3. esta migracao
+--   4. `docker run` da imagem nova
+--
+-- Assim nao existe instante em que codigo velho veja banco novo. Inverter para
+-- "sobe o codigo, depois o banco" tambem funciona aqui, porque o codigo novo
+-- nao le as tabelas e tolera as duas formas, mas custa uma janela em que o
+-- `DROP` pode esbarrar numa consulta em voo. E o mesmo tropeco de
+-- `pit.meta.descricao`, registrado no vault.
+
+BEGIN;
+
+DROP TABLE IF EXISTS mapoteca.manutencao_plotter;
+DROP TABLE IF EXISTS mapoteca.plotter;
+
+UPDATE public.versao SET nome = '3.6.0' WHERE code = 1;
+
+COMMIT;
+
+-- PARA CONFERIR. As duas tabelas sumiram, e o schema mapoteca continua inteiro:
+--
+--   SELECT table_name FROM information_schema.tables
+--    WHERE table_schema = 'mapoteca' AND table_name LIKE '%plotter%';
+--   -- tem de voltar ZERO linhas
+--
+--   SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'mapoteca';
+--   -- as demais tabelas da mapoteca continuam la
+--
+-- E o plotter continua existindo, do outro lado:
+--
+--   SELECT e.nr_patrimonio, e.modelo
+--     FROM equipamento.equipamento AS e
+--     INNER JOIN equipamento.tipo_equipamento AS t ON t.id = e.tipo_id
+--    WHERE t.nome = 'Impressora de Grande Formato (Plotter)';
+--   -- 5 linhas em 2026-08-13
+--
+-- PARA DESFAZER. O desfazer devolve a ESTRUTURA, e so ela: nao havia dado. O
+-- DDL abaixo e copia literal do que `er/mapoteca.sql` trazia ate esta revisao.
+--
+--   BEGIN;
+--   CREATE TABLE mapoteca.plotter(
+--       id SERIAL NOT NULL PRIMARY KEY,
+--       ativo BOOLEAN NOT NULL DEFAULT TRUE,
+--       nr_serie VARCHAR(255) NOT NULL,
+--       modelo VARCHAR(255) NOT NULL,
+--       data_aquisicao DATE,
+--       vida_util INTEGER
+--   );
+--   CREATE TABLE mapoteca.manutencao_plotter (
+--       id SERIAL PRIMARY KEY,
+--       plotter_id INTEGER NOT NULL REFERENCES mapoteca.plotter(id),
+--       data_manutencao DATE NOT NULL,
+--       valor DECIMAL(10, 2) NOT NULL,
+--       descricao TEXT,
+--       usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
+--       usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
+--       data_criacao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+--       data_atualizacao TIMESTAMP WITH TIME ZONE
+--   );
+--   CREATE INDEX idx_manutencao_plotter_plotter ON mapoteca.manutencao_plotter(plotter_id);
+--   UPDATE public.versao SET nome = '3.5.0' WHERE code = 1;
+--   COMMIT;

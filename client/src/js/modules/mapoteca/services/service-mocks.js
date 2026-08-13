@@ -22,7 +22,7 @@ import { vi } from 'vitest';
 const LISTAS = [
   'getDominioTipoCliente', 'getDominioSituacaoPedido', 'getDominioCanalRecebimento',
   'getDominioTipoMidia', 'getDominioFormaEntrega',
-  'getClientes', 'getPedidos', 'getPlotters', 'getManutencoes', 'getTiposMaterial',
+  'getClientes', 'getPedidos', 'getTiposMaterial',
   'getEstoqueMaterial', 'getMovimentosMaterial',
   'getConsumoMensal', 'getOrdersTimeline', 'getClientActivity',
   'getPendingOrders', 'getStockByLocation', 'getEntregasPorTipoProduto',
@@ -36,10 +36,9 @@ const LISTAS = [
 
 /** Leituras que devolvem objeto. O default e `{}`. */
 const OBJETOS = [
-  'getCliente', 'getPedido', 'getPedidoPorLocalizador', 'getPlotter',
-  'getTipoMaterial',
+  'getCliente', 'getPedido', 'getPedidoPorLocalizador', 'getTipoMaterial',
   'getImpressaoItem', 'getOrderStatus', 'getAvgFulfillmentTime',
-  'getMaterialConsumption', 'getPlotterStatus', 'getResumoAnual',
+  'getMaterialConsumption', 'getResumoAnual',
 ];
 
 /** Mutacoes e downloads. O default e `null`. */
@@ -48,8 +47,6 @@ const ACOES = [
   'createPedido', 'updatePedido', 'deletePedidos',
   'createProdutoPedido', 'updateProdutoPedido', 'deleteProdutosPedido',
   'registrarImpressao', 'corrigirDataImpressao', 'deleteImpressoes',
-  'createPlotter', 'updatePlotter', 'deletePlotters',
-  'createManutencao', 'updateManutencao', 'deleteManutencoes',
   'createTipoMaterial', 'updateTipoMaterial', 'deleteTiposMaterial',
   // O estoque nao tem mutacao: o saldo e o acumulado do LIVRO, e quem o move e
   // um movimento.

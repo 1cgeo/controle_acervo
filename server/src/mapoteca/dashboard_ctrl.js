@@ -491,60 +491,6 @@ controller.getMaterialConsumptionTrends = async (ano) => {
   });
 };
 
-// Plotter Status
-controller.getPlotterStatus = async () => {
-  return db.conn.task(async t => {
-    // Overall plotter status
-    const statusSummary = await t.one(`
-      SELECT 
-        COUNT(*) AS total,
-        COALESCE(SUM(CASE WHEN ativo THEN 1 ELSE 0 END), 0) AS ativos,
-        COALESCE(SUM(CASE WHEN NOT ativo THEN 1 ELSE 0 END), 0) AS inativos
-      FROM mapoteca.plotter
-    `);
-
-    const plotters = await t.any(`
-      WITH ultima_manutencao AS (
-        SELECT 
-          plotter_id,
-          MAX(data_manutencao) AS data_ultima_manutencao,
-          SUM(valor) AS custo_total_manutencao
-        FROM mapoteca.manutencao_plotter
-        GROUP BY plotter_id
-      )
-      SELECT 
-        p.id, 
-        p.ativo, 
-        p.nr_serie, 
-        p.modelo, 
-        p.data_aquisicao,
-        p.vida_util,
-        um.data_ultima_manutencao,
-        um.custo_total_manutencao,
-        CASE 
-          WHEN p.data_aquisicao IS NULL OR p.vida_util IS NULL THEN NULL
-          WHEN p.data_aquisicao + (p.vida_util || ' months')::interval < current_date THEN true
-          ELSE false
-        END AS fim_vida_util
-      FROM mapoteca.plotter p
-      LEFT JOIN ultima_manutencao um ON p.id = um.plotter_id
-      ORDER BY p.ativo DESC, p.modelo, p.nr_serie
-    `);
-
-    return {
-      sumario: {
-        total: parseInt(statusSummary.total),
-        ativos: parseInt(statusSummary.ativos),
-        inativos: parseInt(statusSummary.inativos)
-      },
-      plotters: plotters.map(p => ({
-        ...p,
-        custo_total_manutencao: p.custo_total_manutencao ? parseFloat(p.custo_total_manutencao) : 0
-      }))
-    };
-  });
-};
-
 // Entregas por tipo de produto × escala no ano
 controller.getEntregasPorTipoProduto = async (ano) => {
   return db.conn.any(
@@ -622,12 +568,19 @@ controller.getOperacoesApoiadas = async (ano) => {
   );
 };
 
-// Resumo anual: totais de pedidos, entregas, OMs, operações e custo de manutenção
+// Resumo anual: totais de pedidos, entregas, OMs e operações.
+//
+// SEM O CARTÃO DE CUSTO DE MANUTENÇÃO, desde 2026-08-13. Ele somava
+// `mapoteca.manutencao_plotter`, tabela que estava VAZIA na produção e por isso
+// respondia "Sem registro" todo ano. O MESMO cartão já existe no painel do
+// módulo Equipamento, lendo `equipamento.manutencao` (ver o comentário em
+// `equipamento_ctrl.js`, que o cita pelo nome). Duas telas respondiam a mesma
+// pergunta com números diferentes, e a que tinha a fonte é a de lá.
 controller.getResumoAnual = async (ano) => {
   const row = await db.conn.one(
     `
     SELECT p.total_pedidos, p.oms_distintas_count, o.operacoes_distintas_count,
-           e.total_entregas, m.manutencoes_count, m.custo_manutencao_total
+           e.total_entregas
     FROM (
       SELECT
         COUNT(*)::int AS total_pedidos,
@@ -660,31 +613,11 @@ controller.getResumoAnual = async (ano) => {
       JOIN mapoteca.pedido ped ON ped.id = pp.pedido_id
       WHERE ${FILTRO_ENTREGUE_ANO}
     ) e
-    CROSS JOIN (
-      -- A CONTAGEM de linhas sai junto da soma, e o COALESCE saiu de proposito.
-      -- Ano sem nenhuma manutencao registrada devolve NULL, e a tela diz "sem
-      -- registro"; ano com registro somando zero devolve 0 e mostra R$ 0,00.
-      -- Sao coisas diferentes: com mapoteca.manutencao_plotter vazia, o
-      -- R$ 0,00 do cartao e ausencia de fonte, e nao custo medido.
-      SELECT COUNT(*)::int AS manutencoes_count,
-             SUM(valor)::float8 AS custo_manutencao_total
-      FROM mapoteca.manutencao_plotter
-      WHERE ${filtroAno("data_manutencao")}
-    ) m
     `,
     { ano, situacoesEntregue: SITUACOES_ENTREGUE }
   );
 
-  return {
-    ano,
-    ...row,
-    // Null só quando NÃO HÁ linha. Havendo linha, a soma vale, inclusive zero.
-    // O segundo caso cobre a linha com valor nulo, que somaria NULL e seria
-    // confundida com ausência de registro.
-    custo_manutencao_total: row.manutencoes_count > 0
-      ? Number(row.custo_manutencao_total || 0)
-      : null
-  };
+  return { ano, ...row };
 };
 
 // Entregas por mês (reproduz a tabela-resumo mensal da aba Detalhado:

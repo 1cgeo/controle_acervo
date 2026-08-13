@@ -27,8 +27,6 @@ import { renderPedidoWizard } from './pages/pedidos/wizard.js';
 import { renderPedidoDetails } from './pages/pedidos/details.js';
 import { renderInsumosList } from './pages/insumos/list.js';
 import { renderInsumoFicha } from './pages/insumos/ficha.js';
-import { renderPlottersList } from './pages/plotters/list.js';
-import { renderPlotterDetails } from './pages/plotters/details.js';
 
 // Os conjuntos de tela da mapoteca. Sao LISTAS de perfil, e nao nivel minimo,
 // porque o operador daqui nao e consulta com mais poder:
@@ -56,7 +54,7 @@ export default {
   home: '/dashboard',
 
   // Ordem: Dashboard abre o modulo, Atender pedidos vem logo depois, e Insumos
-  // fica entre Pedidos e Plotters, onde o trio de material ficava.
+  // fecha a lista, onde o trio de material ficava.
   //
   // UM ITEM DE MATERIAL, E NAO TRES. "Tipos de Material", "Estoque" e "Consumo
   // de material" eram tres entradas de menu para a mesma pergunta -- "como esta
@@ -80,7 +78,12 @@ export default {
     //
     { id: 'pedidos', label: 'Pedidos', icon: ICONS.assignment, path: '/pedidos' },
     { id: 'insumos', label: 'Insumos', icon: ICONS.category, path: '/insumos' },
-    { id: 'plotters', label: 'Plotters', icon: ICONS.print, path: '/plotters' },
+    // SEM item de PLOTTERS desde 2026-08-13. O plotter e EQUIPAMENTO, e mora no
+    // modulo Equipamento com os outros 104 bens. A tela daqui listava
+    // `mapoteca.plotter`, tabela que estava vazia na producao e sempre esteve,
+    // e o botao de cadastrar dela criava um sexto plotter que o Relatorio DMT
+    // nao conheceria. Quem procura plotter abre #/equipamento/bens.
+    //
     // SEM item de RPCMTec: ele e tela de PLATAFORMA (#/rpcmtec). O relatorio e
     // da Divisao inteira, e daqui sairia so metade dele.
   ],
@@ -114,8 +117,6 @@ export default {
     // verifyPerfil('operador', 'mapoteca') do servidor, nunca este campo.
     { path: '/insumos', render: renderInsumosList, perfil: 'consulta' },
     { path: '/insumos/:id', render: renderInsumoFicha, perfil: 'consulta' },
-    { path: '/plotters', render: renderPlottersList, perfis: LEITURA },
-    { path: '/plotters/:id', render: renderPlotterDetails, perfis: LEITURA },
   ],
 
   // SEM `navbarExtras`. Nao ha seletor de ano na navbar: um so para o modulo

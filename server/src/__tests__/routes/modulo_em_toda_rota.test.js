@@ -35,7 +35,13 @@ const SRC = path.resolve(__dirname, '..', '..')
 // routes/pit_route.test.js e routes/rpcmtec.test.js.
 const MODULOS = [
   { nome: 'orcamento', piso: 55 },
-  { nome: 'mapoteca', piso: 80 },
+  // O PISO DA MAPOTECA CAIU DE 80 PARA 71 em 2026-08-13, e a queda e deliberada.
+  // As dez rotas de `/plotter` e `/manutencao_plotter` sairam, mais a
+  // `/plotter_status` do dashboard: o plotter e bem do modulo Equipamento, e as
+  // duas tabelas que elas serviam estavam VAZIAS na producao. Nenhuma rota
+  // perdeu a guarda -- elas deixaram de existir, e as 71 restantes continuam com
+  // o segundo argumento explicito, que e o que o teste acima varre.
+  { nome: 'mapoteca', piso: 71 },
   // EQUIPAMENTO entrou em 2026-08-08, no dia em que o módulo nasceu, e não
   // meses depois: era esta a armadilha do CLAUDE.md ("em producao e em efetivo,
   // ninguem cobra por voce"), e um módulo novo que ficasse de fora daqui a

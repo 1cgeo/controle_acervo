@@ -147,34 +147,10 @@ module.exports = {
     }
   },
 
-  // --- Agregado: plotter ----------------------------------------------------
-
-  'mapoteca.plotter': {
-    modulo: 'mapoteca',
-    entidade: 'plotter',
-    agregado: (t, linha) => linha.id,
-    resumo: linha => `Plotter ${linha.nr_serie || linha.modelo || `#${linha.id}`}`,
-    campos: {
-      nr_serie: { rotulo: 'Número de série' },
-      modelo: { rotulo: 'Modelo' },
-      data_aquisicao: { rotulo: 'Data de aquisição', tipo: 'data' },
-      vida_util: { rotulo: 'Vida útil', tipo: 'numero' },
-      ativo: { rotulo: 'Ativo', tipo: 'booleano' }
-    }
-  },
-
-  'mapoteca.manutencao_plotter': {
-    modulo: 'mapoteca',
-    entidade: 'plotter',
-    agregado: (t, linha) => linha.plotter_id,
-    resumo: linha => `Manutenção de ${linha.data_manutencao || 'data não informada'}`,
-    campos: {
-      data_manutencao: { rotulo: 'Data da manutenção', tipo: 'data' },
-      valor: { rotulo: 'Valor', tipo: 'dinheiro' },
-      descricao: { rotulo: 'Descrição' },
-      plotter_id: { rotulo: 'Plotter', entidade: 'plotter' }
-    }
-  },
+  // SEM AGREGADO DE PLOTTER. `mapoteca.plotter` e `mapoteca.manutencao_plotter`
+  // saíram do banco em 2026-08-13, e o plotter passou a ser bem do módulo
+  // Equipamento. As duas entradas daqui nunca registraram um evento sequer: as
+  // tabelas estavam vazias quando a auditoria nasceu, e continuaram vazias.
 
   // --- Agregado: material ---------------------------------------------------
   // Tipo, estoque e movimento se leem JUNTOS: o saldo e o acumulado do livro, e

@@ -367,28 +367,24 @@ CREATE TABLE mapoteca.impressao_item(
 
 CREATE INDEX idx_impressao_item_produto_pedido ON mapoteca.impressao_item(produto_pedido_id);
 
-CREATE TABLE mapoteca.plotter(
-	id SERIAL NOT NULL PRIMARY KEY,
-    ativo BOOLEAN NOT NULL DEFAULT TRUE,
-	nr_serie VARCHAR(255) NOT NULL,
-    modelo VARCHAR(255) NOT NULL,
-    data_aquisicao DATE,
-    vida_util INTEGER
-);
-
-CREATE TABLE mapoteca.manutencao_plotter (
-    id SERIAL PRIMARY KEY,
-    plotter_id INTEGER NOT NULL REFERENCES mapoteca.plotter(id),
-    data_manutencao DATE NOT NULL,
-    valor DECIMAL(10, 2) NOT NULL,
-    descricao TEXT,
-    usuario_criacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
-    usuario_atualizacao_id INTEGER NOT NULL REFERENCES dgeo.usuario(id),
-    data_criacao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    data_atualizacao TIMESTAMP WITH TIME ZONE
-);
-
-CREATE INDEX idx_manutencao_plotter_plotter ON mapoteca.manutencao_plotter(plotter_id);
+-- AQUI NAO HA PLOTTER, E ELE NAO FOI ESQUECIDO.
+--
+-- `mapoteca.plotter` e `mapoteca.manutencao_plotter` existiram ate 2026-08-13, e
+-- sairam vazias: zero linhas em cada uma na producao, e zero eventos em
+-- `auditoria.evento` desde que a auditoria existe. Elas nasceram porque quem
+-- conserta o plotter e quem atende a mapoteca, numa epoca em que a Divisao nao
+-- tinha onde guardar bem nenhum.
+--
+-- O plotter e EQUIPAMENTO, e mora em `er/equipamento.sql`: 5 dos 105 bens, do
+-- tipo 'Impressora de Grande Formato (Plotter)', com numero de patrimonio,
+-- classe de suprimento e secao detentora que aqui nao havia onde escrever. A
+-- manutencao dele e `equipamento.manutencao`, que guarda `data_fim`,
+-- `valor_orcado`, `valor_pdr` e o vinculo com a indisponibilidade da subsecao
+-- 7.1 do RPCMTec.
+--
+-- O que a mapoteca guarda de impressao continua aqui, e e outra coisa: os
+-- INSUMOS (cartucho, papel, cabecote) em `tipo_material` e no livro de
+-- movimentos, e o que saiu da impressora em `impressao_item`.
 
 CREATE TABLE mapoteca.tipo_material (
     id SERIAL PRIMARY KEY,
@@ -708,7 +704,7 @@ CREATE TABLE mapoteca.etiqueta_envio(
 -- (er/auditoria.sql, schema proprio).
 --
 -- A razao esta na coluna que ela teria: `pedido_id BIGINT NOT NULL` amarra o
--- historico ao pedido, e cliente, plotter, tipo de material, produto do acervo,
+-- historico ao pedido, e cliente, tipo de material, produto do acervo,
 -- nota de empenho e usuario nao tem pedido nenhum. A tabela comum troca o pedido
 -- por (modulo, entidade, entidade_id), e o pedido e um agregado entre outros --
 -- o historico dele traz item, impressao e etiqueta juntos, pelo mapa de

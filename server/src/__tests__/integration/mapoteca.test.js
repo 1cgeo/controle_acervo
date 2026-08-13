@@ -5,7 +5,7 @@
 // O que este arquivo NÃO faz: exercitar CRUD por SQL cru. `INSERT ... RETURNING
 // id` seguido de `expect(id).toBeDefined()` prova que o PostgreSQL devolve o
 // que se mandou gravar, e não que o sistema funciona. O CRUD de cliente,
-// pedido, plotter, manutenção e estoque passa por controller e tem prova em
+// pedido e estoque passa por controller e tem prova em
 // `routes/mapoteca.test.js`, pelas rotas de verdade.
 //
 // O que sobra aqui é o que só o banco decide, e que nenhum teste de rota

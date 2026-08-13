@@ -1453,32 +1453,6 @@ describe('Mapoteca Routes', () => {
     })
   })
 
-  describe('Plotters', () => {
-    it('POST /api/mapoteca/plotter should create plotter (admin)', async () => {
-      const res = await request(app)
-        .post('/api/mapoteca/plotter')
-        .set('Authorization', generateAdminToken())
-        .send({
-          ativo: true,
-          nr_serie: 'SN-ROUTE-001',
-          modelo: 'HP DesignJet T1600',
-          data_aquisicao: null,
-          vida_util: null
-        })
-
-      expect(res.status).toBe(201)
-    })
-
-    it('GET /api/mapoteca/plotter should return list with auth', async () => {
-      const res = await request(app)
-        .get('/api/mapoteca/plotter')
-        .set('Authorization', generateUserToken())
-
-      expect(res.status).toBe(200)
-      expect(res.body.success).toBe(true)
-    })
-  })
-
   describe('Relatórios', () => {
     // Cenário: pedido militar 2026 com carta topo 1:50.000 entregue
     const setupPedidoMilitar = async () => {
@@ -2391,12 +2365,15 @@ describe('Mapoteca Routes', () => {
       expect(res.body.dados.total_entregas).toBe(7)
       expect(res.body.dados.oms_distintas_count).toBe(1)
       expect(res.body.dados.operacoes_distintas_count).toBe(1)
-      // NULL, e nao 0, quando nao ha nenhuma linha de manutencao no ano. O
-      // cartao da tela distingue os dois casos: sem registro ele escreve "Sem
-      // registro", e com registro somando zero ele escreve R$ 0,00. Iguais, os
-      // dois leem como "gastamos R$ 0,00" onde o certo e "ninguem lancou".
-      expect(res.body.dados.custo_manutencao_total).toBeNull()
-      expect(res.body.dados.manutencoes_count).toBe(0)
+      // O CUSTO DE MANUTENCAO SAIU DAQUI em 2026-08-13, e o teste guarda a
+      // saida em vez de so deixar de olhar. Ele somava
+      // `mapoteca.manutencao_plotter`, e o plotter passou a ser bem do modulo
+      // Equipamento: o mesmo cartao vive no painel de la, lendo
+      // `equipamento.manutencao`. Duas telas respondiam a mesma pergunta, e a
+      // desta lia uma tabela vazia. Campo que volta a aparecer aqui e a
+      // duplicacao renascendo.
+      expect(res.body.dados.custo_manutencao_total).toBeUndefined()
+      expect(res.body.dados.manutencoes_count).toBeUndefined()
     })
 
     it('GET /dashboard/entregas_por_mes devolve os meses decorridos do ano', async () => {

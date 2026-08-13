@@ -335,74 +335,6 @@ export function deleteImpressoes(ids) {
 }
 
 // ---------------------------------------------------------------------------
-// Plotters e manutenções
-// ---------------------------------------------------------------------------
-
-/** All plotters with last maintenance date and maintenance count. */
-export function getPlotters() {
-  return cachedFetch('plotters:list', () => apiGet(`${BASE}/plotter`), TTL_LISTA);
-}
-
-/** Plotter details with maintenance history and cost statistics. */
-export function getPlotter(id) {
-  return cachedFetch(`plotters:item:${id}`, () => apiGet(`${BASE}/plotter/${id}`), TTL_LISTA);
-}
-
-/** @param {{ativo:boolean, nr_serie:string, modelo:string, data_aquisicao?:string, vida_util?:number}} plotter */
-export function createPlotter(plotter) {
-  invalidate('plotters');
-  invalidate('dashboard');
-  return apiPost(`${BASE}/plotter`, plotter);
-}
-
-/** Same payload as createPlotter plus `id`. */
-export function updatePlotter(plotter) {
-  invalidate('plotters');
-  invalidate('dashboard');
-  return apiPut(`${BASE}/plotter`, plotter);
-}
-
-/** @param {number[]} ids */
-export function deletePlotters(ids) {
-  invalidate('plotters');
-  invalidate('dashboard');
-  return apiDelete(`${BASE}/plotter`, { plotter_ids: ids });
-}
-
-/**
- * Toda manutenção da frota, com o plotter de cada uma. Alimenta a seção
- * "Manutenções da frota" da lista de plotters.
- *
- * SEM `getManutencao(id)`: GET /manutencao_plotter/:id devolve uma linha que a
- * lista acima e a ficha do plotter já trazem inteira. Buscar de novo o que já
- * está na mão só criaria uma segunda cópia para divergir.
- */
-export function getManutencoes() {
-  return cachedFetch('plotters:manutencao:list', () => apiGet(`${BASE}/manutencao_plotter`), TTL_LISTA);
-}
-
-/** @param {{plotter_id:number, data_manutencao:string, valor:number, descricao?:string}} manutencao */
-export function createManutencao(manutencao) {
-  invalidate('plotters');
-  invalidate('dashboard');
-  return apiPost(`${BASE}/manutencao_plotter`, manutencao);
-}
-
-/** Same payload as createManutencao plus `id`. */
-export function updateManutencao(manutencao) {
-  invalidate('plotters');
-  invalidate('dashboard');
-  return apiPut(`${BASE}/manutencao_plotter`, manutencao);
-}
-
-/** @param {number[]} ids */
-export function deleteManutencoes(ids) {
-  invalidate('plotters');
-  invalidate('dashboard');
-  return apiDelete(`${BASE}/manutencao_plotter`, { manutencao_ids: ids });
-}
-
-// ---------------------------------------------------------------------------
 // Insumos (tipo de material)
 // ---------------------------------------------------------------------------
 //
@@ -635,12 +567,7 @@ export function getMaterialConsumption(ano) {
   return cachedFetch(`dashboard:material_consumption:${ano}`, () => apiGet(`${DASH}/material_consumption?ano=${ano}`), TTL_DASHBOARD);
 }
 
-/** Plotter status summary + list. */
-export function getPlotterStatus() {
-  return cachedFetch('dashboard:plotter_status', () => apiGet(`${DASH}/plotter_status`), TTL_DASHBOARD);
-}
-
-/** @returns {Promise<{ano:number, total_pedidos:number, total_entregas:number, oms_distintas_count:number, operacoes_distintas_count:number, custo_manutencao_total:number}>} */
+/** @returns {Promise<{ano:number, total_pedidos:number, total_entregas:number, oms_distintas_count:number, operacoes_distintas_count:number}>} */
 export function getResumoAnual(ano) {
   const anoParam = ano || new Date().getFullYear();
   return cachedFetch(`dashboard:resumo_anual:${anoParam}`, () => apiGet(`${DASH}/resumo_anual?ano=${anoParam}`), TTL_DASHBOARD);

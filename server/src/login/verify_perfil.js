@@ -36,8 +36,10 @@ const PERFIL = {
 //
 // EQUIPAMENTO entrou na 1.46.0, com o material permanente da Divisao (o antigo
 // Relatorio DMT, que era uma planilha). Ele e compartimento proprio pelo mesmo
-// criterio: quem controla estacao total e drone nao e quem atende a mapoteca,
-// ainda que os dois plotteres aparecam nos dois lugares por enquanto.
+// criterio: quem controla estacao total e drone nao e quem atende a mapoteca.
+// O plotter, que aparecia nos DOIS modulos ate 2026-08-13, hoje esta so aqui:
+// `mapoteca.plotter` e `mapoteca.manutencao_plotter` sairam do banco vazias, e
+// os 5 plotteres da Divisao sao 5 dos 105 bens de `equipamento.equipamento`.
 //
 // PRODUCAO (o code 7) entrou na 3.0.0, quando o core de producao do SAP 2.3.5
 // ganhou rota aqui. O DDL o criou em 2026-08-09 e este mapa o recebeu depois,

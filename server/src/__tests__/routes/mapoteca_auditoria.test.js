@@ -12,7 +12,7 @@
 // producao.
 //
 // O ALCANCE E O ROUTER INTEIRO. Filtrar as rotas por caminho (so pedido,
-// produto_pedido e impressao) deixa cliente, plotter, manutencao, tipo de
+// produto_pedido e impressao) deixa cliente, tipo de
 // material, estoque e consumo fora da rede, sem que nada diga isso.
 
 const request = require('supertest')
@@ -108,19 +108,6 @@ const registraImpressao = async (itemId, token = generateAdminToken()) => {
   return Number(row.id)
 }
 
-const criaPlotter = async (nrSerie = 'SN-AUD-1') => {
-  const res = await request(app)
-    .post('/api/mapoteca/plotter')
-    .set('Authorization', generateAdminToken())
-    .send({ nr_serie: nrSerie, modelo: 'HP DesignJet', vida_util: 60 })
-  expect(res.status).toBe(201)
-  const row = await conn.one(
-    'SELECT id FROM mapoteca.plotter WHERE nr_serie = $1 ORDER BY id DESC LIMIT 1',
-    [nrSerie]
-  )
-  return Number(row.id)
-}
-
 const criaTipoMaterial = async (nome = 'Sulfite auditado') => {
   const res = await request(app)
     .post('/api/mapoteca/tipo_material')
@@ -172,9 +159,9 @@ const criaConsumo = async (tipoMaterialId, quantidade, token = generateUserToken
 // mesmo, e agora as duas leituras deste arquivo usam a MESMA rota.
 const auditoria = pedidoId => historico('pedido', pedidoId)
 
-// Historico de qualquer outra ficha, pela rota geral de rastreabilidade. Cliente,
-// plotter e material nao tem rota propria de historico: a de plataforma serve
-// todas, com o modulo saindo do proprio caminho.
+// Historico de qualquer outra ficha, pela rota geral de rastreabilidade. Cliente
+// e material nao tem rota propria de historico: a de plataforma serve todas, com
+// o modulo saindo do proprio caminho.
 const historico = async (entidade, id, token = generateAdminToken()) => {
   const res = await request(app)
     .get(`/api/auditoria/mapoteca/${entidade}/${id}`)
@@ -215,12 +202,6 @@ const COBERTAS = new Set([
   // quem mexeu por ultimo, e a alteracao seguinte o sobrescreve.
   'POST /pedido/:id/anexos',
   'DELETE /pedido/anexo/:anexoId',
-  'POST /plotter',
-  'PUT /plotter',
-  'DELETE /plotter',
-  'POST /manutencao_plotter',
-  'PUT /manutencao_plotter',
-  'DELETE /manutencao_plotter',
   'POST /tipo_material',
   'PUT /tipo_material',
   'DELETE /tipo_material',
@@ -733,155 +714,6 @@ describe('Rastreabilidade da mapoteca - cliente', () => {
       .get('/api/auditoria/orcamento/nota_empenho/1')
       .set('Authorization', generateUserToken())
     expect(semPerfil.status).toBe(403)
-  })
-})
-
-describe('Rastreabilidade da mapoteca - plotter e manutencao', () => {
-  it('POST /plotter registra a criacao, que nao tinha autor nenhum', async () => {
-    const plotterId = await criaPlotter()
-
-    const criacao = eventosDe(
-      await historico('plotter', plotterId), 'mapoteca.plotter', 'I'
-    )
-
-    expect(criacao).toHaveLength(1)
-    expect(Number(criacao[0].registro_id)).toBe(plotterId)
-    // `criaPlotter` recebia `usuarioUuid` e o IGNORAVA por completo.
-    expect(criacao[0].usuario_uuid).toBe(ADMIN_UUID)
-    expect(criacao[0].dados_depois.nr_serie).toBe('SN-AUD-1')
-  })
-
-  it('PUT /plotter registra a desativacao com os dois lados', async () => {
-    const plotterId = await criaPlotter()
-
-    const res = await request(app)
-      .put('/api/mapoteca/plotter')
-      .set('Authorization', generateAdminToken())
-      .send({
-        id: plotterId,
-        ativo: false,
-        nr_serie: 'SN-AUD-1',
-        modelo: 'HP DesignJet',
-        vida_util: 60
-      })
-    expect(res.status).toBe(200)
-
-    const alteracao = eventosDe(
-      await historico('plotter', plotterId), 'mapoteca.plotter', 'U'
-    )
-
-    expect(alteracao).toHaveLength(1)
-    expect(alteracao[0].campos_alterados).toEqual(['ativo'])
-    expect(alteracao[0].dados_antes.ativo).toBe(true)
-    expect(alteracao[0].dados_depois.ativo).toBe(false)
-
-    const mudanca = alteracao[0].mudancas.find(m => m.campo === 'ativo')
-    expect(mudanca.rotulo).toBe('Ativo')
-    expect(mudanca.antes_texto).toBe('Sim')
-    expect(mudanca.depois_texto).toBe('Não')
-  })
-
-  it('DELETE /plotter registra o que se perdeu', async () => {
-    const plotterId = await criaPlotter()
-
-    const res = await request(app)
-      .delete('/api/mapoteca/plotter')
-      .set('Authorization', generateAdminToken())
-      .send({ plotter_ids: [plotterId] })
-    expect(res.status).toBe(200)
-
-    const exclusao = eventosDe(
-      await historico('plotter', plotterId), 'mapoteca.plotter', 'D'
-    )
-
-    expect(exclusao).toHaveLength(1)
-    expect(exclusao[0].dados_antes.nr_serie).toBe('SN-AUD-1')
-    expect(exclusao[0].usuario_uuid).toBe(ADMIN_UUID)
-  })
-
-  it('a manutencao cai no historico do PLOTTER, e nao num agregado proprio', async () => {
-    const plotterId = await criaPlotter()
-
-    const criada = await request(app)
-      .post('/api/mapoteca/manutencao_plotter')
-      .set('Authorization', generateAdminToken())
-      .send({
-        plotter_id: plotterId,
-        data_manutencao: '2026-03-12',
-        valor: 1250.5,
-        descricao: 'Troca de cabeçote'
-      })
-    expect(criada.status).toBe(201)
-
-    const manutencao = await conn.one(
-      'SELECT id FROM mapoteca.manutencao_plotter WHERE plotter_id = $1',
-      [plotterId]
-    )
-
-    const linhas = await historico('plotter', plotterId)
-    const evento = eventosDe(linhas, 'mapoteca.manutencao_plotter', 'I')
-
-    expect(evento).toHaveLength(1)
-    // Ninguem abre a ficha "manutencao n.o 12": abre a do plotter e olha as
-    // manutencoes dele. E a mesma regra que poe o item no historico do pedido.
-    expect(Number(evento[0].entidade_id)).toBe(plotterId)
-    expect(Number(evento[0].registro_id)).toBe(Number(manutencao.id))
-
-    const valor = evento[0].mudancas.find(m => m.campo === 'valor')
-    expect(valor.tipo).toBe('dinheiro')
-    expect(valor.depois_texto).toContain('1.250,50')
-  })
-
-  it('PUT e DELETE de manutencao registram os dois lados', async () => {
-    const plotterId = await criaPlotter()
-
-    const criada = await request(app)
-      .post('/api/mapoteca/manutencao_plotter')
-      .set('Authorization', generateAdminToken())
-      .send({
-        plotter_id: plotterId,
-        data_manutencao: '2026-03-12',
-        valor: 100,
-        descricao: null
-      })
-    expect(criada.status).toBe(201)
-
-    const { id: manutencaoId } = await conn.one(
-      'SELECT id FROM mapoteca.manutencao_plotter WHERE plotter_id = $1',
-      [plotterId]
-    )
-
-    const alterada = await request(app)
-      .put('/api/mapoteca/manutencao_plotter')
-      .set('Authorization', generateAdminToken())
-      .send({
-        id: manutencaoId,
-        plotter_id: plotterId,
-        data_manutencao: '2026-03-12',
-        valor: 250,
-        descricao: null
-      })
-    expect(alterada.status).toBe(200)
-
-    const alteracao = eventosDe(
-      await historico('plotter', plotterId), 'mapoteca.manutencao_plotter', 'U'
-    )
-    expect(alteracao).toHaveLength(1)
-    expect(alteracao[0].campos_alterados).toEqual(['valor'])
-    expect(Number(alteracao[0].dados_antes.valor)).toBe(100)
-    expect(Number(alteracao[0].dados_depois.valor)).toBe(250)
-
-    const apagada = await request(app)
-      .delete('/api/mapoteca/manutencao_plotter')
-      .set('Authorization', generateAdminToken())
-      .send({ manutencao_ids: [Number(manutencaoId)] })
-    expect(apagada.status).toBe(200)
-
-    const exclusao = eventosDe(
-      await historico('plotter', plotterId), 'mapoteca.manutencao_plotter', 'D'
-    )
-    expect(exclusao).toHaveLength(1)
-    expect(Number(exclusao[0].dados_antes.valor)).toBe(250)
   })
 })
 

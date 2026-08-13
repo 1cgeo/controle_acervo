@@ -18,9 +18,15 @@ function moeda (v) {
   return `${n < 0 ? '-' : ''}${grupos},${decimal}`
 }
 
-// Colunas tratadas como dinheiro na saida legivel. Na mapoteca o unico dinheiro
-// e o custo de manutencao de plotter: quantidade de folha e quantidade, nao
-// valor, e formata-la como moeda ("5,00" em vez de "5") atrapalharia a leitura.
+// Colunas tratadas como dinheiro na saida legivel.
+//
+// HOJE NENHUM RECURSO DA MAPOTECA TEM UMA, e a regra fica de proposito. O unico
+// dinheiro do modulo era o custo de manutencao de plotter, e o plotter saiu em
+// 2026-08-13 (ele e bem do modulo Equipamento). Quantidade de folha e
+// quantidade, nao valor, e formata-la como moeda ("5,00" em vez de "5")
+// atrapalharia a leitura: e por isso que a regra e por PREFIXO de nome e nao
+// uma lista de colunas. A coluna de dinheiro que a mapoteca vier a ter ja nasce
+// formatada.
 const EH_VALOR = /^(valor|custo)/
 
 function celula (chave, valor) {

@@ -483,132 +483,24 @@ router.delete(
   })
 )
 
-// Rotas para Plotter
-router.get(
-  '/plotter',
-  verifyPerfil('consulta', 'mapoteca'),
-  asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaCtrl.getPlotters()
-    const msg = 'Plotters retornados com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
-
-router.get(
-  '/plotter/:id',
-  verifyPerfil('consulta', 'mapoteca'),
-  schemaValidation({
-    params: mapotecaSchema.plotterId
-  }),
-  asyncHandler(async (req, res, next) => {
-    const { id } = req.params
-    const dados = await mapotecaCtrl.getPlotterById(id)
-    const msg = 'Detalhes do plotter retornados com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
-
-router.post(
-  '/plotter',
-  verifyPerfil('gerente', 'mapoteca'),
-  schemaValidation({
-    body: mapotecaSchema.plotter
-  }),
-  asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.criaPlotter(req.body, req.usuarioUuid, req.contexto)
-    const msg = 'Plotter criado com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.Created)
-  })
-)
-
-router.put(
-  '/plotter',
-  verifyPerfil('gerente', 'mapoteca'),
-  schemaValidation({
-    body: mapotecaSchema.plotterAtualizacao
-  }),
-  asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.atualizaPlotter(req.body, req.usuarioUuid, req.contexto)
-    const msg = 'Plotter atualizado com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK)
-  })
-)
-
-router.delete(
-  '/plotter',
-  verifyPerfil('gerente', 'mapoteca'),
-  schemaValidation({
-    body: mapotecaSchema.plotterIds
-  }),
-  asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deletePlotters(req.body.plotter_ids, req.usuarioUuid, req.contexto)
-    const msg = 'Plotters deletados com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK)
-  })
-)
-
-// Rotas para Manutenção de Plotter
-router.get(
-  '/manutencao_plotter',
-  verifyPerfil('consulta', 'mapoteca'),
-  asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaCtrl.getManutencoesPlotter()
-    const msg = 'Manutenções de plotter retornadas com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
-
-router.get(
-  '/manutencao_plotter/:id',
-  verifyPerfil('consulta', 'mapoteca'),
-  schemaValidation({
-    params: mapotecaSchema.manutencaoPlotterId
-  }),
-  asyncHandler(async (req, res, next) => {
-    const dados = await mapotecaCtrl.getManutencaoPlotterById(req.params.id)
-    const msg = 'Manutenção de plotter retornada com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
-
-router.post(
-  '/manutencao_plotter',
-  verifyPerfil('gerente', 'mapoteca'),
-  schemaValidation({
-    body: mapotecaSchema.manutencaoPlotter
-  }),
-  asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.criaManutencaoPlotter(req.body, req.usuarioUuid, req.contexto)
-    const msg = 'Manutenção de plotter registrada com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.Created)
-  })
-)
-
-router.put(
-  '/manutencao_plotter',
-  verifyPerfil('gerente', 'mapoteca'),
-  schemaValidation({
-    body: mapotecaSchema.manutencaoPlotterAtualizacao
-  }),
-  asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.atualizaManutencaoPlotter(req.body, req.usuarioUuid, req.contexto)
-    const msg = 'Manutenção de plotter atualizada com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK)
-  })
-)
-
-router.delete(
-  '/manutencao_plotter',
-  verifyPerfil('gerente', 'mapoteca'),
-  schemaValidation({
-    body: mapotecaSchema.manutencaoPlotterIds
-  }),
-  asyncHandler(async (req, res, next) => {
-    await mapotecaCtrl.deleteManutencoesPlotter(req.body.manutencao_ids, req.usuarioUuid, req.contexto)
-    const msg = 'Manutenções de plotter deletadas com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK)
-  })
-)
+// SEM ROTA DE PLOTTER. O plotter é EQUIPAMENTO, e mora em `/api/equipamento`.
+//
+// Até 2026-08-13 este arquivo tinha dez rotas de `/plotter` e
+// `/manutencao_plotter`, servindo `mapoteca.plotter` e
+// `mapoteca.manutencao_plotter`. As duas tabelas estavam VAZIAS na produção, e
+// sempre estiveram: os 5 plotters da Divisão são 5 dos 105 bens de
+// `equipamento.equipamento`, com patrimônio, seção detentora e data de carga que
+// aqui não havia onde escrever.
+//
+// A migração `2026-08-08_modulo_equipamento.sql` já anunciava o desfecho no item
+// 4 ("OS PLOTTERES FICAM ONDE ESTAO, POR ENQUANTO... Move-los e uma fase
+// propria"). Esta é a fase, e ela não moveu nada: não havia linha para mover.
+//
+// Quem procura plotter procura em `/api/equipamento/bem`, filtrando pelo tipo
+// 'Impressora de Grande Formato (Plotter)'. Manutenção de plotter é
+// `equipamento.manutencao`, que guarda o que esta não guardava: `data_fim`,
+// `valor_orcado`, `valor_pdr`, `certame` e o vínculo com a indisponibilidade que
+// a subseção 7.1 do RPCMTec conta.
 
 // Rotas para Tipo de Material
 //

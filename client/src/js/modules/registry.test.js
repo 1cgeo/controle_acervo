@@ -145,8 +145,9 @@ describe('registry: podeAbrirRota espelha o guarda de index.js', () => {
   // operador precisa ver a fila que vai atender), e em 2026-08-08 as telas de
   // material sairam da lista de vez: a tela unica de Insumos declara nivel
   // MINIMO, porque ali os tres perfis se ordenam de verdade. Quem prova a regra
-  // agora sao Clientes, Pedidos e Plotters, que o operador continua sem ver
-  // embora esteja um nivel acima de quem as ve.
+  // agora sao Clientes e Pedidos, que o operador continua sem ver embora esteja
+  // um nivel acima de quem as ve. (Plotters era o terceiro exemplo, e a tela
+  // saiu em 2026-08-13: o plotter e bem do modulo Equipamento.)
   test('rota com CONJUNTO de perfis nao e hierarquica', () => {
     logar({ perfis: { mapoteca: 2 } });  // operador
     expect(podeAbrirRota('mapoteca', '/atendimento')).toBe(true);
@@ -158,7 +159,6 @@ describe('registry: podeAbrirRota espelha o guarda de index.js', () => {
     // exatamente isto que uma hierarquia nao consegue descrever.
     expect(podeAbrirRota('mapoteca', '/pedidos')).toBe(false);
     expect(podeAbrirRota('mapoteca', '/clientes')).toBe(false);
-    expect(podeAbrirRota('mapoteca', '/plotters')).toBe(false);
     expect(podeAbrirRota('mapoteca', '/pedidos/novo')).toBe(false);
 
     logar({ perfis: { mapoteca: 1 } });  // consulta

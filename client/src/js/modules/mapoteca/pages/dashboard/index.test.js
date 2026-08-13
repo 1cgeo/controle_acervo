@@ -168,8 +168,9 @@ describe('renderDashboard da mapoteca', () => {
     // lista os pedidos abertos mais antigos. O laço acima abre aquela aba,
     // então aqui a rota já foi chamada.
     expect(svc.getPendingOrders).toHaveBeenCalled();
-    // A secao "Plotters" segue fora, e e a unica das quatro que nao voltou.
-    expect(svc.getPlotterStatus).not.toHaveBeenCalled();
+    // A quarta secao era "Plotters", e ela nao voltou nem volta: o painel, a
+    // rota `/plotter_status` e a funcao de servico dela sairam em 2026-08-13,
+    // porque o plotter e bem do modulo Equipamento. Nao ha mais o que espiar.
 
     cleanup();
   });

@@ -20,7 +20,7 @@ BEGIN;
 -- precisariam ficar em sincronia para sempre.
 --
 -- Substitui `mapoteca.pedido_auditoria`, cujo `pedido_id NOT NULL`
--- amarrava o histórico ao pedido: cliente, plotter, produto do acervo, nota de
+-- amarrava o histórico ao pedido: cliente, produto do acervo, nota de
 -- empenho e usuário não têm pedido nenhum.
 CREATE SCHEMA auditoria;
 

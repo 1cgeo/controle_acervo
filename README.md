@@ -111,7 +111,7 @@ Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar. **Para co
 | `/api/gerencia` | acervo | Domínios, arquivos excluídos, inconsistências |
 | `/api/dashboard` | acervo | Analytics do acervo |
 | `/api/limites` | acervo | Contorno de estado ou município (schema `limites`), para a tela destacar o lugar filtrado |
-| `/api/mapoteca` | mapoteca | Clientes, pedidos, plotters, relatórios CSV e impressão. O material tem o `movimento_material` (o LIVRO) como única porta de escrita, e o `estoque_material` é só leitura |
+| `/api/mapoteca` | mapoteca | Clientes, pedidos, relatórios CSV e impressão. O material tem o `movimento_material` (o LIVRO) como única porta de escrita, e o `estoque_material` é só leitura |
 | `/api/mapoteca/dashboard` | mapoteca | Analytics da mapoteca |
 | `/api/orcamento/dominio` | orcamento | ND, PI, UG, tipo de licitação, classificação de NC, tipo de item de DFD, grau de prioridade |
 | `/api/orcamento/configuracao/anos` | orcamento | Anos com dado, para o seletor de ano das telas |
@@ -275,7 +275,7 @@ client/src/js/
 └── modules/
     ├── registry.js   # O CONTRATO: como registrar página, pedir dado e declarar perfil
     ├── acervo/       # Dashboard, busca, pontos de controle, cadastro de produto e versão
-    ├── mapoteca/     # Clientes, pedidos, material e o livro de movimentos, plotters, relatórios
+    ├── mapoteca/     # Clientes, pedidos, material e o livro de movimentos, relatórios
     ├── orcamento/    # DFD, PDR, metas, NC, NE, licitações, RPNP, configuração
     ├── equipamento/  # Bens, tipos, indisponibilidade, afastamento, manutenção, transferência
     └── producao/     # As onze telas do core: painel, minha atividade, acompanhamento,
@@ -302,7 +302,7 @@ Convenções: BEM no CSS, tokens de design em `design-tokens.css`, tema claro e 
 |---|---|
 | `acervo` | projeto, lote, produto, versao, arquivo, download, miniatura, sessões de upload |
 | `ponto_controle` | pontos de controle geodésico e seus arquivos |
-| `mapoteca` | cliente, pedido, produto_pedido, impressao_item, anexo_pedido, etiqueta_envio, plotter, manutencao_plotter, tipo_material, `movimento_material` (o LIVRO: Entrada, Transferência e Consumo) e `estoque_material` (o saldo, DERIVADO do livro por gatilho e sem porta própria de escrita) |
+| `mapoteca` | cliente, pedido, produto_pedido, impressao_item, anexo_pedido, etiqueta_envio, tipo_material, `movimento_material` (o LIVRO: Entrada, Transferência e Consumo) e `estoque_material` (o saldo, DERIVADO do livro por gatilho e sem porta própria de escrita) |
 | `orcamento` | 12 tabelas: dfd, dfd_item, licitacao, pdr_item, nota_credito, nota_empenho, nota_empenho_nota_credito, nota_credito_recolhimento, liquidacao, recebimento_material, rpnp, arquivo |
 | `equipamento` | O material permanente: `equipamento` (o bem), `tipo_equipamento` (CADASTRO, não domínio), `indisponibilidade` e `afastamento` (INTERVALOS, com `EXCLUDE USING gist`), `manutencao`, `transferencia` e cinco tabelas de domínio. Não há coluna de situação: quem a responde é a função `situacao_em(dia)` |
 | `campo` | A atividade de campo: `campo` (com `geom` MULTIPOLYGON **NOT NULL** e `ano` apontando `pit.pit`), as junções `campo_categoria`, `campo_militar` e `campo_versao` (**opcional**), `imagem` (foto e vídeo em `bytea`), `track` e `track_ponto`, mais `situacao` e `categoria`. A LINHA do trajeto é a view `track_linha`, costurada dos pontos na leitura |

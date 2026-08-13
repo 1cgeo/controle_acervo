@@ -77,7 +77,6 @@ const DESTINO = {
   // A ficha do insumo, e nao a de "materiais": as tres telas de material viraram
   // uma em 2026-08-08, e a rota velha caia em /404.
   'mapoteca:material': { tipo: 'ficha', href: (id) => `#/mapoteca/insumos/${id}` },
-  'mapoteca:plotter': { tipo: 'ficha', href: (id) => `#/mapoteca/plotters/${id}` },
   'orcamento:nota_empenho': { tipo: 'ficha', href: (id) => `#/orcamento/notas_empenho/${id}` },
   'plataforma:edicao': { tipo: 'ficha', href: (id) => `#/rpcmtec/${id}` },
   // O bem tem ficha própria, e ela reúne os quatro históricos dele.
@@ -186,7 +185,6 @@ export const NOME_ENTIDADE = {
   ponto: 'Pontos de controle',
   pedido: 'Pedidos, itens e impressões',
   cliente: 'Clientes',
-  plotter: 'Plotters e manutenções',
   material: 'Materiais, estoque e consumo',
   dfd: 'DFD',
   pdr: 'PDR',

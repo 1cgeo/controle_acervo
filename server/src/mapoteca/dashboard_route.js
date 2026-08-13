@@ -113,16 +113,11 @@ router.get(
   })
 )
 
-// Plotter Status
-router.get(
-  '/plotter_status',
-  verifyPerfil('consulta', 'mapoteca'),
-  asyncHandler(async (req, res, next) => {
-    const dados = await dashboardCtrl.getPlotterStatus()
-    const msg = 'Status de plotters retornado com sucesso'
-    return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
-  })
-)
+// SEM `/plotter_status`. A rota saiu em 2026-08-13, com o resto do plotter da
+// mapoteca. Ela já não tinha consumidor nenhum: o painel de Plotters do
+// dashboard saiu em 2026-07-27 e foi o único dos quatro que não voltou em
+// 2026-08-07. O status do bem hoje é `equipamento.situacao_em(CURRENT_DATE)`,
+// que o painel do módulo Equipamento serve.
 
 // Entregas por tipo de produto × escala no ano
 router.get(

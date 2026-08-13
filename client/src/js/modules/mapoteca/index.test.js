@@ -16,7 +16,7 @@ describe('manifesto do modulo mapoteca', () => {
     expect(modulosPortados().map(m => m.id)).toContain('mapoteca');
   });
 
-  test('as 11 telas estao registradas, cada uma com render e perfil', () => {
+  test('as 9 telas estao registradas, cada uma com render e perfil', () => {
     // O RPCMTec não é tela da mapoteca: o relatório é da Divisão inteira, e
     // este módulo gerava só a metade dele. Ele é rota de plataforma
     // (#/rpcmtec), fora desta contagem.
@@ -24,7 +24,11 @@ describe('manifesto do modulo mapoteca', () => {
     // Eram 13 até 2026-08-08: as três telas de material (`/materiais`,
     // `/materiais/:id`, `/estoque` e `/consumo`) viraram duas (`/insumos` e
     // `/insumos/:id`).
-    expect(mapoteca.rotas).toHaveLength(11);
+    //
+    // E eram 11 até 2026-08-13: `/plotters` e `/plotters/:id` sairam, porque o
+    // plotter é bem do módulo Equipamento e a tabela que elas liam estava vazia
+    // na produção.
+    expect(mapoteca.rotas).toHaveLength(9);
     for (const rota of mapoteca.rotas) {
       expect(rota.path.startsWith('/')).toBe(true);
       expect(typeof rota.render).toBe('function');
@@ -115,12 +119,15 @@ describe('manifesto do modulo mapoteca', () => {
   });
 
   // A ordem do menu e decisao do chefe, nao acidente de edicao: Dashboard abre,
-  // Atender pedidos vem logo depois, e Insumos fica entre Pedidos e Plotters,
-  // onde o trio de material ficava. Sem este teste, um item novo inserido no
-  // meio da lista desfaz a ordem sem ninguem notar.
-  test('a ordem do menu e a que o chefe pediu, do Dashboard aos Plotters', () => {
+  // Atender pedidos vem logo depois, e Insumos fecha, onde o trio de material
+  // ficava. Sem este teste, um item novo inserido no meio da lista desfaz a
+  // ordem sem ninguem notar.
+  //
+  // PLOTTERS ERA O SEXTO, e saiu em 2026-08-13: o plotter e bem do modulo
+  // Equipamento, e a tabela que a tela lia estava vazia na producao.
+  test('a ordem do menu e a que o chefe pediu, do Dashboard aos Insumos', () => {
     expect(mapoteca.menu.map(i => i.id)).toEqual([
-      'dashboard', 'atendimento', 'clientes', 'pedidos', 'insumos', 'plotters',
+      'dashboard', 'atendimento', 'clientes', 'pedidos', 'insumos',
     ]);
     // Produtos avulsos nao e categoria de pedido: mora DENTRO de Pedidos.
     expect(mapoteca.menu.map(i => i.id)).not.toContain('avulsos');

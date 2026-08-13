@@ -177,16 +177,6 @@ const REGRAS = {
     'quem descobre ali que o cartucho novo ainda nao existe no sistema.',
     'Material com movimento ou com saldo NAO pode ser excluido; desative com',
     'ativo = false.'
-  ],
-
-  plotter: [
-    'vida_util e em MESES. Plotter inativo continua no historico de manutencao: nao',
-    'exclua, marque ativo = false.'
-  ],
-
-  manutencao: [
-    'O custo de manutencao do ano entra no resumo anual do dashboard; e o numero que',
-    'justifica a substituicao do equipamento.'
   ]
 }
 

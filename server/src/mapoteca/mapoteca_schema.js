@@ -253,58 +253,6 @@ models.impressaoIds = Joi.object().keys({
     .required()
 })
 
-// Esquemas para Plotter
-models.plotterId = Joi.object().keys({
-  id: Joi.number().integer().required()
-})
-
-models.plotterIds = Joi.object().keys({
-  plotter_ids: Joi.array()
-    .items(Joi.number().integer().required())
-    .min(1)
-    .required()
-})
-
-models.plotter = Joi.object().keys({
-  ativo: Joi.boolean().default(true),
-  nr_serie: Joi.string().max(255).required(),
-  modelo: Joi.string().max(255).required(),
-  data_aquisicao: Joi.date().iso().raw().allow(null),
-  vida_util: Joi.number().integer().allow(null).description('Vida útil em meses')
-})
-
-models.plotterAtualizacao = Joi.object().keys({
-  id: Joi.number().integer().required(),
-  ativo: Joi.boolean().required(),
-  nr_serie: Joi.string().max(255).required(),
-  modelo: Joi.string().max(255).required(),
-  data_aquisicao: Joi.date().iso().raw().allow(null),
-  vida_util: Joi.number().integer().allow(null).description('Vida útil em meses')
-})
-
-// Esquemas para Manutenção de Plotter
-models.manutencaoPlotterIds = Joi.object().keys({
-  manutencao_ids: Joi.array()
-    .items(Joi.number().integer().required())
-    .min(1)
-    .required()
-})
-
-models.manutencaoPlotter = Joi.object().keys({
-  plotter_id: Joi.number().integer().required(),
-  data_manutencao: Joi.date().iso().raw().required(),
-  valor: Joi.number().precision(2).positive().required(),
-  descricao: Joi.string().allow(null, '')
-})
-
-models.manutencaoPlotterAtualizacao = Joi.object().keys({
-  id: Joi.number().integer().required(),
-  plotter_id: Joi.number().integer().required(),
-  data_manutencao: Joi.date().iso().raw().required(),
-  valor: Joi.number().precision(2).positive().required(),
-  descricao: Joi.string().allow(null, '')
-})
-
 // Esquemas para Tipo de Material
 models.tipoMaterialIds = Joi.object().keys({
   tipo_material_ids: Joi.array()
@@ -474,10 +422,6 @@ models.movimentoMaterialAtualizacao = comRegrasDoPar(
 
 // Esquemas para GET by ID (sem .strict(): params de URL chegam como string
 // e dependem da coerção do Joi)
-models.manutencaoPlotterId = Joi.object().keys({
-  id: Joi.number().integer().required()
-})
-
 models.movimentoMaterialId = Joi.object().keys({
   id: Joi.number().integer().required()
 })

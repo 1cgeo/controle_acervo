@@ -210,9 +210,8 @@ describe('Schemas da mapoteca', () => {
   // Defaults que o controller assume
   // -------------------------------------------------------------------------
   // Cada um destes existe porque ALGUEM depende dele adiante: o array vazio
-  // evita `null` chegando a coluna de texto[], o `false` evita `undefined`
-  // virando NULL num BOOLEAN NOT NULL, e o `ativo: true` faz o plotter recem
-  // cadastrado aparecer na lista sem ninguem marcar nada.
+  // evita `null` chegando a coluna de texto[], e o `false` evita `undefined`
+  // virando NULL num BOOLEAN NOT NULL.
   describe('defaults', () => {
     it('pedido nasce com palavras_chave vazia e fora do PIT', () => {
       const value = aceita(mapotecaSchema.pedido.validate({
@@ -220,11 +219,6 @@ describe('Schemas da mapoteca', () => {
       }))
       expect(value.palavras_chave).toEqual([])
       expect(value.previsto_pit).toBe(false)
-    })
-
-    it('plotter nasce ativo', () => {
-      const value = aceita(mapotecaSchema.plotter.validate({ nr_serie: 'X1', modelo: 'HP' }))
-      expect(value.ativo).toBe(true)
     })
 
     it('item de pedido nasce sem producao especifica', () => {
@@ -249,23 +243,9 @@ describe('Schemas da mapoteca', () => {
       )
     })
 
-    // Manutencao de plotter sem valor nao e manutencao de graca: e registro
-    // incompleto. Zero passaria para o RPCMTec como custo real.
-    it('manutencao de plotter recusa valor zero', () => {
-      recusaPor(
-        mapotecaSchema.manutencaoPlotter.validate({
-          plotter_id: 1, data_manutencao: '2026-01-01', valor: 0
-        }),
-        'valor',
-        'number.positive'
-      )
-    })
-
-    it('manutencao de plotter aceita valor positivo', () => {
-      aceita(mapotecaSchema.manutencaoPlotter.validate({
-        plotter_id: 1, data_manutencao: '2026-01-01', valor: 500
-      }))
-    })
+    // A manutencao do plotter saiu daqui em 2026-08-13, com o resto do plotter:
+    // ela e `equipamento.manutencao`, e o CHECK de valor positivo dela tem
+    // prova em `unit/schemas/equipamento.test.js`.
   })
 
   // -------------------------------------------------------------------------
@@ -427,21 +407,19 @@ describe('Schemas da mapoteca', () => {
   // Atualizacao exige o id
   // -------------------------------------------------------------------------
   // Um caso por schema de atualizacao seria repeticao; a regra e a mesma e a
-  // tabela abaixo cobre os quatro de uma vez. Sem o id o controller montaria um
+  // tabela abaixo cobre os dois de uma vez. Sem o id o controller montaria um
   // UPDATE sem WHERE, e o pg-promise recusaria o parametro faltando -- mas com
   // 500, e nao com 400 dizendo o campo.
   describe('atualizacao exige id', () => {
     const corpos = {
       clienteAtualizacao: { nome: '6 RCB', tipo_cliente_id: 1 },
-      plotterAtualizacao: { nr_serie: 'X1', modelo: 'HP', ativo: true },
       movimentoMaterialAtualizacao: {
         tipo_material_id: 1,
         tipo_movimento_id: 1,
         quantidade: 1,
         data_movimento: '2026-01-01',
         localizacao_destino_id: 1
-      },
-      manutencaoPlotterAtualizacao: { plotter_id: 1, data_manutencao: '2026-01-01', valor: 1 }
+      }
     }
 
     it.each(Object.keys(corpos))('%s recusa corpo sem id', (schema) => {

@@ -95,7 +95,24 @@ test('reconhece guid, pattern e array com minimo', () => {
 test('mostra a description que o autor do schema escreveu', () => {
   // .description() e a unica prosa que o describe() alcanca; jogar fora seria
   // perder informacao de graca.
-  const campo = esquema.camposDe(models.plotter).find(c => c.nome === 'vida_util')
+  //
+  // ESTE E O UNICO TESTE DO ARQUIVO COM SCHEMA MONTADO AQUI, e a excecao esta
+  // justificada. O unico `.description()` que o server tinha era o
+  // `vida_util` de `models.plotter`, e o plotter saiu da mapoteca em
+  // 2026-08-13 (ele e bem do modulo Equipamento). Hoje nenhum schema do server
+  // usa `.description()`, entao nao ha schema real com que exercitar esta
+  // leitura. A regra da casa que este arquivo declara no topo proibe copiar o
+  // CONTRATO -- e o contrato e que nao pode ter copia. Aqui nao ha contrato
+  // nenhum: o que se testa e o FORMATADOR, com tres linhas de Joi que nao
+  // descrevem recurso algum. No dia em que um schema real voltar a usar
+  // `.description()`, troque este por ele.
+  const path = require('node:path')
+  const raizServer = path.join(__dirname, '..', '..', 'server')
+  const Joi = require(require.resolve('joi', { paths: [raizServer] }))
+  const local = Joi.object().keys({
+    vida_util: Joi.number().integer().description('Vida útil em meses')
+  })
+  const campo = esquema.camposDe(local).find(c => c.nome === 'vida_util')
   assert.ok(campo.notas.some(n => n.toLowerCase().includes('meses')))
 })
 

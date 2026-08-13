@@ -111,21 +111,10 @@ const RECURSOS = {
     ]
   },
 
-  plotter: {
-    nome: 'plotter',
-    caminho: '/mapoteca/plotter',
-    schema: modulo('plotter', 'plotterAtualizacao', 'plotterIds'),
-    chaveIds: 'plotter_ids',
-    colunas: ['id', 'nr_serie', 'modelo', 'ativo', 'data_aquisicao', 'vida_util']
-  },
-
-  manutencao: {
-    nome: 'manutencao de plotter',
-    caminho: '/mapoteca/manutencao_plotter',
-    schema: modulo('manutencaoPlotter', 'manutencaoPlotterAtualizacao', 'manutencaoPlotterIds'),
-    chaveIds: 'manutencao_ids',
-    colunas: ['id', 'plotter_id', 'data_manutencao', 'valor', 'descricao']
-  },
+  // SEM `plotter` E SEM `manutencao`. Os dois saíram em 2026-08-13: o plotter é
+  // EQUIPAMENTO, e quem o cadastra é o `equipamento_cli`, com `bem` e
+  // `manutencao`. As tabelas que estes dois recursos serviam estavam vazias na
+  // produção, e a API que eles chamavam deixou de existir.
 
   tipo_material: {
     nome: 'material de consumo (o cadastro do insumo)',
