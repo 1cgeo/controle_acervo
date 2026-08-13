@@ -262,13 +262,22 @@ function abrirImportacao({ campoId, aoImportar }) {
 /**
  * A lista de trajetos de um campo.
  *
+ * O BOTÃO "Ver no mapa" SÓ EXISTE ONDE HÁ MAPA PARA VER. Quem passa
+ * `aoVerNoMapa` é a FICHA, que é leitura e pode fechar sem perder nada; o
+ * formulário de EDIÇÃO não o passa, e é deliberado -- levar a pessoa para a aba
+ * do mapa dali jogaria fora o que ela tivesse digitado e ainda não salvo.
+ *
  * @param {Object} opts
  * @param {number} opts.campoId
  * @param {boolean} [opts.podeEditar] - mostra importar e remover
  * @param {Function} [opts.aoMudar]
+ * @param {(alvo:{campoId:number, track:Object})=>void}
+ *        [opts.aoVerNoMapa] - manda desenhar UM trajeto no mapa da página
  * @returns {{element:HTMLElement, recarregar:Function}}
  */
-export function criarTrajetosCampo({ campoId, podeEditar = false, aoMudar = null }) {
+export function criarTrajetosCampo({
+  campoId, podeEditar = false, aoMudar = null, aoVerNoMapa = null,
+}) {
   let disposed = false;
 
   const lista = el('div', { className: 'campo-tracks' });
@@ -314,6 +323,12 @@ export function criarTrajetosCampo({ campoId, podeEditar = false, aoMudar = null
       }));
       return;
     }
+
+    // NÃO EXISTE "ver todos no mapa", e a ausência é a regra. Eu havia posto um
+    // botão de lote em 2026-08-13, por iniciativa própria; o chefe cortou no
+    // mesmo dia: o mapa mostra UM trajeto por vez. O campo de Cascavel tem 17
+    // deles, e 17 linhas sobrepostas não respondem "por onde a viatura andou" --
+    // respondem "a Divisão andou por aí", que a área do campo já diz.
     for (const t of tracks) {
       const linha = el('div', { className: 'campo-tracks__item' }, [
         el('div', {}, [
@@ -325,6 +340,22 @@ export function criarTrajetosCampo({ campoId, podeEditar = false, aoMudar = null
           }),
         ]),
       ]);
+      if (aoVerNoMapa) {
+        // TRAJETO SEM LINHA NÃO GANHA BOTÃO. A view `campo.track_linha` descarta
+        // o track de um ponto só, e ele chega aqui com `geometria` nula: um
+        // botão que abrisse o mapa em nada seria pior que botão nenhum.
+        linha.appendChild(t.geometria
+          ? el('button', {
+            className: 'btn btn--text btn--sm',
+            type: 'button',
+            title: 'Desenhar este trajeto na aba Mapa',
+            onClick: () => aoVerNoMapa({ campoId, track: t }),
+          }, ['Ver no mapa'])
+          : el('small', {
+            className: 'campo-tracks__sem-linha',
+            textContent: 'sem linha para desenhar',
+          }));
+      }
       if (podeEditar) {
         linha.appendChild(el('button', {
           className: 'btn btn--text btn--sm',

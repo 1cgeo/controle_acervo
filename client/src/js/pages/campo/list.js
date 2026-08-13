@@ -7,7 +7,7 @@ import { createTabs } from '@components/tabs/tabs.js';
 import { chip } from '@components/status-chip.js';
 import { temPerfil } from '@store/auth-store.js';
 import {
-  getDominioCampo, listarCampos, getCamposGeojson, excluirCampo, listarTracksCampo,
+  getDominioCampo, listarCampos, getCamposGeojson, excluirCampo,
 } from '@services/campo-service.js';
 import { getUsuarios } from '@services/plataforma-service.js';
 import { criarMapaCampos } from './campo-mapa.js';
@@ -75,6 +75,9 @@ export async function renderCampo(container, ctx) {
   let usuarios = [];
   let mapa = null;
   let abaAtiva = 'tabela';
+  // Alguém já sabe para onde o mapa vai, e o re-enquadramento automático da
+  // troca de campos deve ceder a vez. Ver `verTrajetoNoMapa`.
+  let enquadramentoReservado = false;
 
   // --- Filtros --------------------------------------------------------------
 
@@ -132,7 +135,53 @@ export async function renderCampo(container, ctx) {
       usuarios,
       onSaved: carregar,
     }),
+    onVerTrajetoNoMapa: verTrajetoNoMapa,
   });
+
+  /**
+   * O botão "Ver no mapa" da aba Trajetos da ficha.
+   *
+   * UM TRAJETO POR VEZ, e nunca o lote (chefe, 2026-08-13). O mapa desenha o
+   * que a pessoa apontou; ver "todos" é a área do campo, que já está lá.
+   *
+   * TROCA DE ABA, DESENHA E ENQUADRA, nessa ordem, e cada passo depende do
+   * anterior. `setActive('mapa')` é ASSÍNCRONO e o `render` dele constrói o mapa
+   * na primeira vez e chama `desenharMapa()`, que ZERA os trajetos -- desenhar
+   * antes de esperá-lo apagaria o que se acabou de pedir.
+   *
+   * O TRAJETO JÁ VEM CARREGADO, e não se pede de novo: a ficha o leu para
+   * montar a lista, e a linha de um trajeto de viatura passa de 6.000 pontos.
+   *
+   * O ENQUADRAMENTO É DO TRAJETO, e não do campo. São coisas de tamanhos
+   * diferentes: a linha de um dia cobre uma fração da área da reambulação, e
+   * enquadrar o campo deixaria o trajeto como um risco no meio da tela.
+   */
+  async function verTrajetoNoMapa({ campoId, track }) {
+    if (!track || !track.geometria) return;
+    const desenhar = [track];
+
+    // A RESERVA É FEITA ANTES DE A ABA MONTAR, e é ela que mata o pulo. O
+    // `render` da aba chama `desenharMapa()`, que troca os campos e, por
+    // padrão, re-enquadra TUDO: com a aba já aberta isso dava um zoom out no
+    // mundo inteiro um instante antes do zoom in no trajeto. A bandeira diz ao
+    // `desenharMapa` que o enquadramento já tem dono.
+    enquadramentoReservado = true;
+    try {
+      await abas.setActive('mapa');
+      if (disposed || !mapa) return;
+
+      mapa.setTracks(desenhar);
+      mapa.selecionar(Number(campoId));
+
+      // TETO DE ZOOM MAIS BAIXO que o do campo: a linha é fina e comprida, e
+      // colar nela esconde a área que ela percorreu.
+      mapa.enquadrar(track.geometria, 13);
+    } finally {
+      // NO `finally`, e não depois do enquadramento: uma falha no meio deixaria
+      // a bandeira levantada, e o próximo filtro nunca mais re-enquadraria.
+      enquadramentoReservado = false;
+    }
+  }
 
   const apagar = async (linha) => {
     const ok = await confirmDialog({
@@ -261,16 +310,13 @@ export async function renderCampo(container, ctx) {
           if (!mapa) {
             mapa = criarMapaCampos({
               onSelecionar: (id) => {
-                // O clique no polígono carrega o TRAJETO daquele campo e abre a
-                // ficha. Os trajetos não vêm todos: são 491.325 pontos no
-                // acervo do SAP, e desenhá-los de uma vez seriam megabytes de
-                // linha para uma tela onde um campo está em foco.
-                listarTracksCampo(id)
-                  .then(ts => { if (!disposed && mapa) mapa.setTracks(ts); })
-                  // A falha do trajeto NÃO derruba a ficha: ela carrega
-                  // sozinha, com o próprio catch, e a ausência de linha no mapa
-                  // é o pior que acontece.
-                  .catch(() => {});
+                // O CLIQUE NO CAMPO ABRE A FICHA, E SÓ. Ele NÃO desenha mais os
+                // trajetos daquele campo, por decisão do chefe em 2026-08-13:
+                // o mapa mostra UM trajeto por vez, e quem escolhe qual é o
+                // botão "Ver no mapa" da aba Trajetos. Cascavel 2026 tem 17
+                // trajetos, e o clique despejava os 17 de uma vez -- 30.338
+                // pontos de linha sobrepostos, que não respondem "por onde a
+                // viatura andou".
                 abrirFicha(id);
               },
             });
@@ -389,9 +435,11 @@ export async function renderCampo(container, ctx) {
     try {
       const colecao = await getCamposGeojson(filtros);
       if (disposed) return;
-      mapa.setCampos(colecao);
+      mapa.setCampos(colecao, { manterEnquadramento: enquadramentoReservado });
       // Trocar o recorte apaga o trajeto que estava desenhado: ele era do campo
-      // selecionado, e o campo pode não estar mais na lista.
+      // selecionado, e o campo pode não estar mais na lista. Quem veio pelo
+      // "Ver no mapa" desenha o dele LOGO DEPOIS, e por isso a limpeza aqui não
+      // o atinge.
       mapa.setTracks([]);
     } catch (err) {
       // A falha do mapa NÃO derruba a tabela, que é a mesma informação sem o

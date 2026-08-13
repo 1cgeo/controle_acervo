@@ -40,8 +40,12 @@ const VARIANTE = { 1: 'info', 2: 'warning', 3: 'success', 4: 'error' };
  * @param {number} options.id
  * @param {boolean} [options.podeEditar] - operador ou acima no PIT
  * @param {Function} [options.onEditar]
+ * @param {(alvo:{campoId:number, track:Object})=>void}
+ *        [options.onVerTrajetoNoMapa] - o botão "Ver no mapa" da aba Trajetos
  */
-export function abrirDetalheCampo({ id, podeEditar = false, onEditar = null } = {}) {
+export function abrirDetalheCampo({
+  id, podeEditar = false, onEditar = null, onVerTrajetoNoMapa = null,
+} = {}) {
   // O que precisa ser desmontado ao fechar, e que só existe depois da carga.
   const aoFechar = [];
 
@@ -62,9 +66,20 @@ export function abrirDetalheCampo({ id, podeEditar = false, onEditar = null } = 
   });
 
   const montarFicha = (campo) => {
+    // O NÓ VAI COMO FILHO, e nunca no lugar dos atributos. O segundo argumento
+    // de `el()` são os ATRIBUTOS, e uma lista ali vira `{'0': nó}`: o
+    // `setAttribute('0', ...)` que sai disso lança InvalidCharacterError, no
+    // navegador igual ao jsdom. Como a montagem da aba é uma promessa solta
+    // dentro de `createTabs`, o erro caía como rejeição não tratada e a aba
+    // Ficha nascia VAZIA, sem mensagem nenhuma -- quem a abria via um cabeçalho
+    // e um painel em branco. A linha da Situação é a única que passa um nó (o
+    // chip), e por isso era a única que quebrava. Pego em 2026-08-13, pelo
+    // primeiro teste que montou esta tela.
     const linha = (rotulo, valor) => el('div', { className: 'campo-detalhe__linha' }, [
       el('dt', { textContent: rotulo }),
-      el('dd', valor instanceof Node ? [valor] : { textContent: valor ?? '-' }),
+      valor instanceof Node
+        ? el('dd', {}, [valor])
+        : el('dd', { textContent: valor ?? '-' }),
     ]);
 
     // O EFETIVO SÃO AS DUAS LISTAS JUNTAS, como na subseção 2.5: o cadastro
@@ -137,7 +152,16 @@ export function abrirDetalheCampo({ id, podeEditar = false, onEditar = null } = 
           id: 'tracks',
           label: `Trajetos (${campo.total_tracks ?? 0})`,
           render: (c) => {
-            const trajetos = criarTrajetosCampo({ campoId: campo.id, podeEditar: false });
+            const trajetos = criarTrajetosCampo({
+              campoId: campo.id,
+              podeEditar: false,
+              // A FICHA FECHA ANTES DE O MAPA DESENHAR. O mapa é uma aba da
+              // página que está ATRÁS deste modal: deixá-lo aberto esconderia
+              // exatamente o que a pessoa acabou de pedir para ver.
+              aoVerNoMapa: onVerTrajetoNoMapa
+                ? (alvo) => { modal.close(); onVerTrajetoNoMapa(alvo); }
+                : null,
+            });
             c.appendChild(trajetos.element);
             trajetos.recarregar();
             return { cleanup: () => trajetos.cleanup() };

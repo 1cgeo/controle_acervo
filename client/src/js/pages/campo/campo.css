@@ -44,6 +44,11 @@
   gap: var(--space-xs);
 }
 
+.campo-mapa__legenda-nota {
+  flex-basis: 100%;
+  font-size: var(--font-size-xs);
+}
+
 .campo-mapa__legenda-cor {
   width: 14px;
   height: 14px;
@@ -211,6 +216,19 @@
   padding: var(--space-sm);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
+}
+
+/*
+ * O TEXTO OCUPA A SOBRA, e os botoes ficam juntos a direita. Sem isto, a linha
+ * com "Ver no mapa" e "Remover" espalharia os dois pela largura toda, e a
+ * distancia entre eles convidaria ao clique errado.
+ */
+.campo-tracks__item > :first-child {
+  flex: 1 1 auto;
+}
+
+.campo-tracks__sem-linha {
+  color: var(--text-secondary);
 }
 
 /* --- A tela cheia da foto e do video -------------------------------------- */

@@ -188,18 +188,37 @@ controller.buscarPorId = async id => {
  * `ST_AsGeoJSON` por linha, e nao a agregacao inteira em SQL: o que muda e so
  * onde o JSON e montado, e aqui as propriedades ja vem prontas do SELECT da
  * lista -- inclusive a situacao, que e o que pinta o poligono.
+ *
+ * O PONTO DO MARCADOR VAI JUNTO, em duas propriedades soltas
+ * (`ponto_lon`/`ponto_lat`), e ele e a razao de o mapa mostrar TODOS os campos.
+ * MEDIDO em 2026-08-13, contra o banco de producao: dos 54 campos, DEZ ficam
+ * fora do Brasil (capacitacao e TG na Europa, em Abu Dhabi e em Auckland), e o
+ * enquadramento que cabe os 54 chega perto do mundo inteiro. Nesse zoom o maior
+ * poligono do acervo (Cascavel 2026, 12.595 km2) tem poucos pixels e o menor
+ * (MGCP TG 35, 0,010 km2, uns 180 m de lado) e sub-pixel: a camada de
+ * preenchimento simplesmente nao desenha nada. Um circulo, ao contrario, e
+ * desenhado em pixels de TELA e nao encolhe com a escala.
+ *
+ * `ST_PointOnSurface`, e nao `ST_Centroid`: o centroide de um poligono em C ou
+ * em U cai FORA dele, e o marcador apontaria terreno que o campo nao cobriu.
+ *
+ * DUAS COLUNAS, e nao uma segunda geometria: a feicao GeoJSON so tem um campo
+ * `geometry`, e o cliente monta a fonte de pontos a partir destas duas. Sao dois
+ * numeros por campo, contra o MULTIPOLYGON que ja viaja ao lado.
  */
 controller.geojson = async filtros => {
   const linhas = await controller.listar(filtros)
   if (!linhas.length) return { type: 'FeatureCollection', features: [] }
 
   const geometrias = await db.conn.any(
-    `SELECT id, ST_AsGeoJSON(geom) AS geometria
-       FROM campo.campo
-      WHERE id IN ($<ids:csv>)`,
+    `SELECT c.id, ST_AsGeoJSON(c.geom) AS geometria,
+            ST_X(p.geom) AS ponto_lon, ST_Y(p.geom) AS ponto_lat
+       FROM campo.campo AS c,
+            LATERAL (SELECT ST_PointOnSurface(c.geom) AS geom) AS p
+      WHERE c.id IN ($<ids:csv>)`,
     { ids: linhas.map(l => l.id) }
   )
-  const porId = new Map(geometrias.map(g => [String(g.id), g.geometria]))
+  const porId = new Map(geometrias.map(g => [String(g.id), g]))
 
   return {
     type: 'FeatureCollection',
@@ -210,8 +229,12 @@ controller.geojson = async filtros => {
         return {
           type: 'Feature',
           id: linha.id,
-          geometry: JSON.parse(bruta),
-          properties: linha
+          geometry: JSON.parse(bruta.geometria),
+          properties: {
+            ...linha,
+            ponto_lon: bruta.ponto_lon,
+            ponto_lat: bruta.ponto_lat
+          }
         }
       })
       .filter(Boolean)
