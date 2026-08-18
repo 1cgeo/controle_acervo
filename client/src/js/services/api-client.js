@@ -1,4 +1,5 @@
 import { getToken, clearAuth, atualizarSessao } from '@store/auth-store.js';
+import { PREFIXO_API } from '@utils/base-path.js';
 
 /**
  * Teto de espera de uma requisição de DADOS.
@@ -94,7 +95,7 @@ export async function sincronizarSessao() {
 
   let response;
   try {
-    response = await buscar('/api/login/sessao', {
+    response = await buscar(`${PREFIXO_API}/login/sessao`, {
       headers: { Authorization: `Bearer ${token}` },
     });
   } catch {
@@ -170,7 +171,7 @@ async function apiRequest(
     options.body = JSON.stringify(body);
   }
 
-  const response = await buscar(`/api${endpoint}`, options);
+  const response = await buscar(`${PREFIXO_API}${endpoint}`, options);
 
   // Sessao acabou: limpa e volta ao login. No proprio /login um 401 e so
   // credencial errada, entao segue para o tratamento comum de erro.
@@ -312,7 +313,7 @@ export async function apiUpload(endpoint, formData) {
   // `fetch` CRU, sem o prazo do `buscar`: aqui o corpo é arquivo, e o envio
   // legítimo leva minutos. Um teto de 30 s cortaria o upload no meio e o
   // servidor ficaria com sessão pendente para a limpeza fechar depois.
-  const response = await fetch(`/api${endpoint}`, {
+  const response = await fetch(`${PREFIXO_API}${endpoint}`, {
     method: 'POST',
     headers,
     body: formData,
@@ -373,7 +374,7 @@ export function apiUploadComProgresso(endpoint, formData, onProgress, { metodo =
   let abortado = false;
 
   const promessa = new Promise((resolve, reject) => {
-    xhr.open(metodo, `/api${endpoint}`);
+    xhr.open(metodo, `${PREFIXO_API}${endpoint}`);
 
     const token = getToken();
     if (token) {
@@ -491,7 +492,7 @@ export async function apiImagem(endpoint) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await buscar(`/api${endpoint}`, { headers });
+  const response = await buscar(`${PREFIXO_API}${endpoint}`, { headers });
 
   if (response.status === 404) {
     return null;
@@ -566,7 +567,7 @@ export async function apiDownload(endpoint, fallbackFilename) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await buscar(`/api${endpoint}`, { headers });
+  const response = await buscar(`${PREFIXO_API}${endpoint}`, { headers });
 
   if (response.status === 401) {
     handleSessaoExpirada();

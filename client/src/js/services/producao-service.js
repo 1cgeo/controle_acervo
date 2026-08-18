@@ -1,4 +1,5 @@
 import { apiGet, apiPost } from '@services/api-client.js';
+import { PREFIXO_API } from '@utils/base-path.js';
 
 /**
  * Serviço do módulo PRODUÇÃO: a porta ÚNICA das telas de `#/producao`.
@@ -241,7 +242,7 @@ export async function tokenDeTile() {
  */
 export async function urlTileLinhaProducao(linhaProducaoId) {
   const token = await tokenDeTile();
-  return `/api/acompanhamento/linha_producao/${linhaProducaoId}`
+  return `${PREFIXO_API}/acompanhamento/linha_producao/${linhaProducaoId}`
     + `/{z}/{x}/{y}.pbf?token=${encodeURIComponent(token)}`;
 }
 

@@ -25,6 +25,32 @@ Em **produção** o server serve a interface na mesma origem, sem proxy nem port
 gera `client/` para `server/src/build`, servido em `/`. As chamadas de API são `/api/...` na mesma
 origem.
 
+### Publicado por proxy reverso, num subcaminho
+
+Quando um proxy reverso publica o SAP em `/<prefixo>/` em vez da raiz do host (porque o mesmo host
+publica outros sistemas), duas chaves do `config.env` entram em jogo, e as duas estão no
+[`README.md`](README.md):
+
+- **`PUBLIC_PATH=/<prefixo>`.** Ela **entra no build**, e não só no servidor: o `base` do Vite
+  escreve o prefixo dentro do `index.html` e das URLs que o bundle monta. Sem ela, o navegador pede
+  `/assets/...` na raiz do host, que é um caminho que o proxy não mapeia, e a tela fica branca com
+  404 nos assets. **Trocar o prefixo pede build novo**, e na instalação em CONTÊINER ela tem de
+  chegar ao BUILD DA IMAGEM (`ENV` ou build arg), porque o `config.env` do bind mount só existe em
+  tempo de execução. O `create_build.js` dá precedência ao ambiente exatamente por isso.
+- **`TRUST_PROXY=<servidor do proxy>`.** Sem ela o `req.ip` é o IP do proxy para todo mundo, o rate
+  limit de 3000/min deixa de ser por cliente e vira um balde único da rede inteira, e o log registra
+  sempre o mesmo endereço.
+
+No proxy, a regra encaminha `/<prefixo>/` para a porta de `PORT` **removendo o prefixo** (no nginx, é
+a barra no fim do `proxy_pass`), porque o servidor serve a API em `/api` e os assets em `/assets`. O
+`client_max_body_size` do proxy tem de caber os 60mb de JSON que o `express.json` aceita, senão o
+vídeo de campo morre com 413 antes de chegar ao Node.
+
+O acesso DIRETO na porta continua valendo, com o prefixo na URL (`http://<servidor>:<PORT>/<prefixo>/`):
+é o próprio servidor que remove o prefixo quando não há proxy na frente. A raiz nua da porta serve o
+`index.html`, e o hash do router funciona a partir dali; o que não existe é o par de caminhos ao mesmo
+tempo, porque o prefixo está gravado no build.
+
 ## Desenvolvimento (local)
 
 Banco `sca` em `localhost`:

@@ -11,9 +11,19 @@ import { resolve } from 'path';
 const PORTA_CLIENT = Number(process.env.SCA_CLIENT_PORT) || 3003;
 const PORTA_API = Number(process.env.SCA_API_PORT) || 3015;
 
+// Prefixo em que a interface e publicada, pelo mesmo motivo das portas acima:
+// ele e de DEPLOY, e este arquivo e versionado. Vem da chave PUBLIC_PATH de
+// server/config.env, que o create_build.js repassa ao build; vazio publica na
+// raiz, que e o caso normal e o do desenvolvimento (`npm run dev-client`).
+//
+// A barra no fim e obrigatoria para o Vite, e faltar uma no config.env e o erro
+// esperado de quem digita o valor a mao, entao ela se acrescenta aqui.
+const PREFIXO = process.env.PUBLIC_PATH || '/';
+const BASE = PREFIXO.endsWith('/') ? PREFIXO : `${PREFIXO}/`;
+
 export default defineConfig({
   root: '.',
-  base: '/',
+  base: BASE,
   publicDir: 'public',
   server: {
     port: PORTA_CLIENT,

@@ -1951,3 +1951,42 @@ nelas é conversa com o chefe:
   topográfica), e a `linha_producao` declara UM. O acompanhamento subconta sem que nada acuse, e não
   há conferência que aponte a versão órfã. A saída registrada é separar os lotes por tipo de produto;
   até lá, cabe uma consulta de conferência exposta ao gerente.
+
+## Publicação atrás de proxy reverso, num subcaminho
+
+Decidido em 2026-08-18, quando o SAP passou a ser publicado por um proxy reverso num subcaminho do
+host, e não mais só na porta dele. A interface subia e a tela ficava branca: o `index.html` pedia
+`/assets/...` na raiz do host, caminho que o proxy não mapeia.
+
+- **O prefixo é de BUILD, e não só de servidor.** O `base` do Vite grava o prefixo dentro do
+  `index.html` e das URLs que o bundle monta, então não existe conserto só no proxy nem só no
+  servidor: um build publicado na raiz não funciona sob subcaminho, e o contrário também não.
+  **Trocar o prefixo pede build novo**, e é o preço aceito. A alternativa era `base` relativo
+  (`./`), recusada porque o router de HASH mantém a URL do documento fixa mas o fallback da SPA
+  serve o `index.html` em qualquer profundidade de caminho, e aí `./assets` passa a resolver a
+  partir de um diretório que muda.
+- **Uma chave, `PUBLIC_PATH`, e o `create_build.js` a repassa ao build.** Ela mora no
+  `server/config.env`, que é o arquivo que o servidor já lê no boot, para o par build/servidor não
+  sair de sincronia: com valores diferentes, o navegador pede assets num caminho que o servidor não
+  serve. O guard de vazamento cobra que o VALOR fique só ali, e nunca em arquivo versionado.
+- **O AMBIENTE tem precedência sobre o `config.env`**, e é isso que faz a instalação em CONTÊINER
+  funcionar: lá o `config.env` é montado do host em tempo de execução, e durante o build da imagem
+  ele não existe. Sem a precedência, a imagem sairia sempre publicada na raiz.
+- **O servidor remove o prefixo da requisição que chega com ele inteiro.** Não é redundância com o
+  proxy, que costuma removê-lo antes de repassar: isso é o que mantém vivo o acesso DIRETO na porta,
+  sem proxy na frente, que é como se testa e como os CLIs e o plugin do QGIS chegam. Sem a remoção,
+  `/<prefixo>/assets/x.js` cairia no fallback da SPA e o navegador receberia `index.html` no lugar do
+  JavaScript.
+- **"/" NÃO é redirecionado para o prefixo.** Parece o conserto óbvio para quem abre a porta na raiz
+  e é um laço infinito: atrás do proxy que remove o prefixo, "/" é justamente o que chega, e o
+  redirecionamento voltaria ao proxy para ser removido outra vez. A raiz nua da porta serve o
+  `index.html` mesmo assim, e o router de hash funciona dali, porque a remoção acima cuida dos
+  assets e da API.
+- **O router de HASH não entrou na conta**, e é o que tornou a mudança pequena: `#/acervo/...` não
+  atravessa proxy nenhum. Só o que vira URL de rede precisou do prefixo -- a API, as imagens de fundo
+  do login e a tile MVT --, e é por isso que ele fica num lugar só (`client/src/js/utils/base-path.js`).
+- **`TRUST_PROXY` entrou junto, e não é cosmético.** Sem ela o `req.ip` é o IP do proxy para todo
+  mundo: o rate limit de 3000/min deixa de ser por cliente e vira um balde único da rede inteira, e o
+  log registra sempre o mesmo endereço, o que apaga o rastro de quem fez o quê. A lista é NOMINAL de
+  propósito: confiar em qualquer origem deixaria qualquer cliente forjar o próprio IP por
+  X-Forwarded-For.

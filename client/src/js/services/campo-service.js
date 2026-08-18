@@ -2,6 +2,7 @@ import {
   apiGet, apiPost, apiPut, apiDelete,
 } from '@services/api-client.js';
 import { getToken } from '@store/auth-store.js';
+import { PREFIXO_API } from '@utils/base-path.js';
 
 /**
  * Serviço de CAMPO: a atividade que a Divisão executa fora dela.
@@ -79,7 +80,7 @@ export const excluirImagemCampo = (imagemId) => apiDelete(`/campo/imagem/${image
  */
 export const urlDaImagemCampo = async (imagemId) => {
   const token = getToken();
-  const resposta = await fetch(`/api/campo/imagem/${imagemId}/arquivo`, {
+  const resposta = await fetch(`${PREFIXO_API}/campo/imagem/${imagemId}/arquivo`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!resposta.ok) {

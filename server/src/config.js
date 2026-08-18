@@ -393,6 +393,25 @@ const configSchema = Joi.object().keys({
   // processo do servidor, e uma requisição de horas não é o que o navegador nem
   // o proxy aguentam. Arquivo maior entra pelo plugin, por SMB, sem passar aqui.
   UPLOAD_WEB_MAX_GB: Joi.number().positive().default(2),
+  // Prefixo público em que a interface é publicada por um proxy reverso, com
+  // barra no começo (o guard de vazamento proíbe escrever o valor aqui: ele é
+  // de deploy, e mora no config.env). VAZIO É O ESTADO NORMAL, e publica na
+  // raiz. O MESMO valor entra no build (`create_build.js` o repassa como `base`
+  // do Vite) e é removido das requisições em `server/app.js`, para o build
+  // funcionar atrás do proxy e direto na porta.
+  PUBLIC_PATH: Joi.string()
+    .allow('')
+    .pattern(/^\/\S*$/)
+    .default(''),
+  // Proxies reversos confiáveis, separados por vírgula (`servidor`, faixa CIDR
+  // ou `loopback`). Sem eles, atrás de um proxy o `req.ip` é o IP do PROXY para
+  // todo mundo: o rate limit por IP vira um balde único compartilhado e o log
+  // registra sempre o mesmo endereço. VAZIO É O ESTADO NORMAL de quem atende
+  // direto na porta, e afrouxar isto por engano deixaria qualquer cliente
+  // forjar o próprio IP por X-Forwarded-For.
+  TRUST_PROXY: Joi.string()
+    .allow('')
+    .default(''),
   VERSION: Joi.string().required(),
   MIN_DATABASE_VERSION: Joi.string().required()
 })
@@ -428,6 +447,8 @@ const config = {
   JWT_SECRET: process.env.JWT_SECRET,
   JWT_EXPIRACAO: process.env.JWT_EXPIRACAO || '8h',
   VOLUMES_RAIZ: process.env.VOLUMES_RAIZ || '',
+  PUBLIC_PATH: process.env.PUBLIC_PATH || '',
+  TRUST_PROXY: process.env.TRUST_PROXY || '',
   // Ausente vale 2, e nao NaN: `Number(undefined)` reprovaria a validacao e
   // mataria o boot de toda instalacao que nunca ouviu falar desta chave.
   UPLOAD_WEB_MAX_GB: process.env.UPLOAD_WEB_MAX_GB

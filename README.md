@@ -84,6 +84,8 @@ Arquivo `server/config.env`, gerado pelo `npm run config`. O catálogo comentado
 | `MINIATURA_PDFTOPPM`, `MINIATURA_GDAL_TRANSLATE`, `MINIATURA_GDALINFO` | Não | Caminho dos binários de miniatura (vazio = procurar no PATH) |
 | `UPLOAD_WEB_MAX_GB` | Não | Teto do arquivo que o NAVEGADOR envia ao volume (default 2). Acima dele, o caminho é o plugin |
 | `VOLUMES_RAIZ` | Não | Onde os shares do acervo estão MONTADOS nesta máquina. Só importa fora do Windows (`utils/caminho_volume.js`) |
+| `PUBLIC_PATH` | Não | Prefixo público em que um proxy reverso publica a interface (`/<prefixo>`, vazio = raiz). **Entra no BUILD**, e não só no servidor: o `create_build.js` a repassa como `base` do Vite, e trocá-la pede build novo. No servidor, remove o prefixo da requisição que chega sem proxy na frente |
+| `TRUST_PROXY` | Não | Proxies reversos confiáveis, separados por vírgula. Sem ela, atrás de um proxy o `req.ip` é o IP do proxy para todo mundo: o rate limit deixa de ser por cliente e o log perde o rastro |
 | `SCA_CLIENT_PORT`, `SCA_API_PORT` | Não | Portas do Vite e do proxy `/api` em desenvolvimento (`client/vite.config.js`) |
 
 ### Endpoints da API

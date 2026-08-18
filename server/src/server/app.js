@@ -11,6 +11,7 @@ const swaggerJSDoc = require('swagger-jsdoc')
 const noCache = require('nocache')
 
 const appRoutes = require('../routes')
+const config = require('../config')
 const swaggerOptions = require('./swagger_options')
 
 const swaggerSpec = swaggerJSDoc(swaggerOptions)
@@ -24,6 +25,51 @@ const {
 } = require('../utils')
 
 const app = express()
+
+// ATRÁS DE UM PROXY REVERSO, `req.ip` É O IP DO PROXY para todo mundo. Isso
+// quebra duas coisas ao mesmo tempo: o rate limit deixa de ser por cliente e
+// passa a ser um balde único de 3000/min para a rede inteira, e o log registra
+// sempre o mesmo endereço, o que apaga o rastro de quem fez o quê. Com a lista
+// de proxies confiáveis, o Express resolve o IP real a partir do
+// X-Forwarded-For.
+//
+// A LISTA É NOMINAL, e nunca `true`: confiar em qualquer origem deixa qualquer
+// cliente forjar o próprio IP pelo header, e aí o limite por IP não limita nada
+// e o log passa a registrar o endereço que o cliente escolheu.
+if (config.TRUST_PROXY) {
+  app.set(
+    'trust proxy',
+    config.TRUST_PROXY.split(',')
+      .map(item => item.trim())
+      .filter(Boolean)
+  )
+}
+
+// PREFIXO PÚBLICO (PUBLIC_PATH), quando um proxy reverso publica o SAP num
+// subcaminho em vez da raiz do host. O build carrega o prefixo dentro de si (o
+// `base` do Vite entra no `index.html` e nas URLs que o bundle monta), então o
+// navegador pede `<prefixo>/assets/...` e `<prefixo>/api/...`.
+//
+// O proxy costuma remover o prefixo antes de repassar, e aí nada disto roda. O
+// que isto resolve é o acesso DIRETO NA PORTA, sem proxy na frente: sem remover
+// o prefixo aqui, `<prefixo>/assets/x.js` cairia no fallback da SPA e o
+// navegador receberia o `index.html` no lugar do JavaScript.
+//
+// "/" NÃO É REDIRECIONADO para o prefixo, de propósito: atrás do proxy que
+// remove o prefixo, "/" é justamente o que chega, e o redirecionamento voltaria
+// ao proxy para ser removido outra vez, em laço infinito.
+const publicPath = config.PUBLIC_PATH.replace(/\/+$/, '')
+if (publicPath) {
+  app.use((req, res, next) => {
+    if (req.url === publicPath) {
+      return res.redirect(`${publicPath}/`)
+    }
+    if (req.url.startsWith(`${publicPath}/`)) {
+      req.url = req.url.slice(publicPath.length)
+    }
+    return next()
+  })
+}
 
 app.use(sendJsonAndLogMiddleware)
 
