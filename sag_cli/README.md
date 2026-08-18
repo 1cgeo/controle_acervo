@@ -34,6 +34,27 @@ O comando `conferir` usa também as chaves do SAP (`SCA_URL` e `SCA_TOKEN`,
 ou `SCA_USER` e `SCA_SENHA`). Catálogo em `.env.example`. Nunca passe senha na linha
 de comando.
 
+## O documento de anulação não é nota de crédito
+
+O SIAFI devolve crédito por uma NC de ND 339000 ou 449000. No SCA isso **não**
+entra como nota de crédito: entra no recurso `recolhimento`, com uma linha por NC
+que o documento abate. Por isso `conferir nc` lê as duas tabelas do lado do SCA.
+
+O que muda na leitura do relatório:
+
+- documento de anulação já cadastrado sai de "falta cadastrar" e aparece em
+  **JÁ CADASTRADO COMO RECOLHIMENTO**, que não é pendência;
+- documento de rateio (o que abate mais de uma NC) entra uma vez por alvo, e a
+  conferência **soma as parcelas** antes de comparar com o valor do documento.
+  A coluna `alvos` diz quantas NCs ele abate;
+- quando a soma não fecha com o documento, ele vai para **RECOLHIMENTO COM VALOR
+  DIVERGENTE DO DOCUMENTO**. Isso é defeito de dado, não cadastro faltando;
+- **RECOLHIMENTO SÓ NO SCA** sofre o mesmo recorte do "só no SCA": com `--acao`,
+  todo recolhimento das outras ações cai ali por construção.
+
+O casamento usa `(numero, ug_emitente)` e **não** a ND, porque as ND de anulação
+não existem no domínio de ND do SCA: o recolhimento grava `cod_nd` nulo.
+
 ## O contrato sai da tela viva
 
 Este CLI não guarda a lista de colunas do SAG. Ele lê o `<select>` da própria

@@ -26,6 +26,21 @@ const RECURSOS = {
   nc: {
     caminho: '/orcamento/notas_credito',
     rotulo: 'notas de credito',
+    // O DOCUMENTO DE ANULACAO NAO E NOTA DE CREDITO NO SCA. O SIAFI devolve
+    // credito por uma NC de ND 339000 ou 449000, e o SCA guarda isso no recurso
+    // `recolhimento`, uma linha por NC que o documento abate. Sem olhar essa
+    // segunda tabela, o conferir reporta cada anulacao como "falta cadastrar"
+    // para sempre: eram 27 falsos positivos permanentes em 2026, medidos em
+    // 2026-08-18, e eles empurram para o operador um cadastro que ja existe.
+    //
+    // A chave NAO leva cod_nd. As ND de anulacao nao estao no dominio de ND do
+    // SCA, entao o recolhimento grava cod_nd nulo e registra a ND na
+    // observacao. Casar por ND aqui nao acharia nenhum.
+    recolhimento: {
+      caminho: '/orcamento/recolhimentos',
+      chave: ['numero', 'ug_emitente'],
+      campoValor: 'valor'
+    },
     // Campos comparados alem da chave. `converter` traz o valor do SAG para a
     // forma do SCA antes de comparar: 20.710,00 contra 20710 nao e divergencia.
     comparar: [
@@ -132,6 +147,31 @@ function agrupar (linhas, doc) {
   return { mapa, agrupadas }
 }
 
+/**
+ * Indexa a tabela de recolhimentos do SCA por documento do SIAFI.
+ *
+ * Um documento de anulacao pode ratear entre VARIAS NCs (a 2026NC401316 abate
+ * R$ 0,98 de uma e R$ 0,99 de outra), e ai ele entra uma vez por alvo. Somar
+ * por chave antes de comparar e o que permite conferir o documento inteiro
+ * contra o valor que o SAG declara. Sem a soma, cada parcela pareceria
+ * divergencia de valor.
+ */
+function indexarRecolhimentos (linhas, chave, campoValor) {
+  const mapa = new Map()
+  for (const linha of linhas) {
+    const k = chaveDe(linha, chave)
+    const valor = valores.numero(linha[campoValor]) || 0
+    const atual = mapa.get(k)
+    if (atual) {
+      atual.valor += valor
+      atual.linhas++
+      continue
+    }
+    mapa.set(k, { numero: linha.numero, valor, linhas: 1 })
+  }
+  return mapa
+}
+
 async function executar (args, cfg) {
   const alvo = String(args._[1] || '').toLowerCase()
   const recurso = RECURSOS[alvo]
@@ -184,6 +224,15 @@ async function executar (args, cfg) {
   const cfgSca = resolverSca(args.flags)
   const doSca = await sca.listar(cfgSca, recurso.caminho, { ano })
 
+  // Segunda tabela do lado do SCA, quando o recurso tem uma (ver RECURSOS.nc).
+  const mapaRecolh = recurso.recolhimento
+    ? indexarRecolhimentos(
+      await sca.listar(cfgSca, recurso.recolhimento.caminho, { ano }),
+      recurso.recolhimento.chave,
+      recurso.recolhimento.campoValor
+    )
+    : new Map()
+
   // ---- comparacao ----
   const { mapa: mapaSag, agrupadas } = agrupar(doSag.linhas, doc)
   if (agrupadas) {
@@ -225,10 +274,40 @@ async function executar (args, cfg) {
   const soNoSag = []
   const soNoSca = []
   const divergentes = []
+  // Documentos que EXISTEM no SCA, so que na segunda tabela.
+  const comoRecolhimento = []
+  const recolhDivergentes = []
+  const casadosComoRecolh = new Set()
+  const chavesSagCurta = new Set()
 
   for (const [chave, { bruto, traduzida }] of mapaSag) {
+    if (recurso.recolhimento) {
+      chavesSagCurta.add(chaveDe(traduzida, recurso.recolhimento.chave))
+    }
     const noSca = mapaSca.get(chave)
     if (!noSca) {
+      // ANTES de acusar falta, procure na segunda tabela. Acusar cadastro que
+      // ja existe custa o trabalho de alguem, e desgasta a confianca no
+      // relatorio inteiro.
+      const noRecolh = recurso.recolhimento
+        ? mapaRecolh.get(chaveDe(traduzida, recurso.recolhimento.chave))
+        : null
+      if (noRecolh) {
+        casadosComoRecolh.add(chave)
+        const linha = {
+          numero: traduzida.numero,
+          nd: traduzida.cod_nd,
+          alvos: noRecolh.linhas,
+          no_sag: String(traduzida.valor_nc),
+          no_sca: String(noRecolh.valor)
+        }
+        if (valores.mesmoValor(traduzida.valor_nc, noRecolh.valor)) {
+          comoRecolhimento.push(linha)
+        } else {
+          recolhDivergentes.push(linha)
+        }
+        continue
+      }
       soNoSag.push({
         numero: traduzida.numero,
         nd: traduzida.cod_nd,
@@ -271,6 +350,16 @@ async function executar (args, cfg) {
     })
   }
 
+  const recolhSoNoSca = []
+  for (const [chave, registro] of mapaRecolh) {
+    if (chavesSagCurta.has(chave)) continue
+    recolhSoNoSca.push({
+      numero: registro.numero,
+      alvos: registro.linhas,
+      valor: registro.valor
+    })
+  }
+
   const resumo = {
     exercicio: ano,
     no_sag: mapaSag.size,
@@ -278,13 +367,28 @@ async function executar (args, cfg) {
     so_no_sag: soNoSag.length,
     so_no_sca: soNoSca.length,
     divergentes: divergentes.length,
-    duplicados_no_sca: duplicadosSca.length
+    duplicados_no_sca: duplicadosSca.length,
+    recolhimentos_no_sca: mapaRecolh.size,
+    como_recolhimento: comoRecolhimento.length,
+    recolhimentos_divergentes: recolhDivergentes.length,
+    recolhimentos_so_no_sca: recolhSoNoSca.length
   }
 
   if (formato === 'json') {
     return {
       texto: JSON.stringify(
-        { resumo, soNoSag, soNoSca, divergentes, duplicadosSca }, null, 2
+        {
+          resumo,
+          soNoSag,
+          soNoSca,
+          divergentes,
+          duplicadosSca,
+          comoRecolhimento,
+          recolhDivergentes,
+          recolhSoNoSca
+        },
+        null,
+        2
       ),
       avisos
     }
@@ -292,7 +396,8 @@ async function executar (args, cfg) {
 
   const partes = []
   partes.push(`Conferencia de ${recurso.rotulo}, exercicio ${ano}`)
-  partes.push(`  SAG ${resumo.no_sag}   SCA ${resumo.no_sca}`)
+  partes.push(`  SAG ${resumo.no_sag}   SCA ${resumo.no_sca}` +
+    (recurso.recolhimento ? ` (mais ${resumo.recolhimentos_no_sca} recolhimentos)` : ''))
   partes.push('')
 
   const bloco = (titulo, linhas) => {
@@ -310,14 +415,42 @@ async function executar (args, cfg) {
     bloco('NUMERO REPETIDO NO SCA (conferir isto antes das divergencias)',
       duplicadosSca.map(d => ({ numero: d.numero, ids: d.ids, valores: d.valores })))
   }
+  // O valor do documento de anulacao tem de fechar com a soma dos alvos que ele
+  // abate. Quando nao fecha, ou falta um alvo ou uma parcela esta errada, e isso
+  // e defeito de dado, nao cadastro faltando.
+  if (recolhDivergentes.length) {
+    bloco('RECOLHIMENTO COM VALOR DIVERGENTE DO DOCUMENTO', recolhDivergentes)
+  }
   bloco('FALTA CADASTRAR NO SCA', soNoSag)
   bloco('DIVERGEM EM VALOR OU DATA', divergentes)
-  if (!soDiferencas) bloco('SO NO SCA (sem par no SAG)', soNoSca)
+  if (!soDiferencas) {
+    if (comoRecolhimento.length) {
+      bloco('JA CADASTRADO COMO RECOLHIMENTO (nao e pendencia)', comoRecolhimento)
+    }
+    bloco('SO NO SCA (sem par no SAG)', soNoSca)
+    // Este grupo e o reverso do anterior e sofre do MESMO recorte: com --acao,
+    // todo recolhimento das outras acoes cai aqui por construcao. Ele fica
+    // junto do "so no SCA" e fora do --so-diferencas de proposito, para nao
+    // aparecer como alarme no topo do relatorio.
+    if (recolhSoNoSca.length) {
+      bloco('RECOLHIMENTO SO NO SCA (mesmo recorte do grupo acima)', recolhSoNoSca)
+    }
+  } else if (comoRecolhimento.length) {
+    partes.push(
+      `${comoRecolhimento.length} documento(s) de anulacao casaram com recolhimento ` +
+      'no SCA e ficaram fora de "falta cadastrar".'
+    )
+    partes.push('')
+  }
 
   if (args.flags.corpo === true && soNoSag.length) {
     partes.push('CORPOS PARA O orcamento_cli (confira antes de gravar):')
     for (const [, { traduzida }] of mapaSag) {
-      if (mapaSca.has(chaveDe(traduzida, doc.chave))) continue
+      const chaveDoc = chaveDe(traduzida, doc.chave)
+      if (mapaSca.has(chaveDoc)) continue
+      // Anulacao ja cadastrada como recolhimento nao vira corpo de NC: gravar
+      // esse corpo criaria uma nota de credito que o SIAFI nunca emitiu.
+      if (casadosComoRecolh.has(chaveDoc)) continue
       partes.push('  ' + JSON.stringify({ ...traduzida, ano }))
     }
     partes.push('')
@@ -327,4 +460,12 @@ async function executar (args, cfg) {
   return { texto: partes.join('\n'), avisos }
 }
 
-module.exports = { executar, precisaServidor: true, chaveDe, traduzir, agrupar, RECURSOS }
+module.exports = {
+  executar,
+  precisaServidor: true,
+  chaveDe,
+  traduzir,
+  agrupar,
+  indexarRecolhimentos,
+  RECURSOS
+}
