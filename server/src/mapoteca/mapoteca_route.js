@@ -192,6 +192,56 @@ router.get(
   })
 )
 
+// PUBLICA, e pela MESMA razao da rota acima: a imagem da folha aparece na tela
+// de acompanhamento, que nao tem login. O localizador e o segredo, e a consulta
+// so devolve a miniatura de uma versao que pertenca AQUELE pedido.
+//
+// Nao se resolveu isso tirando a guarda de '/acervo/versao/:id/miniatura', que
+// serviria a imagem de qualquer versao do acervo a quem chutasse um id.
+//
+// Responde a IMAGEM crua, com as mesmas regras de cache da rota do acervo: o
+// `noCache()` do app vale para dado que muda, e a miniatura e derivada e
+// praticamente imutavel. A etiqueta sai da data de geracao e do tamanho, entao
+// regerar a miniatura invalida o cache do navegador sozinho.
+//
+// `public` no Cache-Control, e nao `private`: aqui a imagem nao depende de
+// perfil, e a URL ja carrega o segredo.
+router.get(
+  '/pedido/localizador/:localizador/miniatura/:versao_id',
+  schemaValidation({
+    params: mapotecaSchema.pedidoLocalizadorMiniatura
+  }),
+  asyncHandler(async (req, res, next) => {
+    const { localizador, versao_id } = req.params
+
+    const mini = await mapotecaCtrl.getMiniaturaPorLocalizador(localizador, versao_id)
+
+    if (!mini) {
+      throw new AppError(
+        'Esta folha não tem miniatura neste pedido',
+        httpCode.NotFound
+      )
+    }
+
+    const etag = `"${new Date(mini.data_geracao).getTime()}-${mini.bytes}"`
+
+    res.removeHeader('Pragma')
+    res.removeHeader('Expires')
+    res.removeHeader('Surrogate-Control')
+    res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate')
+    res.setHeader('ETag', etag)
+
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(httpCode.NotModified).end()
+    }
+
+    res.setHeader('Content-Type', `image/${mini.formato}`)
+    res.setHeader('Content-Length', String(mini.conteudo.length))
+
+    return res.status(httpCode.OK).end(mini.conteudo)
+  })
+)
+
 // A FILA de pedidos abertos, do mais urgente para o menos.
 //
 // ANTES de '/pedido/:id', e não junto das outras: '/pedido/em_aberto' casaria com

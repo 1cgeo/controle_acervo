@@ -151,6 +151,13 @@ models.pedidoLocalizador = Joi.object().keys({
   localizador: Joi.string().pattern(/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/).required()
 })
 
+// A miniatura da folha na tela publica: o localizador manda, e o versao_id so
+// diz QUAL das folhas daquele pedido. Ver getMiniaturaPorLocalizador.
+models.pedidoLocalizadorMiniatura = Joi.object().keys({
+  localizador: Joi.string().pattern(/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/).required(),
+  versao_id: Joi.number().integer().positive().required()
+})
+
 // Esquemas para Produto do Pedido
 models.produtoPedidoIds = Joi.object().keys({
   produto_pedido_ids: Joi.array()

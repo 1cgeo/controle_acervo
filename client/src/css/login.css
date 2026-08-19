@@ -333,10 +333,41 @@
 }
 
 .consulta-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
   padding: var(--space-sm) var(--space-md);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   background: var(--bg-secondary);
+}
+
+/* O corpo cresce e o quadro da miniatura nao: sem o min-width o flex recusa
+   encolher o texto abaixo do conteudo, e o MI longo empurra a imagem para fora. */
+.consulta-item__corpo {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A miniatura tem proporcao propria (a carta e mais larga que alta, o mosaico
+   nem sempre), entao a altura e livre e so a largura manda. `contain` para nao
+   cortar a mancha, que e justamente o que identifica a folha. */
+.consulta-item__thumb {
+  flex: 0 0 auto;
+  width: 84px;
+  height: auto;
+  max-height: 110px;
+  object-fit: contain;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+@media (max-width: 480px) {
+  .consulta-item__thumb {
+    width: 56px;
+    max-height: 74px;
+  }
 }
 
 .consulta-item__title {

@@ -4,6 +4,12 @@ import { chipSituacaoPedido } from '@components/status-chip.js';
 import { formatDate } from '@utils/format.js';
 import { isValidLocalizador, normalizeLocalizador } from '@utils/localizador.js';
 import { randomBackground } from '@utils/backgrounds.js';
+import { PREFIXO_API } from '@utils/base-path.js';
+
+// Situacao a partir da qual o material JA SAIU: 4 Remetido, 5 Concluido.
+const SITUACAO_REMETIDO = 4;
+const SITUACAO_CONCLUIDO = 5;
+const SITUACAO_CANCELADO = 6;
 
 function infoRow(label, value) {
   return el('div', { className: 'consulta-info__row' }, [
@@ -119,8 +125,27 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
     // A forma de entrega e do PEDIDO, e o servidor a devolve no objeto do
     // pedido. No laco do ITEM ela nao sai, porque nenhum item traz o campo: a
     // linha "Entrega" some para o cliente sem aviso nenhum.
+    //
+    // O ROTULO muda com o momento: enquanto o material nao saiu, o campo e uma
+    // INTENCAO (vamos mandar pelos Correios), e prometer "Forma de entrega"
+    // antes de despachar e prometer o que ainda pode mudar. Depois de remetido,
+    // e fato.
     if (pedido.forma_entrega_nome) {
-      rows.push(infoRow('Forma de entrega', pedido.forma_entrega_nome));
+      const jaSaiu = Number(pedido.situacao_pedido_id) >= SITUACAO_REMETIDO;
+      rows.push(infoRow(jaSaiu ? 'Forma de entrega' : 'Forma de envio prevista',
+        pedido.forma_entrega_nome));
+    }
+    // Situacao do ENVIO, sempre visivel enquanto o pedido vive. Antes disto a
+    // tela so falava de envio quando havia rastreio, entao quem consultava um
+    // pedido em produção nao tinha como saber se ja tinha sido despachado: a
+    // ausencia de linha nao diz "nao enviado", diz apenas nada. Pedido
+    // cancelado nao ganha a linha, porque ali envio nao se aplica.
+    if (Number(pedido.situacao_pedido_id) !== SITUACAO_CANCELADO) {
+      const sit = Number(pedido.situacao_pedido_id);
+      let envio = 'Não enviado';
+      if (sit === SITUACAO_REMETIDO) envio = 'Enviado';
+      else if (sit === SITUACAO_CONCLUIDO) envio = 'Enviado e concluído';
+      rows.push(infoRow('Situação do envio', envio));
     }
     // A data que o cliente quer ver e a do envio, e ela e a data_atendimento:
     // o pedido fecha no dia em que o material sai. Nao existe coluna
@@ -193,7 +218,7 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
         itemMeta('Mídia', p.tipo_midia_nome),
       ].filter(Boolean);
 
-      const children = [
+      const corpo = [
         el('div', { className: 'consulta-item__title' }, [
           svgIcon(ICONS.description, 18),
           el('span', { textContent: titulo }),
@@ -202,7 +227,36 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
       ];
 
       if (p.observacao) {
-        children.push(el('div', { className: 'consulta-item__obs', textContent: p.observacao }));
+        corpo.push(el('div', { className: 'consulta-item__obs', textContent: p.observacao }));
+      }
+
+      const children = [el('div', { className: 'consulta-item__corpo' }, corpo)];
+
+      // A MINIATURA da folha, a esquerda. Vale mais que o texto para quem
+      // confere um pedido: reconhece-se a carta pela mancha antes de ler o MI.
+      //
+      // Vai por `src` direto, e nao pelo `apiImagem` que a ficha do acervo usa:
+      // la a rota exige token, e por isso a imagem precisa vir por fetch e virar
+      // blob. Aqui a rota e publica, entao o `img` simples basta, o cache do
+      // navegador funciona sozinho pela etiqueta, e nao ha blob para liberar
+      // depois (o vazamento que o comentario do `apiImagem` descreve).
+      //
+      // So entra quando `tem_miniatura`: pedir a imagem de quem nao tem gera um
+      // 404 por item e um icone quebrado na tela.
+      if (p.tem_miniatura && p.versao_id) {
+        const url = `${PREFIXO_API}/mapoteca/pedido/localizador/`
+          + `${encodeURIComponent(localizador)}/miniatura/${encodeURIComponent(p.versao_id)}`;
+        const img = el('img', {
+          className: 'consulta-item__thumb',
+          src: url,
+          alt: `Miniatura de ${titulo}`,
+          loading: 'lazy',
+          decoding: 'async',
+        });
+        // Rede fora do ar ou miniatura apagada entre a consulta e o desenho:
+        // some com o quadro em vez de deixar o icone de imagem quebrada.
+        img.addEventListener('error', () => img.remove());
+        children.unshift(img);
       }
 
       return el('div', { className: 'consulta-item' }, children);

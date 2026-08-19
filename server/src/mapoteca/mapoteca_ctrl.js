@@ -1097,11 +1097,18 @@ controller.getPedidoByLocalizador = async (localizador) => {
     // descricao_avulso É PÚBLICA: ela guarda a descrição física do impresso ("80
     // x 68 cm, quadrícula de 4 x 4 cm"), que é justamente o que o cliente precisa
     // ler. Anotação interna sobre um avulso não vai aqui.
+    // `versao_id` e `tem_miniatura` existem para a IMAGEM da folha, servida por
+    // '/pedido/localizador/:localizador/miniatura/:versao_id'. O id sozinho não
+    // abre nada: aquela rota só entrega a imagem se a versão pertencer a ESTE
+    // pedido. E `tem_miniatura` evita a viagem que voltaria 404, que é o caso
+    // normal de produto sem imagem (mesma disciplina da ficha do acervo).
     const produtos = await t.any(`
       SELECT
         pp.quantidade,
         tm.nome AS tipo_midia_nome,
         pp.observacao,
+        v.id AS versao_id,
+        (mv.versao_id IS NOT NULL AND mv.conteudo IS NOT NULL) AS tem_miniatura,
         v.versao,
         v.data_edicao,
         ${PRODUTO_NOME} AS produto_nome,
@@ -1114,6 +1121,7 @@ controller.getPedidoByLocalizador = async (localizador) => {
       FROM mapoteca.produto_pedido AS pp
       LEFT JOIN mapoteca.tipo_midia AS tm ON tm.code = pp.tipo_midia_id
       ${JOIN_PRODUTO_ITEM}
+      LEFT JOIN acervo.miniatura_versao AS mv ON mv.versao_id = v.id
       WHERE pp.pedido_id = $1
       ORDER BY pp.data_criacao
     `, [pedido.id]);
@@ -1123,6 +1131,37 @@ controller.getPedidoByLocalizador = async (localizador) => {
 
     return pedido;
   });
+};
+
+/**
+ * Miniatura de uma versão, para a tela PÚBLICA de acompanhamento.
+ *
+ * O acervo já serve a miniatura em '/acervo/versao/:id/miniatura', e aquela
+ * rota exige perfil. Esta existe porque o acompanhamento não tem login, e o
+ * caminho preguiçoso (tirar a guarda da rota do acervo) abriria a imagem de
+ * QUALQUER versão a quem souber um id sequencial.
+ *
+ * Aqui o localizador é a chave: a imagem só sai se a versão for de um item do
+ * pedido daquele localizador. Quem tem o código vê as folhas dele, e nada além.
+ * O par (localizador, versao_id) é conferido no BANCO, numa consulta só, e não
+ * por confiança no que o cliente mandou.
+ *
+ * Devolve null quando o par não casa e quando a miniatura não existe: para quem
+ * chama, os dois são 404, e a distinção não interessa a quem está de fora.
+ */
+controller.getMiniaturaPorLocalizador = async (localizador, versaoId) => {
+  return db.conn.oneOrNone(`
+    SELECT mv.formato, mv.data_geracao, mv.conteudo,
+           length(mv.conteudo) AS bytes
+      FROM mapoteca.pedido AS p
+      JOIN mapoteca.produto_pedido AS pp ON pp.pedido_id = p.id
+      JOIN acervo.versao AS v ON v.uuid_versao = pp.uuid_versao
+      JOIN acervo.miniatura_versao AS mv ON mv.versao_id = v.id
+     WHERE p.localizador_pedido = $1
+       AND v.id = $2
+       AND mv.conteudo IS NOT NULL
+     LIMIT 1
+  `, [localizador, versaoId]);
 };
 
 controller.deletePedidos = async (pedidoIds, usuarioUuid, contexto) => {

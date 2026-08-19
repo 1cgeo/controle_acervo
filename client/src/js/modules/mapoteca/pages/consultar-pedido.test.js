@@ -145,4 +145,77 @@ describe('renderConsultarPedido', () => {
     }
   });
 
+  // --- miniatura da folha, situacao do envio e forma PREVISTA ---------------
+
+  test('mostra a miniatura da folha, apontando para a rota publica do localizador', async () => {
+    svc.getPedidoPorLocalizador.mockResolvedValue({
+      ...PEDIDO,
+      produtos: [{ ...PEDIDO.produtos[0], versao_id: 412, tem_miniatura: true }],
+    });
+    const container = await montar('AB12-CD34-EF56');
+
+    const img = container.querySelector('.consulta-item__thumb');
+    expect(img).toBeTruthy();
+    expect(img.getAttribute('src')).toContain('/mapoteca/pedido/localizador/AB12-CD34-EF56/miniatura/412');
+    // a imagem entra ANTES do texto: ela e a coluna da esquerda
+    expect(img.nextElementSibling.className).toBe('consulta-item__corpo');
+  });
+
+  // O contrario tem de valer: sem miniatura NAO se pede imagem nenhuma, senao
+  // cada item sem imagem vira um 404 e um icone quebrado na tela.
+  test('nao pede imagem quando o item nao tem miniatura', async () => {
+    for (const extra of [{}, { versao_id: 412, tem_miniatura: false }, { tem_miniatura: true }]) {
+      svc.getPedidoPorLocalizador.mockResolvedValue({
+        ...PEDIDO,
+        produtos: [{ ...PEDIDO.produtos[0], ...extra }],
+      });
+      const container = await montar('AB12-CD34-EF56');
+      expect(container.querySelector('.consulta-item__thumb')).toBeNull();
+    }
+  });
+
+  test('a situacao do envio aparece mesmo sem rastreio, e acompanha a situacao', async () => {
+    const casos = [
+      [2, 'Pedido Recebido', 'Não enviado'],
+      [3, 'Em andamento', 'Não enviado'],
+      [4, 'Remetido', 'Enviado'],
+      [5, 'Concluído', 'Enviado e concluído'],
+    ];
+    for (const [id, nome, esperado] of casos) {
+      svc.getPedidoPorLocalizador.mockResolvedValue({
+        ...PEDIDO, situacao_pedido_id: id, situacao_pedido_nome: nome,
+      });
+      const container = await montar('AB12-CD34-EF56');
+      expect(container.textContent).toContain('Situação do envio');
+      expect(container.textContent).toContain(esperado);
+    }
+  });
+
+  // Cancelado nao tem envio a informar, e dizer "Nao enviado" ali soa como
+  // pendencia num pedido que ja morreu.
+  test('pedido cancelado nao mostra situacao de envio', async () => {
+    svc.getPedidoPorLocalizador.mockResolvedValue({
+      ...PEDIDO, situacao_pedido_id: 6, situacao_pedido_nome: 'Cancelado',
+      motivo_cancelamento: 'Duplicado',
+    });
+    const container = await montar('AB12-CD34-EF56');
+    expect(container.textContent).not.toContain('Situação do envio');
+  });
+
+  test('a forma de entrega e PREVISTA antes de remeter, e fato depois', async () => {
+    svc.getPedidoPorLocalizador.mockResolvedValue({
+      ...PEDIDO, situacao_pedido_id: 3, forma_entrega_nome: 'Correios',
+    });
+    let container = await montar('AB12-CD34-EF56');
+    expect(container.textContent).toContain('Forma de envio prevista');
+    expect(container.textContent).not.toContain('Forma de entrega');
+
+    svc.getPedidoPorLocalizador.mockResolvedValue({
+      ...PEDIDO, situacao_pedido_id: 4, forma_entrega_nome: 'Correios',
+    });
+    container = await montar('AB12-CD34-EF56');
+    expect(container.textContent).toContain('Forma de entrega');
+    expect(container.textContent).not.toContain('Forma de envio prevista');
+  });
+
 });
