@@ -75,6 +75,9 @@ const pedidoBase = {
   cliente_id: Joi.number().integer().required(),
   situacao_pedido_id: Joi.number().integer().valid(...Object.values(SITUACAO_PEDIDO)).required(),
   ponto_contato: Joi.string().max(255).allow(null, ''),
+  // O contato do 1o CGEO para quem pediu tirar duvida. E PUBLICO: sai na
+  // consulta por localizador, sem login.
+  contato_mapoteca: Joi.string().max(255).allow(null, ''),
   documento_solicitacao: Joi.string().max(255).allow(null, ''),
   documento_solicitacao_nup: Joi.string().max(255).allow(null, ''),
   endereco_entrega: Joi.string().allow(null, ''),

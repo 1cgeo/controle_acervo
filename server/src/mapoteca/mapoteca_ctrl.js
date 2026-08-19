@@ -56,6 +56,9 @@ const PEDIDO_COLS = [
   { name: 'data_atendimento', def: null },
   'cliente_id', 'situacao_pedido_id',
   { name: 'ponto_contato', def: null },
+  // O contato NOSSO, que o solicitante le na consulta publica. O de cima e o
+  // contato DELES. Ver er/mapoteca.sql.
+  { name: 'contato_mapoteca', def: null },
   { name: 'documento_solicitacao', def: null },
   { name: 'documento_solicitacao_nup', def: null },
   { name: 'endereco_entrega', def: null },
@@ -596,7 +599,7 @@ controller.getPedidosEmAberto = async ({ incluirRemetidos = false } = {}) => {
            c.tipo_cliente_id, tc.nome AS tipo_cliente_nome,
            p.situacao_pedido_id, sp.nome AS situacao_pedido_nome,
            p.documento_solicitacao, p.documento_solicitacao_nup,
-           p.ponto_contato, c.ponto_contato_principal AS cliente_ponto_contato,
+           p.ponto_contato, p.contato_mapoteca, c.ponto_contato_principal AS cliente_ponto_contato,
            p.endereco_entrega, c.endereco_entrega_principal AS cliente_endereco_entrega,
            p.observacao, p.observacao_interna, p.localizador_envio, p.operacao,
            -- A forma de entrega sai aqui porque a ETIQUETA sai desta tela: quem
@@ -798,7 +801,7 @@ controller.getPedidoById = async (pedidoId) => {
              -- pedido, que costuma vir no DIEx. c.ponto_contato_principal e o
              -- contato geral da OM, que serve quando o pedido nao traz um.
              -- (Sem crase nestes comentarios: a consulta e um template literal.)
-             p.ponto_contato, c.ponto_contato_principal AS cliente_ponto_contato,
+             p.ponto_contato, p.contato_mapoteca, c.ponto_contato_principal AS cliente_ponto_contato,
              p.documento_solicitacao, p.documento_solicitacao_nup,
              -- Os DOIS enderecos, pela mesma razao dos dois contatos: o do
              -- pedido manda, e o cadastro da OM serve de reserva. A etiqueta de
@@ -1068,6 +1071,10 @@ controller.getPedidoByLocalizador = async (localizador) => {
         c.nome AS cliente_nome,
         p.prazo,
         p.observacao,
+        -- Com quem o solicitante fala se tiver duvida. E o unico caminho de
+        -- VOLTA que esta tela oferece: quem a abre meses depois nao tem mais o
+        -- DIEx de resposta a mao.
+        p.contato_mapoteca,
         p.data_atendimento,
         p.localizador_envio,
         p.observacao_envio,

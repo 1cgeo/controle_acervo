@@ -218,4 +218,18 @@ describe('renderConsultarPedido', () => {
     expect(container.textContent).not.toContain('Forma de envio prevista');
   });
 
+  test('mostra o contato do 1o CGEO para duvidas, e so quando ha contato', async () => {
+    svc.getPedidoPorLocalizador.mockResolvedValue({
+      ...PEDIDO, contato_mapoteca: '1º Ten Ventura - RITEX 832-2020',
+    });
+    let container = await montar('AB12-CD34-EF56');
+    expect(container.textContent).toContain('Dúvidas sobre este pedido');
+    expect(container.textContent).toContain('1º Ten Ventura - RITEX 832-2020');
+
+    // sem contato gravado a linha nao aparece: 47 pedidos abertos nascem sem ele
+    svc.getPedidoPorLocalizador.mockResolvedValue({ ...PEDIDO });
+    container = await montar('AB12-CD34-EF56');
+    expect(container.textContent).not.toContain('Dúvidas sobre este pedido');
+  });
+
 });

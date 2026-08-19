@@ -193,6 +193,16 @@ export function createPedidoFormFields({
       maxLength: 255,
       helpText: 'Contato específico deste pedido. Em branco, vale o contato geral da OM.',
     }),
+    // O contato NOSSO, e o de cima é o DELES. Este aparece na consulta pública
+    // por localizador, que é a única tela em que o solicitante nos procura sem
+    // ter o DIEx de resposta à mão.
+    contato_mapoteca: createTextField({
+      label: 'Contato do 1º CGEO para dúvidas',
+      value: (pedido && pedido.contato_mapoteca) || '',
+      maxLength: 255,
+      helpText: 'APARECE PARA O SOLICITANTE na consulta pública. Quem ele procura '
+        + 'se tiver dúvida sobre este pedido (posto, nome, telefone ou RITEx).',
+    }),
     demandante: createTextField({
       label: 'Demandante',
       value: (pedido && pedido.demandante) || '',
@@ -366,6 +376,7 @@ export function createPedidoFormFields({
 
   const adicionalElement = el('div', { className: 'form-grid' }, [
     fields.ponto_contato.element,
+    fields.contato_mapoteca.element,
     fields.demandante.element,
     fields.operacao.element,
     fields.forma_entrega_id.element,
@@ -459,6 +470,7 @@ export function createPedidoFormFields({
       documento_solicitacao: orNull(fields.documento_solicitacao.getValue()),
       documento_solicitacao_nup: orNull(fields.documento_solicitacao_nup.getValue()),
       ponto_contato: orNull(fields.ponto_contato.getValue()),
+      contato_mapoteca: orNull(fields.contato_mapoteca.getValue()),
       endereco_entrega: orNull(fields.endereco_entrega.getValue()),
       palavras_chave: fields.palavras_chave.getValue(),
       operacao: orNull(fields.operacao.getValue()),

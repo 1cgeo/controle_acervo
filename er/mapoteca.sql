@@ -153,7 +153,18 @@ CREATE TABLE mapoteca.pedido(
     data_atendimento DATE,
 	cliente_id BIGINT NOT NULL REFERENCES mapoteca.cliente (id),
 	situacao_pedido_id SMALLINT NOT NULL REFERENCES mapoteca.situacao_pedido (code),
+    -- O contato DELES: o oficial da OM que pediu, e por quem a mapoteca liga
+    -- para destravar uma entrega.
     ponto_contato VARCHAR(255),
+    -- O contato NOSSO, para o solicitante tirar duvida. E PUBLICO: sai na
+    -- consulta por localizador, sem login, e por isso anotacao interna continua
+    -- em observacao_interna.
+    -- E por PEDIDO, e nao em dgeo.instituicao, porque quem atende MUDA: um
+    -- pedido de junho respondido em setembro tem de continuar apontando para
+    -- quem o atendeu, e campo global reescreveria a historia de todos a cada
+    -- troca de funcao. Instalacao existente chega aqui pela migracao
+    -- 2026-08-19_a_quem_o_solicitante_pergunta.sql.
+    contato_mapoteca VARCHAR(255),
     documento_solicitacao VARCHAR(255),
     documento_solicitacao_nup VARCHAR(255),
 	endereco_entrega TEXT,

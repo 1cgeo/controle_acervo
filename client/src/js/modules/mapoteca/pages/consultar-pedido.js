@@ -164,6 +164,13 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
     if (pedido.motivo_cancelamento) {
       rows.push(infoRow('Motivo do cancelamento', pedido.motivo_cancelamento));
     }
+    // Por ULTIMO de proposito: e o caminho de VOLTA, e quem chega aqui procura
+    // isso depois de ler o resto. E a unica coisa nesta tela que responde "e
+    // agora, com quem eu falo?", porque o DIEx de resposta esta na caixa de
+    // quem recebeu o documento, e nao com quem consulta meses depois.
+    if (pedido.contato_mapoteca) {
+      rows.push(infoRow('Dúvidas sobre este pedido', pedido.contato_mapoteca));
+    }
     resultArea.appendChild(el('div', { className: 'consulta-info' }, rows));
 
     // "O que foi pedido" (os itens) é o bloco colapsável
