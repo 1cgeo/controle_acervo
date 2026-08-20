@@ -272,12 +272,16 @@ describe('renderConsultarPedido', () => {
       instituicao_nome: '1º Centro de Geoinformação',
       instituicao_sigla: '1º CGEO',
       instituicao_tem_simbolo: true,
+      instituicao_simbolo_versao: 1787000000,
     });
     const container = await montar('AB12-CD34-EF56');
 
     const img = container.querySelector('.consulta-marca__simbolo');
     expect(img).toBeTruthy();
     expect(img.getAttribute('src')).toContain('/instituicao/simbolo');
+    // a VERSAO tem de ir na URL, senao o brasao trocado nao aparece: o
+    // navegador serve o antigo do proprio cache por um dia, sem perguntar.
+    expect(img.getAttribute('src')).toContain('?v=1787000000');
     expect(img.getAttribute('alt')).toBe('1º CGEO');
     expect(container.querySelector('.consulta-marca__nome').textContent)
       .toBe('1º Centro de Geoinformação');

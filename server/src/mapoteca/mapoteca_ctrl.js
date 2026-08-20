@@ -1088,7 +1088,17 @@ controller.getPedidoByLocalizador = async (localizador) => {
         -- por '/instituicao/simbolo', tambem publica.
         inst.nome AS instituicao_nome,
         inst.sigla AS instituicao_sigla,
-        (inst.simbolo IS NOT NULL) AS instituicao_tem_simbolo
+        (inst.simbolo IS NOT NULL) AS instituicao_tem_simbolo,
+        -- A VERSAO do simbolo, para a tela pendurar na URL da imagem.
+        --
+        -- Sem ela o brasao trocado NAO aparece: a rota manda
+        -- Cache-Control com max-age de um dia, e nesse prazo o navegador serve
+        -- do proprio cache SEM nem perguntar (o must-revalidate so age depois
+        -- de vencido, e a etiqueta so e conferida quando ha pergunta). Medido em
+        -- 2026-08-20: o simbolo certo estava no banco e a tela mostrava o
+        -- antigo. Com a versao na URL o endereco muda junto com a imagem, e o
+        -- cache longo continua valendo para quem ja tem a versao certa.
+        extract(epoch from inst.simbolo_data_envio)::bigint AS instituicao_simbolo_versao
       FROM mapoteca.pedido AS p
       LEFT JOIN dgeo.instituicao AS inst ON inst.id = 1
       LEFT JOIN mapoteca.cliente AS c ON c.id = p.cliente_id

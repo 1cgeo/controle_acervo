@@ -87,9 +87,13 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
     if (!nome) return;
     const filhos = [];
     if (pedido.instituicao_tem_simbolo) {
+      // A VERSAO vai na URL: sem ela o navegador serve o brasao antigo do
+      // proprio cache por 24 h, sem perguntar ao servidor. Ver a consulta em
+      // mapoteca_ctrl.js.
+      const v = pedido.instituicao_simbolo_versao;
       const img = el('img', {
         className: 'consulta-marca__simbolo',
-        src: `${PREFIXO_API}/instituicao/simbolo`,
+        src: `${PREFIXO_API}/instituicao/simbolo${v ? `?v=${encodeURIComponent(v)}` : ''}`,
         alt: pedido.instituicao_sigla || nome,
         decoding: 'async',
       });

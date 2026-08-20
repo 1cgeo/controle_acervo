@@ -309,7 +309,7 @@
   flex-direction: column;
   align-items: center;
   gap: var(--space-sm);
-  width: 330px;
+  width: 420px;
   text-align: center;
   pointer-events: none;
 }
@@ -320,14 +320,14 @@
 
 .consulta-marca__simbolo {
   width: auto;
-  height: 285px;
-  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.45));
+  height: 380px;
+  filter: drop-shadow(0 5px 16px rgba(0, 0, 0, 0.45));
 }
 
 .consulta-marca__nome {
   font-weight: var(--font-weight-bold, 700);
-  font-size: var(--font-size-2xl);
-  line-height: 1.2;
+  font-size: var(--font-size-3xl);
+  line-height: 1.15;
   color: #fff;
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8), 0 0 2px rgba(0, 0, 0, 0.9);
 }
@@ -335,8 +335,8 @@
 /* Abaixo disto o cartao ocupa a largura util e a marca passaria por cima dele.
    Ela sai da tela: perder a assinatura e melhor que tapar a ficha, e o nome da
    instituicao continua no cabecalho do documento que trouxe o cliente ate aqui.
-   1620px = 880 do cartao + 2 x 330 da marca + folga. */
-@media (max-width: 1620px) {
+   1800px = 880 do cartao + 2 x 420 da marca + folga. */
+@media (max-width: 1800px) {
   .consulta-marca {
     display: none;
   }
