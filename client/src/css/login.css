@@ -251,11 +251,16 @@
   padding: var(--space-lg) 0;
 }
 
+/* 560px era a largura do CARTAO DE LOGIN, que esta tela herdou por morar no
+   mesmo arquivo. Login e um formulario de dois campos; acompanhamento e uma
+   ficha com rotulo, valor e uma lista de folhas com imagem, e naquela largura o
+   valor quebrava em tres linhas ao lado de um rotulo curto. 880px cabe o par
+   rotulo/valor numa linha so e deixa a miniatura respirar. */
 .consulta-card {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 560px;
+  max-width: 880px;
   margin: var(--space-md);
   padding: var(--space-xl);
   background: rgba(255, 255, 255, 0.94);
@@ -354,19 +359,29 @@
    cortar a mancha, que e justamente o que identifica a folha. */
 .consulta-item__thumb {
   flex: 0 0 auto;
-  width: 84px;
+  width: 190px;
   height: auto;
-  max-height: 110px;
+  max-height: 240px;
   object-fit: contain;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   background: #fff;
+  /* A miniatura serve para RECONHECER a folha, e a 84px o desenho virava uma
+     mancha colorida: nem o nome no topo nem a forma do rio se liam. A imagem
+     guardada tem cerca de 600px de largura, entao 190 ainda a mostra sem
+     esticar. O cursor de lupa avisa que ela abre em tamanho cheio. */
+  cursor: zoom-in;
+  transition: transform 0.12s ease;
 }
 
-@media (max-width: 480px) {
+.consulta-item__thumb:hover {
+  transform: scale(1.03);
+}
+
+@media (max-width: 700px) {
   .consulta-item__thumb {
-    width: 56px;
-    max-height: 74px;
+    width: 120px;
+    max-height: 150px;
   }
 }
 

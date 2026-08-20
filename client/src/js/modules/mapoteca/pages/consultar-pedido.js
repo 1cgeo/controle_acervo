@@ -263,6 +263,12 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
         // Rede fora do ar ou miniatura apagada entre a consulta e o desenho:
         // some com o quadro em vez de deixar o icone de imagem quebrada.
         img.addEventListener('error', () => img.remove());
+        // A miniatura ABRE em tamanho cheio, em aba nova. Sem isto o cursor de
+        // lupa do CSS prometeria um clique que nao faz nada, e a imagem guardada
+        // tem mais resolucao do que a coluna mostra: quem quer conferir o
+        // desenho da folha merece chegar nela.
+        img.addEventListener('click', () => window.open(url, '_blank', 'noopener'));
+        img.setAttribute('title', 'Clique para ver a folha em tamanho maior');
         children.unshift(img);
       }
 

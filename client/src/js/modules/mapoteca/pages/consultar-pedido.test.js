@@ -232,4 +232,21 @@ describe('renderConsultarPedido', () => {
     expect(container.textContent).not.toContain('Dúvidas sobre este pedido');
   });
 
+  // O cursor do CSS promete lupa; sem isto o clique nao faria nada.
+  test('a miniatura abre em tamanho cheio ao clicar', async () => {
+    const abrir = vi.spyOn(window, 'open').mockImplementation(() => null);
+    svc.getPedidoPorLocalizador.mockResolvedValue({
+      ...PEDIDO,
+      produtos: [{ ...PEDIDO.produtos[0], versao_id: 412, tem_miniatura: true }],
+    });
+    const container = await montar('AB12-CD34-EF56');
+
+    const img = container.querySelector('.consulta-item__thumb');
+    img.click();
+    expect(abrir).toHaveBeenCalledTimes(1);
+    expect(abrir.mock.calls[0][0]).toContain('/miniatura/412');
+    expect(img.getAttribute('title')).toContain('tamanho maior');
+    abrir.mockRestore();
+  });
+
 });
