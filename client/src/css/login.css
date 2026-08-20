@@ -251,6 +251,17 @@
   padding: var(--space-lg) 0;
 }
 
+/* O FUNDO NAO ACOMPANHA O CONTEUDO.
+   `.login-page__background` e `position: absolute` com `height: 100%`, e isso
+   serve ao login, onde o cartao nunca passa da altura da tela. Aqui a lista de
+   cartas abre, a pagina cresce, o fundo cresce junto, e o `background-size:
+   cover` reescala a foto para cobrir uma caixa muito mais alta: ela estica e
+   borra. `fixed` prende a foto a JANELA, entao abrir a lista nao mexe nela.
+   Escopado a esta tela para nao tocar o login. */
+.consulta-page .login-page__background {
+  position: fixed;
+}
+
 /* 560px era a largura do CARTAO DE LOGIN, que esta tela herdou por morar no
    mesmo arquivo. Login e um formulario de dois campos; acompanhamento e uma
    ficha com rotulo, valor e uma lista de folhas com imagem, e naquela largura o
@@ -337,6 +348,13 @@
   margin: var(--space-sm) 0 var(--space-md);
 }
 
+/* O resumo do colapsavel diz QUANTO vem, e era a unica linha da tela em cinza
+   de rotulo. Ele conta, entao pesa. */
+.consulta-collapse__summary {
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary);
+}
+
 .consulta-item {
   display: flex;
   align-items: flex-start;
@@ -369,13 +387,7 @@
   /* A miniatura serve para RECONHECER a folha, e a 84px o desenho virava uma
      mancha colorida: nem o nome no topo nem a forma do rio se liam. A imagem
      guardada tem cerca de 600px de largura, entao 190 ainda a mostra sem
-     esticar. O cursor de lupa avisa que ela abre em tamanho cheio. */
-  cursor: zoom-in;
-  transition: transform 0.12s ease;
-}
-
-.consulta-item__thumb:hover {
-  transform: scale(1.03);
+     esticar, e nesse tamanho ela ja se le sem precisar ampliar. */
 }
 
 @media (max-width: 700px) {

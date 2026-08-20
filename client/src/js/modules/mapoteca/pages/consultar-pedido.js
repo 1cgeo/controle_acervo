@@ -11,6 +11,20 @@ const SITUACAO_REMETIDO = 4;
 const SITUACAO_CONCLUIDO = 5;
 const SITUACAO_CANCELADO = 6;
 
+/**
+ * Numero mais substantivo no plural certo.
+ *
+ * O "(s)" e o "(es)" eram do gerador, e nao do portugues: numa tela que o
+ * solicitante le, "1 carta(s)" denuncia texto montado por maquina. O plural de
+ * `exemplar` e `exemplares`, e nao serve o `s` colado, entao a forma plural vem
+ * escrita e nao deduzida.
+ *
+ * Zero vai no PLURAL ("0 cartas"), que e o portugues corrente.
+ */
+function plural(n, singular, pluralForma) {
+  return `${n} ${Number(n) === 1 ? singular : pluralForma}`;
+}
+
 function infoRow(label, value) {
   return el('div', { className: 'consulta-info__row' }, [
     el('span', { className: 'consulta-info__label', textContent: label }),
@@ -193,7 +207,8 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
     if (!produtos.length) return;
 
     const nExemplares = produtos.reduce((soma, r) => soma + (Number(r.quantidade) || 0), 0);
-    const resumoItens = `O que foi pedido — ${produtos.length} carta(s) · ${nExemplares} exemplar(es)`;
+    const resumoItens = `O que foi pedido — ${plural(produtos.length, 'carta', 'cartas')}`
+      + ` · ${plural(nExemplares, 'exemplar', 'exemplares')}`;
 
     const bloco = el('details', {
       className: 'consulta-collapse',
@@ -263,12 +278,6 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
         // Rede fora do ar ou miniatura apagada entre a consulta e o desenho:
         // some com o quadro em vez de deixar o icone de imagem quebrada.
         img.addEventListener('error', () => img.remove());
-        // A miniatura ABRE em tamanho cheio, em aba nova. Sem isto o cursor de
-        // lupa do CSS prometeria um clique que nao faz nada, e a imagem guardada
-        // tem mais resolucao do que a coluna mostra: quem quer conferir o
-        // desenho da folha merece chegar nela.
-        img.addEventListener('click', () => window.open(url, '_blank', 'noopener'));
-        img.setAttribute('title', 'Clique para ver a folha em tamanho maior');
         children.unshift(img);
       }
 

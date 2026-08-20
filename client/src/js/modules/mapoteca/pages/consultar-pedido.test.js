@@ -46,7 +46,7 @@ describe('renderConsultarPedido', () => {
     expect(container.textContent).toContain('Acompanhamento de Pedido');
     expect(container.textContent).toContain('1º CGEO');
     expect(container.textContent).toContain('Em andamento');
-    expect(container.textContent).toContain('1 carta(s) · 10 exemplar(es)');
+    expect(container.textContent).toContain('1 carta · 10 exemplares');
   });
 
   test('normaliza o localizador para maiuscula antes de consultar', async () => {
@@ -232,20 +232,35 @@ describe('renderConsultarPedido', () => {
     expect(container.textContent).not.toContain('Dúvidas sobre este pedido');
   });
 
-  // O cursor do CSS promete lupa; sem isto o clique nao faria nada.
-  test('a miniatura abre em tamanho cheio ao clicar', async () => {
+
+  test('o resumo usa singular ou plural conforme a quantidade', async () => {
+    const casos = [
+      [[{ ...PEDIDO.produtos[0], quantidade: 1 }], '1 carta · 1 exemplar'],
+      [[{ ...PEDIDO.produtos[0], quantidade: 2 }], '1 carta · 2 exemplares'],
+      [[{ ...PEDIDO.produtos[0], quantidade: 3 },
+        { ...PEDIDO.produtos[0], quantidade: 4 }], '2 cartas · 7 exemplares'],
+    ];
+    for (const [produtos, esperado] of casos) {
+      svc.getPedidoPorLocalizador.mockResolvedValue({ ...PEDIDO, produtos });
+      const container = await montar('AB12-CD34-EF56');
+      expect(container.textContent).toContain(esperado);
+      // o "(s)" do gerador nao pode voltar
+      expect(container.textContent).not.toContain('carta(s)');
+      expect(container.textContent).not.toContain('exemplar(es)');
+    }
+  });
+
+  // Clicar para ampliar foi retirado a pedido do chefe: a 190px a folha ja se
+  // le, e o clique era promessa a mais na tela.
+  test('a miniatura nao abre nada ao clicar', async () => {
     const abrir = vi.spyOn(window, 'open').mockImplementation(() => null);
     svc.getPedidoPorLocalizador.mockResolvedValue({
       ...PEDIDO,
       produtos: [{ ...PEDIDO.produtos[0], versao_id: 412, tem_miniatura: true }],
     });
     const container = await montar('AB12-CD34-EF56');
-
-    const img = container.querySelector('.consulta-item__thumb');
-    img.click();
-    expect(abrir).toHaveBeenCalledTimes(1);
-    expect(abrir.mock.calls[0][0]).toContain('/miniatura/412');
-    expect(img.getAttribute('title')).toContain('tamanho maior');
+    container.querySelector('.consulta-item__thumb').click();
+    expect(abrir).not.toHaveBeenCalled();
     abrir.mockRestore();
   });
 
