@@ -195,9 +195,45 @@
   color: var(--text-secondary);
 }
 
-.campo-galeria__remover {
-  align-self: flex-start;
-  margin: 0 var(--space-sm) var(--space-sm);
+/*
+ * A DESCRICAO QUEBRA EM ATE TRES LINHAS, e nao numa so com reticencias: ela e
+ * a UNICA identificacao do arquivo (`campo.imagem` nao guarda o nome dele), e
+ * cortada em "Instalacao da camera 360 no..." dois cartoes viram o mesmo texto.
+ * O `break-word` cobre o nome de arquivo comprido sem espaco, que estoura a
+ * coluna da grade.
+ */
+.campo-galeria__descricao {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+
+/*
+ * O rodape em modo de edicao. A caixa e a `.form-field__input` do resto do
+ * sistema, e aqui so encolhe: o cartao da grade tem 200px, e o padding de 10px
+ * do formulario come metade da largura util do texto.
+ */
+.campo-galeria__entrada {
+  padding: 4px 6px;
+  font-size: var(--font-size-sm);
+}
+
+.campo-galeria__edicao-acoes {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+/*
+ * AS ACOES FICAM NO PE DO CARTAO, e o `margin-top: auto` as cola la mesmo quando
+ * a descricao ao lado tem uma linha e a do vizinho tem tres: sem ele os botoes
+ * de dois cartoes vizinhos saem desalinhados na mesma fileira da grade.
+ */
+.campo-galeria__acoes {
+  display: flex;
+  gap: var(--space-xs);
+  margin: auto var(--space-sm) var(--space-sm);
 }
 
 /* --- Os trajetos ---------------------------------------------------------- */

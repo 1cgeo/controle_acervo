@@ -3,6 +3,7 @@ import { showSuccess, showError } from '@utils/toast.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import {
   listarImagensCampo, enviarImagemCampo, excluirImagemCampo, urlDaImagemCampo,
+  atualizarImagemCampo,
 } from '@services/campo-service.js';
 import './campo.css';
 
@@ -29,6 +30,22 @@ const bytesLegiveis = (n) => {
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} kB`;
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 };
+
+/**
+ * A LINHA DE BAIXO DO CARTÃO: a data SÓ APARECE QUANDO EXISTE.
+ *
+ * Ela era sempre "data · tamanho", e `data_imagem` é nula em quase toda imagem
+ * (133 das 143 do acervo do SAP, e todas as que a tela envia, porque o
+ * formulário de envio nunca a pediu). O resultado era um traço solto ao lado do
+ * tamanho, que se lia como defeito. Chefe, 2026-08-20: a data da foto não se
+ * tem na prática. Onde ela existe -- as dez antigas -- continua aparecendo.
+ */
+const legendaDoItem = (imagem) => (imagem.data_imagem
+  ? `${dia(imagem.data_imagem)} · ${bytesLegiveis(imagem.bytes)}`
+  : bytesLegiveis(imagem.bytes));
+
+const rotulo = (imagem) => imagem.descricao
+  || (imagem.tipo === 'video' ? 'Vídeo' : 'Foto');
 
 /**
  * Tela cheia com navegação entre os itens.
@@ -68,8 +85,8 @@ export function abrirTelaCheia({ itens, indice = 0 }) {
     contador.textContent = `${atual + 1} de ${itens.length}`;
     clearChildren(legenda);
     legenda.append(
-      el('strong', { textContent: item.descricao || (item.tipo === 'video' ? 'Vídeo' : 'Foto') }),
-      el('small', { textContent: `${dia(item.data_imagem)} · ${bytesLegiveis(item.bytes)}` })
+      el('strong', { textContent: rotulo(item) }),
+      el('small', { textContent: legendaDoItem(item) })
     );
 
     const pedido = atual;
@@ -278,37 +295,125 @@ export function criarGaleriaCampo({ campoId, podeEditar = false, aoMudar = null 
       }));
     });
 
-    const item = el('figure', { className: 'campo-galeria__item' }, [
-      midia,
-      el('div', { className: 'campo-galeria__rodape' }, [
-        el('span', { textContent: imagem.descricao || (imagem.tipo === 'video' ? 'Vídeo' : 'Foto') }),
-        el('small', { textContent: `${dia(imagem.data_imagem)} · ${bytesLegiveis(imagem.bytes)}` }),
-      ]),
-    ]);
+    const rodape = el('div', { className: 'campo-galeria__rodape' });
+    const item = el('figure', { className: 'campo-galeria__item' }, [midia, rodape]);
+
+    /**
+     * O RODAPÉ TEM DOIS MODOS, e a descrição se edita ALI, no cartão.
+     *
+     * NÃO É UM MODAL: a galeria já vive dentro do modal de "Editar o campo", e
+     * um segundo por cima esconderia qual dos dois está gravando -- é a mesma
+     * razão pela qual a ficha FECHA antes de abrir o formulário.
+     *
+     * SÓ A DESCRIÇÃO. `campo.imagem` tem `descricao` e `data_imagem`, e a data
+     * saiu da tela por decisão do chefe em 2026-08-20 (ver `legendaDoItem`). Ela
+     * viaja no PUT mesmo assim, com o valor que já estava: o servidor grava
+     * `data_imagem = dados.data_imagem || null`, então OMITIR apagaria a data
+     * das dez imagens antigas que a têm.
+     */
+    const desenharRodape = (editando) => {
+      clearChildren(rodape);
+      if (!editando) {
+        rodape.append(
+          el('span', { className: 'campo-galeria__descricao', textContent: rotulo(imagem) }),
+          el('small', { textContent: legendaDoItem(imagem) })
+        );
+        return;
+      }
+
+      // A CLASSE DO FORMULÁRIO, e não um estilo próprio: o foco, o tema escuro e
+      // o estado desabilitado já vivem em `forms.css`, e uma cópia local deles
+      // sairia do lugar na primeira troca de token.
+      const entrada = el('input', {
+        type: 'text',
+        className: 'form-field__input campo-galeria__entrada',
+        value: imagem.descricao || '',
+        maxLength: 500,
+        'aria-label': 'Descrição do arquivo',
+        onKeyDown: (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); salvar(); }
+          else if (e.key === 'Escape') { e.preventDefault(); desenharRodape(false); }
+        },
+      });
+
+      // GRAVA NA HORA, como o resto das abas: o botão "Salvar" do formulário do
+      // campo não inclui a galeria, e o texto da aba já diz isso.
+      async function salvar() {
+        const novo = entrada.value.trim();
+        if (novo === (imagem.descricao || '')) { desenharRodape(false); return; }
+        entrada.disabled = true;
+        try {
+          await atualizarImagemCampo(imagem.id, {
+            descricao: novo || null,
+            data_imagem: imagem.data_imagem
+              ? String(imagem.data_imagem).slice(0, 10)
+              : null,
+          });
+          // O OBJETO EM MEMÓRIA ACOMPANHA, e a grade NÃO se recarrega: rever a
+          // lista buscaria de novo os bytes de toda a galeria (48 MB no campo de
+          // Porto União) para trocar uma linha de texto. `itens` é o mesmo array
+          // que a tela cheia lê, então mudá-lo aqui basta para os dois.
+          imagem.descricao = novo || null;
+          showSuccess('Descrição atualizada');
+          desenharRodape(false);
+        } catch (err) {
+          entrada.disabled = false;
+          showError(err.message || 'Erro ao salvar a descrição');
+        }
+      }
+
+      rodape.append(
+        entrada,
+        el('div', { className: 'campo-galeria__edicao-acoes' }, [
+          el('button', {
+            className: 'btn btn--primary btn--sm',
+            type: 'button',
+            onClick: (e) => { e.stopPropagation(); salvar(); },
+          }, ['Salvar']),
+          el('button', {
+            className: 'btn btn--text btn--sm',
+            type: 'button',
+            onClick: (e) => { e.stopPropagation(); desenharRodape(false); },
+          }, ['Cancelar']),
+        ])
+      );
+      entrada.focus();
+      entrada.select();
+    };
+
+    desenharRodape(false);
 
     if (podeEditar) {
-      item.appendChild(el('button', {
-        className: 'btn btn--text btn--sm campo-galeria__remover',
-        type: 'button',
-        onClick: async (e) => {
-          e.stopPropagation();
-          const ok = await confirmDialog({
-            title: 'Remover arquivo',
-            message: `Remover "${imagem.descricao || 'este arquivo'}"? Os bytes só existem aqui.`,
-            confirmLabel: 'Remover',
-            danger: true,
-          });
-          if (!ok) return;
-          try {
-            await excluirImagemCampo(imagem.id);
-            showSuccess('Arquivo removido');
-            if (aoMudar) aoMudar();
-            await recarregar();
-          } catch (err) {
-            showError(err.message || 'Erro ao remover o arquivo');
-          }
-        },
-      }, ['Remover']));
+      item.appendChild(el('div', { className: 'campo-galeria__acoes' }, [
+        el('button', {
+          className: 'btn btn--text btn--sm',
+          type: 'button',
+          title: 'Editar a descrição',
+          onClick: (e) => { e.stopPropagation(); desenharRodape(true); },
+        }, [svgIcon(ICONS.edit, 14), 'Descrição']),
+        el('button', {
+          className: 'btn btn--text btn--sm campo-galeria__remover',
+          type: 'button',
+          onClick: async (e) => {
+            e.stopPropagation();
+            const ok = await confirmDialog({
+              title: 'Remover arquivo',
+              message: `Remover "${imagem.descricao || 'este arquivo'}"? Os bytes só existem aqui.`,
+              confirmLabel: 'Remover',
+              danger: true,
+            });
+            if (!ok) return;
+            try {
+              await excluirImagemCampo(imagem.id);
+              showSuccess('Arquivo removido');
+              if (aoMudar) aoMudar();
+              await recarregar();
+            } catch (err) {
+              showError(err.message || 'Erro ao remover o arquivo');
+            }
+          },
+        }, ['Remover']),
+      ]));
     }
 
     return item;

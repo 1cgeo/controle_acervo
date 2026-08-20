@@ -7,7 +7,7 @@ import { createTabs } from '@components/tabs/tabs.js';
 import { chip } from '@components/status-chip.js';
 import { temPerfil } from '@store/auth-store.js';
 import {
-  getDominioCampo, listarCampos, getCamposGeojson, excluirCampo,
+  getDominioCampo, listarCampos, getCamposGeojson, getCampo, excluirCampo,
 } from '@services/campo-service.js';
 import { getUsuarios } from '@services/plataforma-service.js';
 import { criarMapaCampos } from './campo-mapa.js';
@@ -121,20 +121,42 @@ export async function renderCampo(container, ctx) {
 
   // --- Ações ----------------------------------------------------------------
 
+  const abrirFormulario = (campo) => openCampoDialog({
+    campo,
+    situacoes: dominio.situacoes,
+    categorias: dominio.categorias,
+    anos: dominio.anos,
+    usuarios,
+    onSaved: carregar,
+  });
+
+  /**
+   * Editar A PARTIR DA LINHA DA TABELA: busca a FICHA e só então abre.
+   *
+   * A linha da lista NÃO TEM A GEOMETRIA, e isso é deliberado no servidor
+   * (`SELECT_LISTA` deixa `geom` de fora, e quem quer área pede a ficha ou o
+   * `/geojson`). O formulário lê a área de `campo.geometria`: aberto com a
+   * linha crua, ele dizia "Nenhuma área definida" num campo que TEM área, e o
+   * Salvar então travava pedindo o GeoJSON de novo -- a tela ficava sem como
+   * editar a situação de um campo já cadastrado. Pego em 2026-08-20, no campo
+   * de Porto União. O caminho pela ficha nunca teve o defeito, porque lá o
+   * objeto já vem de `GET /campo/:id`.
+   */
+  const editarPelaLinha = async (id) => {
+    try {
+      abrirFormulario(await getCampo(id));
+    } catch (err) {
+      showError(err.message || 'Não foi possível abrir o campo para edição');
+    }
+  };
+
   // A FICHA É SÓ LEITURA desde 2026-08-09, e o único botão dela que leva a
   // escrever é "Editar", que a fecha e abre o formulário. `podeEditar` decide
   // só se esse botão aparece.
   const abrirFicha = (id) => abrirDetalheCampo({
     id,
     podeEditar: podeEscrever,
-    onEditar: (campo) => openCampoDialog({
-      campo,
-      situacoes: dominio.situacoes,
-      categorias: dominio.categorias,
-      anos: dominio.anos,
-      usuarios,
-      onSaved: carregar,
-    }),
+    onEditar: abrirFormulario,
     onVerTrajetoNoMapa: verTrajetoNoMapa,
   });
 
@@ -209,14 +231,7 @@ export async function renderCampo(container, ctx) {
       label: 'Editar',
       icon: ICONS.edit,
       title: 'Editar o campo',
-      onClick: (r) => openCampoDialog({
-        campo: r,
-        situacoes: dominio.situacoes,
-        categorias: dominio.categorias,
-        anos: dominio.anos,
-        usuarios,
-        onSaved: carregar,
-      }),
+      onClick: (r) => editarPelaLinha(r.id),
     });
   }
   if (podeApagar) {
