@@ -287,47 +287,86 @@
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* A MARCA da instituicao, no alto do cartao.
-   Fica ACIMA do titulo e centrada: e a assinatura da pagina, e nao mais um dado
-   do pedido. O simbolo tem proporcao propria (o brasao do 1o CGEO e mais alto
-   que largo), entao so a altura manda e a largura acompanha. */
+/* A MARCA da instituicao: simbolo grande e nome embaixo, SOLTOS sobre o fundo.
+   Fica FORA do cartao, presa a janela, a esquerda e centrada na vertical. Dentro
+   do cartao ela era mais uma linha da ficha, com risca embaixo, competindo com os
+   dados do pedido; aqui ela e a assinatura da pagina e nao disputa atencao com
+   nada.
+
+   `fixed` e nao `absolute`: a pagina cresce quando a lista de cartas abre, e a
+   marca tem de continuar onde estava, do mesmo jeito que o fundo.
+
+   O texto vai sobre FOTO, entao ele nao pode depender do tema: branco com sombra
+   dura le-se tanto no claro quanto no escuro, que e a razao de a cor estar
+   escrita aqui em vez de sair de uma variavel. */
 .consulta-marca {
+  position: fixed;
+  left: clamp(var(--space-md), 3vw, var(--space-2xl, 48px));
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: var(--space-md);
-  padding-bottom: var(--space-md);
-  margin-bottom: var(--space-md);
-  border-bottom: 1px solid var(--border-light);
+  gap: var(--space-sm);
+  width: 220px;
+  text-align: center;
+  pointer-events: none;
 }
 
-/* Vazia ela nao desenha nada, nem a linha: e o estado da tela antes da consulta,
-   e uma faixa em branco com uma risca embaixo pareceria defeito. */
 .consulta-marca:empty {
   display: none;
 }
 
 .consulta-marca__simbolo {
-  height: 64px;
   width: auto;
-  flex: 0 0 auto;
+  height: 190px;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45));
 }
 
 .consulta-marca__nome {
-  font-weight: var(--font-weight-semibold, 600);
-  color: var(--text-primary);
-  font-size: var(--font-size-md);
-  line-height: 1.25;
+  font-weight: var(--font-weight-bold, 700);
+  font-size: var(--font-size-lg);
+  line-height: 1.2;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8), 0 0 2px rgba(0, 0, 0, 0.9);
 }
 
-@media (max-width: 700px) {
-  .consulta-marca__simbolo {
-    height: 44px;
-  }
-  .consulta-marca__nome {
-    font-size: var(--font-size-sm);
+/* Abaixo disto o cartao ocupa a largura util e a marca passaria por cima dele.
+   Ela sai da tela: perder a assinatura e melhor que tapar a ficha, e o nome da
+   instituicao continua no cabecalho do documento que trouxe o cliente ate aqui.
+   1400px = 880 do cartao + 2 x 220 da marca + folga. */
+@media (max-width: 1400px) {
+  .consulta-marca {
+    display: none;
   }
 }
+
+/* 560px era a largura do CARTAO DE LOGIN, que esta tela herdou por morar no
+   mesmo arquivo. Login e um formulario de dois campos; acompanhamento e uma
+   ficha com rotulo, valor e uma lista de folhas com imagem, e naquela largura o
+   valor quebrava em tres linhas ao lado de um rotulo curto. 880px cabe o par
+   rotulo/valor numa linha so e deixa a miniatura respirar. */
+.consulta-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 880px;
+  margin: var(--space-md);
+  padding: var(--space-xl);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: var(--shadow-xl);
+}
+
+[data-theme="dark"] .consulta-card {
+  background: rgba(30, 30, 30, 0.88);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
 
 .consulta-card__header {
   display: flex;

@@ -76,7 +76,7 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
   // nao trazia nem simbolo nem nome: quem recebe o link por DIEx chegava numa
   // pagina sem assinatura, e o primeiro julgamento de uma tela oficial e esse.
   //
-  // A faixa nasce VAZIA e so se preenche quando o pedido chega, porque o nome da
+  // A marca nasce VAZIA e so se preenche quando o pedido chega, porque o nome da
   // instituicao vem no mesmo payload. Na tela sem localizador ela nao aparece,
   // e e o certo: ali ainda nao houve consulta.
   const marca = el('div', { className: 'consulta-marca' });
@@ -103,7 +103,6 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
   }
 
   const card = el('div', { className: 'consulta-card' }, [
-    marca,
     el('div', { className: 'consulta-card__header' }, [
       el('div', {}, [
         el('div', { className: 'consulta-card__title', textContent: 'Acompanhamento de Pedido' }),
@@ -142,6 +141,10 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
       className: 'login-page__background',
       style: { backgroundImage: `url(${randomBackground()})` },
     }),
+    // A marca fica FORA do cartao, solta sobre o fundo, a esquerda. Dentro dele
+    // ela virava mais uma linha da ficha, com risca embaixo, competindo com os
+    // dados do pedido; solta, ela e a assinatura da pagina.
+    marca,
     card,
   ]);
   container.appendChild(page);
