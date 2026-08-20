@@ -1,4 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDelete, apiUpload, apiDownload } from './api-client.js';
+import { PREFIXO_API } from '@utils/base-path.js';
 
 /**
  * Servicos de PLATAFORMA: o que nao pertence a nenhum modulo.
@@ -20,6 +21,22 @@ import { apiGet, apiPost, apiPut, apiDelete, apiUpload, apiDownload } from './ap
 // cobra `verifyAdmin` no PUT.
 export const getInstituicao = () => apiGet('/instituicao');
 export const atualizarInstituicao = (body) => apiPut('/instituicao', body);
+
+// O SIMBOLO da instituicao: o brasao que aparece no alto da tela publica de
+// acompanhamento de pedido. Sobe por multipart, no campo `arquivo`.
+export const enviarSimboloInstituicao = (arquivo) => {
+  const fd = new FormData();
+  fd.append('arquivo', arquivo);
+  return apiUpload('/instituicao/simbolo', fd);
+};
+
+export const removerSimboloInstituicao = () => apiDelete('/instituicao/simbolo');
+
+// A URL da imagem, para pôr num `src`. A rota e PUBLICA, entao nao precisa de
+// token nem de blob: o `img` a busca direto e o cache do navegador funciona.
+// O `v` faz o navegador largar a imagem antiga quando o simbolo troca.
+export const urlSimboloInstituicao = (versao) =>
+  `${PREFIXO_API}/instituicao/simbolo${versao ? `?v=${encodeURIComponent(versao)}` : ''}`;
 
 // A lista de Unidades Gestoras, para o seletor da tela de instituicao. Ela e do
 // ORCAMENTO (`dominio.ug`), e nao da plataforma, mas quem a consome aqui e a

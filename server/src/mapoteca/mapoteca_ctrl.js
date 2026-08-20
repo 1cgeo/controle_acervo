@@ -1081,8 +1081,16 @@ controller.getPedidoByLocalizador = async (localizador) => {
         -- A forma de entrega e do PEDIDO, e sai aqui pelo nome: uma vez so, e
         -- nao uma vez por item.
         fe.nome AS forma_entrega_nome,
-        p.motivo_cancelamento
+        p.motivo_cancelamento,
+        -- De QUEM e esta tela. Ela e a unica que alguem de fora abre, e sem isto
+        -- nao dizia. Vem no MESMO payload, e nao por rota propria: uma chamada
+        -- ja traz tudo que o cabecalho precisa, e o simbolo (que e imagem) sai
+        -- por '/instituicao/simbolo', tambem publica.
+        inst.nome AS instituicao_nome,
+        inst.sigla AS instituicao_sigla,
+        (inst.simbolo IS NOT NULL) AS instituicao_tem_simbolo
       FROM mapoteca.pedido AS p
+      LEFT JOIN dgeo.instituicao AS inst ON inst.id = 1
       LEFT JOIN mapoteca.cliente AS c ON c.id = p.cliente_id
       LEFT JOIN mapoteca.situacao_pedido AS sp ON sp.code = p.situacao_pedido_id
       LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = p.forma_entrega_id

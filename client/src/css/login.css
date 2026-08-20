@@ -287,6 +287,48 @@
   border-color: rgba(255, 255, 255, 0.1);
 }
 
+/* A MARCA da instituicao, no alto do cartao.
+   Fica ACIMA do titulo e centrada: e a assinatura da pagina, e nao mais um dado
+   do pedido. O simbolo tem proporcao propria (o brasao do 1o CGEO e mais alto
+   que largo), entao so a altura manda e a largura acompanha. */
+.consulta-marca {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding-bottom: var(--space-md);
+  margin-bottom: var(--space-md);
+  border-bottom: 1px solid var(--border-light);
+}
+
+/* Vazia ela nao desenha nada, nem a linha: e o estado da tela antes da consulta,
+   e uma faixa em branco com uma risca embaixo pareceria defeito. */
+.consulta-marca:empty {
+  display: none;
+}
+
+.consulta-marca__simbolo {
+  height: 64px;
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.consulta-marca__nome {
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  line-height: 1.25;
+}
+
+@media (max-width: 700px) {
+  .consulta-marca__simbolo {
+    height: 44px;
+  }
+  .consulta-marca__nome {
+    font-size: var(--font-size-sm);
+  }
+}
+
 .consulta-card__header {
   display: flex;
   align-items: center;

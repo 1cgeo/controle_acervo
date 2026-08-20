@@ -264,4 +264,40 @@ describe('renderConsultarPedido', () => {
     abrir.mockRestore();
   });
 
+  // --- a marca da instituicao ------------------------------------------------
+
+  test('mostra o simbolo e o nome da instituicao no alto', async () => {
+    svc.getPedidoPorLocalizador.mockResolvedValue({
+      ...PEDIDO,
+      instituicao_nome: '1º Centro de Geoinformação',
+      instituicao_sigla: '1º CGEO',
+      instituicao_tem_simbolo: true,
+    });
+    const container = await montar('AB12-CD34-EF56');
+
+    const img = container.querySelector('.consulta-marca__simbolo');
+    expect(img).toBeTruthy();
+    expect(img.getAttribute('src')).toContain('/instituicao/simbolo');
+    expect(img.getAttribute('alt')).toBe('1º CGEO');
+    expect(container.querySelector('.consulta-marca__nome').textContent)
+      .toBe('1º Centro de Geoinformação');
+  });
+
+  // Instalacao sem simbolo cadastrado e estado NORMAL: o nome fica, a imagem
+  // nao, e nao se pede a rota que responderia 404.
+  test('sem simbolo mostra so o nome, e sem simbolo nem nome nao mostra a marca', async () => {
+    svc.getPedidoPorLocalizador.mockResolvedValue({
+      ...PEDIDO, instituicao_nome: '1º Centro de Geoinformação',
+      instituicao_tem_simbolo: false,
+    });
+    let container = await montar('AB12-CD34-EF56');
+    expect(container.querySelector('.consulta-marca__simbolo')).toBeNull();
+    expect(container.querySelector('.consulta-marca__nome')).toBeTruthy();
+
+    svc.getPedidoPorLocalizador.mockResolvedValue({ ...PEDIDO });
+    container = await montar('AB12-CD34-EF56');
+    expect(container.querySelector('.consulta-marca__nome')).toBeNull();
+    expect(container.querySelector('.consulta-marca').children.length).toBe(0);
+  });
+
 });

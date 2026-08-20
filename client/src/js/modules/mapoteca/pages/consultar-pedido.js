@@ -72,7 +72,38 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
     location.hash = `/consultar-pedido/${value}`;
   });
 
+  // De QUEM e esta tela. Ela e a unica que uma pessoa de fora abre, e ate aqui
+  // nao trazia nem simbolo nem nome: quem recebe o link por DIEx chegava numa
+  // pagina sem assinatura, e o primeiro julgamento de uma tela oficial e esse.
+  //
+  // A faixa nasce VAZIA e so se preenche quando o pedido chega, porque o nome da
+  // instituicao vem no mesmo payload. Na tela sem localizador ela nao aparece,
+  // e e o certo: ali ainda nao houve consulta.
+  const marca = el('div', { className: 'consulta-marca' });
+
+  function mostrarMarca(pedido) {
+    clearChildren(marca);
+    const nome = pedido.instituicao_nome;
+    if (!nome) return;
+    const filhos = [];
+    if (pedido.instituicao_tem_simbolo) {
+      const img = el('img', {
+        className: 'consulta-marca__simbolo',
+        src: `${PREFIXO_API}/instituicao/simbolo`,
+        alt: pedido.instituicao_sigla || nome,
+        decoding: 'async',
+      });
+      // Simbolo apagado entre a consulta e o desenho: some com a imagem em vez
+      // de deixar o icone quebrado ao lado do nome.
+      img.addEventListener('error', () => img.remove());
+      filhos.push(img);
+    }
+    filhos.push(el('div', { className: 'consulta-marca__nome', textContent: nome }));
+    marca.append(...filhos);
+  }
+
   const card = el('div', { className: 'consulta-card' }, [
+    marca,
     el('div', { className: 'consulta-card__header' }, [
       el('div', {}, [
         el('div', { className: 'consulta-card__title', textContent: 'Acompanhamento de Pedido' }),
@@ -125,6 +156,7 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
 
   function showPedido(pedido) {
     clearChildren(resultArea);
+    mostrarMarca(pedido);
 
     // Resumo + informações do pedido (sempre visíveis, incluindo a observação)
     const rows = [

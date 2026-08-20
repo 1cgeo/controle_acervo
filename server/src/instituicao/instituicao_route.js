@@ -45,12 +45,13 @@
 
 const express = require('express')
 
-const { schemaValidation, asyncHandler, httpCode } = require('../utils')
+const { schemaValidation, asyncHandler, httpCode, AppError } = require('../utils')
 
 const { verifyLogin, verifyAdmin } = require('../login')
 
 const instituicaoCtrl = require('./instituicao_ctrl')
 const instituicaoSchema = require('./instituicao_schema')
+const uploadSimbolo = require('./instituicao_upload')
 
 const router = express.Router()
 
@@ -74,6 +75,84 @@ router.put(
     return res.sendJsonAndLog(
       true, 'Instituição atualizada com sucesso', httpCode.OK
     )
+  })
+)
+
+// ---------------------------------------------------------------------------
+// O SIMBOLO da instituicao
+// ---------------------------------------------------------------------------
+
+// PUBLICA, e de proposito. Esta imagem aparece na tela de acompanhamento de
+// pedido, que nao tem login: e a unica tela do sistema que uma pessoa de fora
+// abre, e sem simbolo nem nome ela nao dizia de quem era.
+//
+// Nao ha o que proteger: o brasao de uma OM e publico, e ele ja vai impresso em
+// todo documento que sai daqui. O que NAO sai por aqui e qualquer outro campo.
+//
+// Responde a IMAGEM crua, com as mesmas regras de cache da miniatura do acervo:
+// o `noCache()` do app vale para dado que muda, e este quase nunca muda. A
+// etiqueta sai da data de envio e do tamanho, entao trocar o simbolo invalida o
+// cache do navegador sozinho.
+router.get(
+  '/simbolo',
+  asyncHandler(async (req, res, next) => {
+    const meta = await instituicaoCtrl.getSimboloMeta()
+
+    if (!meta || !meta.bytes) {
+      throw new AppError('Esta instalação não tem símbolo', httpCode.NotFound)
+    }
+
+    const etag = `"${new Date(meta.data_envio).getTime()}-${meta.bytes}"`
+
+    res.removeHeader('Pragma')
+    res.removeHeader('Expires')
+    res.removeHeader('Surrogate-Control')
+    res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate')
+    res.setHeader('ETag', etag)
+
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(httpCode.NotModified).end()
+    }
+
+    const conteudo = await instituicaoCtrl.getSimboloConteudo()
+    if (!conteudo) {
+      throw new AppError('Esta instalação não tem símbolo', httpCode.NotFound)
+    }
+
+    res.setHeader('Content-Type', meta.mimetype || 'application/octet-stream')
+    res.setHeader('Content-Length', String(conteudo.length))
+    return res.status(httpCode.OK).end(conteudo)
+  })
+)
+
+// Trocar o simbolo e ADMIN, como o resto desta tela. `multipart/form-data`, um
+// arquivo no campo `arquivo`.
+router.post(
+  '/simbolo',
+  verifyAdmin,
+  uploadSimbolo,
+  asyncHandler(async (req, res, next) => {
+    if (!req.file) {
+      throw new AppError(
+        'Envie a imagem no campo "arquivo"',
+        httpCode.BadRequest
+      )
+    }
+    const dados = await instituicaoCtrl.salvarSimbolo(
+      req.file, req.usuarioUuid, req.contexto
+    )
+    return res.sendJsonAndLog(
+      true, 'Símbolo atualizado com sucesso', httpCode.OK, dados
+    )
+  })
+)
+
+router.delete(
+  '/simbolo',
+  verifyAdmin,
+  asyncHandler(async (req, res, next) => {
+    await instituicaoCtrl.apagarSimbolo(req.usuarioUuid, req.contexto)
+    return res.sendJsonAndLog(true, 'Símbolo removido com sucesso', httpCode.OK)
   })
 )
 

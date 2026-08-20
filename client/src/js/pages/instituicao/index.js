@@ -9,6 +9,9 @@ import { estadoErro } from '@components/estado-erro.js';
 import {
   getInstituicao,
   atualizarInstituicao,
+  enviarSimboloInstituicao,
+  removerSimboloInstituicao,
+  urlSimboloInstituicao,
   getUnidadesGestoras,
 } from '@services/plataforma-service.js';
 import { sincronizarSessao } from '@services/api-client.js';
@@ -109,6 +112,82 @@ export function renderInstituicao(container) {
       }),
     ]);
 
+    // O SIMBOLO, e ele NAO faz parte do `submit` do formulario.
+    //
+    // Arquivo sobe por multipart e o resto do formulario vai por JSON: juntar
+    // os dois obrigaria a mandar a imagem de novo a cada vez que alguem corrige
+    // uma letra do nome. Aqui o envio e imediato, no proprio seletor, e o botao
+    // Salvar continua respondendo so por nome, sigla e UG.
+    const simboloPrevia = el('img', {
+      className: 'instituicao__simbolo',
+      alt: 'Símbolo da instituição',
+    });
+    const simboloVazio = el('p', {
+      className: 'instituicao__simbolo-vazio',
+      textContent: 'Nenhum símbolo enviado.',
+    });
+
+    const pintarSimbolo = (temSimbolo, versao) => {
+      simboloPrevia.classList.toggle('hidden', !temSimbolo);
+      simboloVazio.classList.toggle('hidden', !!temSimbolo);
+      remover.classList.toggle('hidden', !temSimbolo);
+      if (temSimbolo) simboloPrevia.src = urlSimboloInstituicao(versao);
+    };
+
+    const entrada = el('input', {
+      type: 'file',
+      accept: 'image/png,image/jpeg,image/webp,image/gif',
+      className: 'instituicao__simbolo-entrada',
+    });
+
+    const remover = el('button', {
+      className: 'btn btn--secondary',
+      type: 'button',
+      textContent: 'Remover símbolo',
+    });
+
+    entrada.addEventListener('change', async () => {
+      const arquivo = entrada.files && entrada.files[0];
+      if (!arquivo) return;
+      try {
+        const r = await enviarSimboloInstituicao(arquivo);
+        // A previa recarrega pela data de envio que o servidor devolveu: sem
+        // trocar a URL o navegador serviria a imagem antiga do proprio cache,
+        // e quem acabou de subir veria o brasao velho e acharia que falhou.
+        pintarSimbolo(true, (r && r.dados && r.dados.simbolo_data_envio) || Date.now());
+        showSuccess('Símbolo atualizado.');
+      } catch (e) {
+        showError(e.message || 'Não foi possível enviar a imagem.');
+      } finally {
+        entrada.value = '';
+      }
+    });
+
+    remover.addEventListener('click', async () => {
+      try {
+        await removerSimboloInstituicao();
+        pintarSimbolo(false);
+        showSuccess('Símbolo removido.');
+      } catch (e) {
+        showError(e.message || 'Não foi possível remover a imagem.');
+      }
+    });
+
+    const simbolo = el('div', { className: 'instituicao__simbolo-campo' }, [
+      el('label', { className: 'form-field__label', textContent: 'Símbolo' }),
+      el('p', {
+        className: 'form-field__help',
+        textContent: 'O brasão desta OM. APARECE NA TELA PÚBLICA de '
+          + 'acompanhamento de pedido, junto do nome. PNG, JPEG, WEBP ou GIF, '
+          + 'até 2 MB. Fundo transparente fica melhor.',
+      }),
+      el('div', { className: 'instituicao__simbolo-linha' }, [
+        simboloPrevia, simboloVazio,
+        el('div', { className: 'instituicao__simbolo-acoes' }, [entrada, remover]),
+      ]),
+    ]);
+    pintarSimbolo(!!dados.tem_simbolo, dados.simbolo_data_envio);
+
     const salvar = el('button', {
       className: 'btn btn--primary',
       type: 'submit',
@@ -119,6 +198,7 @@ export function renderInstituicao(container) {
       nome.element,
       sigla.element,
       ug.element,
+      simbolo,
       aviso,
       el('div', { className: 'instituicao__acoes' }, [salvar]),
     ]);

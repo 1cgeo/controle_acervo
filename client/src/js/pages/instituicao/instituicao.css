@@ -43,3 +43,49 @@
 .instituicao__carregando {
   color: var(--color-text-secondary);
 }
+
+/* O SIMBOLO da instituicao: previa mais o seletor de arquivo.
+   A previa tem altura fixa e largura livre, porque brasao de OM varia de
+   proporcao (o do 1o CGEO e mais alto que largo). O quadriculado de fundo
+   revela a transparencia, que e o que se quer num brasao. */
+.instituicao__simbolo-campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.instituicao__simbolo-linha {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.instituicao__simbolo {
+  height: 96px;
+  width: auto;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs);
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #eee 25%, transparent 25%),
+    linear-gradient(-45deg, #eee 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #eee 75%),
+    linear-gradient(-45deg, transparent 75%, #eee 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+}
+
+.instituicao__simbolo-vazio {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.instituicao__simbolo-acoes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  align-items: flex-start;
+}

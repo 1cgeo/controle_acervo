@@ -50,7 +50,12 @@ const traduzirErro = err => {
 controller.get = async () => {
   const linha = await db.conn.oneOrNone(
     `SELECT i.id, i.nome, i.sigla, i.ug_code, ug.nome AS ug_nome,
-            i.data_modificacao, i.usuario_modificacao_uuid
+            i.data_modificacao, i.usuario_modificacao_uuid,
+            -- Os BYTES nao saem daqui: a ficha e JSON, e a imagem tem rota
+            -- propria. O booleano existe para a tela decidir entre mostrar a
+            -- previa e oferecer o envio, sem pedir a imagem para descobrir.
+            (i.simbolo IS NOT NULL) AS tem_simbolo,
+            i.simbolo_nome_original, i.simbolo_data_envio
        FROM dgeo.instituicao AS i
        LEFT JOIN dominio.ug AS ug ON ug.code = i.ug_code
       WHERE i.id = $<id>`,
@@ -252,6 +257,147 @@ controller.atualizar = async (dados, usuarioUuid, contexto) => {
   } catch (err) {
     throw traduzirErro(err)
   }
+}
+
+// ---------------------------------------------------------------------------
+// O SIMBOLO
+// ---------------------------------------------------------------------------
+
+// Assinatura dos primeiros bytes de cada formato aceito. A extensao e o
+// mimetype vem os DOIS do cliente, e nenhum e prova: quem quiser subir outra
+// coisa renomeia o arquivo. Isto le o que o arquivo E.
+const ASSINATURAS = [
+  { mime: 'image/png', bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+  { mime: 'image/jpeg', bytes: [0xff, 0xd8, 0xff] },
+  { mime: 'image/gif', bytes: [0x47, 0x49, 0x46, 0x38] }
+]
+
+const tipoReal = buffer => {
+  for (const a of ASSINATURAS) {
+    if (a.bytes.every((b, i) => buffer[i] === b)) return a.mime
+  }
+  // WEBP e RIFF....WEBP: a marca esta no byte 8, e nao no comeco.
+  if (buffer.slice(0, 4).toString('ascii') === 'RIFF' &&
+      buffer.slice(8, 12).toString('ascii') === 'WEBP') {
+    return 'image/webp'
+  }
+  return null
+}
+
+/**
+ * Metadados do simbolo, SEM os bytes.
+ *
+ * Existe separada de `getSimboloConteudo` para a rota poder montar a etiqueta de
+ * cache e responder 304 sem ler a imagem inteira do banco.
+ */
+controller.getSimboloMeta = async () => {
+  return db.conn.oneOrNone(
+    `SELECT simbolo_mimetype AS mimetype, simbolo_nome_original AS nome_original,
+            simbolo_data_envio AS data_envio, length(simbolo) AS bytes
+       FROM dgeo.instituicao
+      WHERE id = $<id> AND simbolo IS NOT NULL`,
+    { id: LINHA_UNICA }
+  )
+}
+
+controller.getSimboloConteudo = async () => {
+  const linha = await db.conn.oneOrNone(
+    `SELECT simbolo FROM dgeo.instituicao WHERE id = $<id>`,
+    { id: LINHA_UNICA }
+  )
+  return linha ? linha.simbolo : null
+}
+
+/**
+ * Grava o simbolo. O `buffer` vem do multer, em memoria.
+ *
+ * NAO registra os BYTES na auditoria, e isso e deliberado: o rastro guardaria
+ * uma copia da imagem a cada troca, e `auditoria.evento` viraria deposito de
+ * binario. Registra-se a TROCA (nome do arquivo, tipo, tamanho), que e o que
+ * responde "quem trocou o brasao e quando".
+ */
+controller.salvarSimbolo = async (arquivo, usuarioUuid, contexto) => {
+  const mime = tipoReal(arquivo.buffer)
+  if (!mime) {
+    throw new AppError(
+      'O arquivo enviado não é uma imagem PNG, JPEG, GIF ou WEBP',
+      httpCode.BadRequest
+    )
+  }
+
+  return db.conn.tx(async t => {
+    const antes = await t.oneOrNone(
+      `SELECT id, nome, sigla, simbolo_mimetype, simbolo_nome_original,
+              simbolo_data_envio, length(simbolo) AS simbolo_bytes
+         FROM dgeo.instituicao WHERE id = $<id>`,
+      { id: LINHA_UNICA }
+    )
+    if (!antes) {
+      throw new AppError(
+        'A instituição desta instalação não está cadastrada',
+        httpCode.NotFound
+      )
+    }
+
+    const depois = await t.one(
+      `UPDATE dgeo.instituicao SET
+         simbolo = $<simbolo>, simbolo_mimetype = $<mimetype>,
+         simbolo_nome_original = $<nomeOriginal>, simbolo_data_envio = now(),
+         data_modificacao = now(), usuario_modificacao_uuid = $<usuarioUuid>
+       WHERE id = $<id>
+       RETURNING id, nome, sigla, simbolo_mimetype, simbolo_nome_original,
+                 simbolo_data_envio, length(simbolo) AS simbolo_bytes`,
+      {
+        simbolo: arquivo.buffer,
+        mimetype: mime,
+        nomeOriginal: arquivo.originalname,
+        usuarioUuid,
+        id: LINHA_UNICA
+      }
+    )
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'dgeo.instituicao',
+      registroId: LINHA_UNICA,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    })
+
+    return depois
+  })
+}
+
+controller.apagarSimbolo = async (usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    const antes = await t.oneOrNone(
+      `SELECT id, nome, sigla, simbolo_mimetype, simbolo_nome_original,
+              simbolo_data_envio, length(simbolo) AS simbolo_bytes
+         FROM dgeo.instituicao WHERE id = $<id>`,
+      { id: LINHA_UNICA }
+    )
+    const depois = await t.one(
+      `UPDATE dgeo.instituicao SET
+         simbolo = NULL, simbolo_mimetype = NULL, simbolo_nome_original = NULL,
+         simbolo_data_envio = NULL,
+         data_modificacao = now(), usuario_modificacao_uuid = $<usuarioUuid>
+       WHERE id = $<id>
+       RETURNING id, nome, sigla, simbolo_mimetype, simbolo_nome_original,
+                 simbolo_data_envio, length(simbolo) AS simbolo_bytes`,
+      { usuarioUuid, id: LINHA_UNICA }
+    )
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'dgeo.instituicao',
+      registroId: LINHA_UNICA,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    })
+  })
 }
 
 module.exports = controller

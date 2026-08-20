@@ -230,6 +230,27 @@ CREATE TABLE dgeo.instituicao(
   -- aqui nem chegaria a existir -- o PostgreSQL recusa a chave estrangeira entre
   -- tipos incompatíveis, e a instalação nova morreria neste arquivo.
   ug_code VARCHAR(10) REFERENCES dominio.ug (code),
+  -- O SIMBOLO da instituição (brasão, distintivo), em bytes.
+  --
+  -- É PÚBLICO: sai na tela de acompanhamento de pedido, que não tem login, e é a
+  -- única tela do sistema que alguém de fora abre. Sem ele aquela página não
+  -- dizia de quem era.
+  --
+  -- Mora AQUI, e não como arquivo no repositório, pela mesma razão que o nome
+  -- mora aqui: ele é da INSTALAÇÃO, e não do sistema. PNG versionado obrigaria
+  -- outro Centro a trocar arquivo e reconstruir imagem para mudar a própria cara.
+  --
+  -- BYTEA segue o padrão do banco para imagem (`acervo.miniatura_versao`) e para
+  -- anexo (`mapoteca.anexo_pedido`): o byte viaja no backup junto da linha, e não
+  -- há caminho de volume para apodrecer.
+  --
+  -- O mimetype é COLUNA e não se deduz da extensão: quem serve a imagem precisa
+  -- dele no cabeçalho, e adivinhar erra em SVG. Instalação existente chega aqui
+  -- pela migração 2026-08-20_o_simbolo_da_instituicao.sql.
+  simbolo BYTEA,
+  simbolo_mimetype VARCHAR(100),
+  simbolo_nome_original VARCHAR(255),
+  simbolo_data_envio TIMESTAMP WITH TIME ZONE,
   -- SEM `data_cadastramento` e SEM `usuario_cadastramento_uuid`, ao contrário do
   -- resto do sistema: a linha não é cadastrada por ninguém, ela nasce com o
   -- banco. Na instalação nova quem a escreve é este arquivo, antes de existir o
