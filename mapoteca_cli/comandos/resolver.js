@@ -66,6 +66,20 @@ function escolherVersao (versoes) {
   }
 }
 
+/**
+ * Produto que a mapoteca consegue IMPRIMIR: tem ao menos uma versao com arquivo.
+ *
+ * Dois tipos de produto legitimo nascem sem arquivo nenhum e nunca servem a um
+ * pedido: a folha PLANEJADA do PIT (rota propria `produto_versao_planejada`, que
+ * registra producao prometida) e o registro historico de edicao antiga. Os dois
+ * existem de proposito no acervo, e nenhum dos dois e carta que se possa tirar
+ * do plotter.
+ */
+function produtoImprimivel (dados) {
+  const versoes = (dados && Array.isArray(dados.versoes)) ? dados.versoes : []
+  return versoes.some(v => Array.isArray(v.arquivos) && v.arquivos.length)
+}
+
 async function resolverUmMi (cfg, bruto, filtros) {
   const canonico = mi.normalizar(bruto)
   const linha = { mi: canonico || String(bruto), situacao: 'ok' }
@@ -97,26 +111,71 @@ async function resolverUmMi (cfg, bruto, filtros) {
     }
   }
 
-  if (candidatos.length > 1) {
-    linha.situacao = `AMBIGUO (${candidatos.map(c => c.id).join(', ')})`
-    return {
-      linha,
-      aviso: `${canonico}: ${candidatos.length} produtos com o mesmo MI (ids ` +
-        `${candidatos.map(c => c.id).join(', ')}). Nao escolhi nenhum. Recorte com ` +
-        '--tipo-produto ou --escala, ou fixe o uuid_versao a mao no plano.'
+  // O detalhe de CADA candidato. Com um candidato so e a mesma chamada unica de
+  // sempre; com mais de um, e o que permite descartar quem nao serve para
+  // imprimir ANTES de declarar ambiguidade.
+  const detalhados = []
+  for (const candidato of candidatos) {
+    await http.pausa()
+    const detalhe = await http.autenticada(
+      cfg, 'GET', `/acervo/produto/detalhado/${candidato.id}`
+    )
+    detalhados.push({ produto: candidato, dados: detalhe.dados || {} })
+  }
+
+  const avisosPrevios = []
+  let escolhido = detalhados[0]
+
+  if (detalhados.length > 1) {
+    // A MESMA regra que `escolherVersao` aplica entre VERSOES, um nivel acima,
+    // entre PRODUTOS: vale quem tem arquivo, e os sem arquivo so voltam a
+    // concorrer se nenhum tiver.
+    //
+    // Sem isto, o MI de uma folha planejada do PIT vira ambiguidade, o comando
+    // manda "fixe o uuid_versao a mao no plano", e o uuid da folha que AINDA NAO
+    // EXISTE passa no dry-run e no servidor sem um aviso (a validacao do item e
+    // so `SELECT uuid_versao FROM acervo.versao`). O item nasceria apontando
+    // carta nao produzida, e o erro so apareceria na impressao. Medido em
+    // 2026-08-24: o lote planejado de 2026-08-07 deixou 44 MI assim, e os 44 ja
+    // tinham sido pedidos ao menos uma vez.
+    const imprimiveis = detalhados.filter(d => produtoImprimivel(d.dados))
+    const semArquivo = detalhados.filter(d => !produtoImprimivel(d.dados))
+    const ids = lista => lista.map(d => d.produto.id).join(', ')
+
+    if (imprimiveis.length === 1) {
+      escolhido = imprimiveis[0]
+      avisosPrevios.push(
+        `${canonico}: ${detalhados.length} produtos com o mesmo MI (ids ` +
+        `${ids(detalhados)}). Escolhi o ${escolhido.produto.id}, o unico com arquivo. ` +
+        `Sem arquivo, descartado(s): ${ids(semArquivo)} (folha planejada do PIT ou ` +
+        'registro historico, que a mapoteca nao imprime).'
+      )
+    } else if (imprimiveis.length === 0) {
+      linha.situacao = `AMBIGUO (${ids(detalhados)})`
+      return {
+        linha,
+        aviso: `${canonico}: ${detalhados.length} produtos com o mesmo MI (ids ` +
+          `${ids(detalhados)}), e NENHUM tem arquivo. A folha nao pode virar item. ` +
+          'Nomeie-a na observacao do pedido.'
+      }
+    } else {
+      linha.situacao = `AMBIGUO (${ids(imprimiveis)})`
+      return {
+        linha,
+        aviso: `${canonico}: ${imprimiveis.length} produtos com o mesmo MI TEM arquivo ` +
+          `(ids ${ids(imprimiveis)}). Nao escolhi nenhum. Recorte com --tipo-produto ou ` +
+          '--escala, ou fixe o uuid_versao a mao no plano, conferindo no acervo que a ' +
+          'versao escolhida tem arquivo.'
+      }
     }
   }
 
-  const produto = candidatos[0]
+  const produto = escolhido.produto
+  const dados = escolhido.dados
   linha.produto_id = produto.id
   linha.produto_nome = produto.nome
   linha.escala = produto.escala
 
-  await http.pausa()
-  const detalhe = await http.autenticada(
-    cfg, 'GET', `/acervo/produto/detalhado/${produto.id}`
-  )
-  const dados = detalhe.dados || {}
   const { versao, motivo } = escolherVersao(dados.versoes)
 
   if (!versao) {
@@ -130,7 +189,7 @@ async function resolverUmMi (cfg, bruto, filtros) {
   linha.arquivos = Array.isArray(versao.arquivos) ? versao.arquivos.length : 0
   linha.total_versoes = Array.isArray(dados.versoes) ? dados.versoes.length : 0
 
-  const avisos = []
+  const avisos = [...avisosPrevios]
   if (motivo) {
     linha.situacao = 'sem arquivo'
     avisos.push(`${canonico}: ${motivo}.`)
@@ -310,6 +369,8 @@ module.exports = {
   executar,
   precisaServidor: true,
   escolherVersao,
+  produtoImprimivel,
+  resolverUmMi,
   casarClientes,
   chave,
   TIPO_PRODUTO_PADRAO
