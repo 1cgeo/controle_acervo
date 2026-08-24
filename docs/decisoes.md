@@ -1484,6 +1484,39 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
 
 ## Mapoteca e plugin
 
+- **O PEDIDO IMPRESSO E NÃO DESPACHADO TEM SITUAÇÃO PRÓPRIA** (`situacao_pedido` code 8,
+  'Aguardando envio', 2026-08-24, decisão do chefe). Entre imprimir e remeter existe um estágio real:
+  o material está pronto, embalado, e ainda não saiu. Ele não tinha nome no domínio, então ficava
+  dentro de 'Em andamento' (3) e produzia dois efeitos ao mesmo tempo -- a fila de impressão
+  continuava oferecendo para imprimir o que já estava impresso, e a tela pública dizia ao solicitante
+  que o pedido dele estava "em andamento" no dia em que ele já esperava na prateleira.
+  - **Não é o 7 (Aguardando produção), e a distinção é o ponto.** O 7 espera CARTA QUE AINDA NÃO
+    EXISTE, e por isso fica fora das duas filas: fila que mostra o impossível deixa de ser fila. O 8
+    espera só o DESPACHO do que já está pronto. São esperas opostas: uma depende da produção, a outra
+    depende de nós, e a segunda é trabalho pendente de alguém aqui dentro.
+  - **Onde ele aparece:** FORA da fila de impressão (`SITUACOES_FILA_IMPRESSAO`, que é o que o plugin
+    do QGIS lê e monta como lista de download), e DENTRO da fila de atendimento
+    (`SITUACOES_FILA_ATENDIMENTO`, hoje 2, 3, 8 e 4). Na tela de atendimento ele cai na seção de
+    baixo, que passou a se chamar "Impressos: aguardando envio ou conclusão" e ganhou coluna de
+    Situação e a ação de etiqueta de envio. Na lista de pedidos ele tem filtro próprio.
+  - **As duas listas da tela de atendimento são POSITIVAS**, e não uma a negação da outra. A tela
+    partia a fila por `!estaRemetido`, o que funcionava enquanto Remetido era a única situação fora da
+    impressão; com o 8, o negativo mandaria um pedido já impresso de volta para a mesa de quem
+    imprime, com a ação "Atender (imprimir e registrar)" ao lado.
+  - **`situacao_pedido_id >= 4` deixou de existir na tela pública.** Ela decidia por ali se o material
+    "já saiu", e o 8 passaria no teste anunciando como despachado o pedido que está na prateleira.
+    Code de domínio nunca foi ordem de fluxo, e o 7 já provava isso antes do 8 tornar a mentira
+    visível.
+  - **O code é 8 porque 8 é o próximo LIVRE.** Ele não ocupa a vaga que o code 1 deixou na poda de
+    2026-08-08, nem se encaixa entre o 3 e o 4 "para ficar na ordem do fluxo": code de domínio não se
+    renumera nem se reaproveita, porque `auditoria.evento` guarda o número antigo para sempre.
+  - **A migração é aditiva e só.** Nenhum pedido gravado muda de situação: migração não adivinha qual
+    dos pedidos em andamento já foi impresso.
+- **A LISTA DE PRODUTOS DO PEDIDO ABRE COM 50 POR PÁGINA**, e não com os 10 que o `data-table` usa
+  por padrão (chefe, 2026-08-24). O pedido da mapoteca é uma LISTA DE FOLHAS, e a pergunta que se faz
+  na tela é sobre o conjunto ("quais faltam imprimir?"), nunca sobre uma linha: pedido de 132 itens
+  existe no histórico, e com 10 por página ele custava 14 viradas só para ser lido. 50 é opção válida
+  do seletor da própria tabela, então quem quiser menos troca ali.
 - **A MESMA OM NÃO SE CADASTRA DUAS VEZES** (`unique_cliente_nome_sigla`, 2026-08-12). A restrição
   nasceu de um caso medido, e não de zelo: o **3º GAC Ap estava em duas linhas** de `mapoteca.cliente`
   (ids 33 e 59), mesmo nome, mesma sigla, mesmo endereço, com um pedido concluído pendurado em cada.

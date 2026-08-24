@@ -1037,9 +1037,9 @@ export async function renderPedidoDetails(container, { params }) {
   }, [svgIcon(ICONS.print, 14), 'Registrar impressão']);
 
   // "Selecionar todos os N" existe porque a caixa do cabecalho marca a PAGINA,
-  // e com pageSize 10 um pedido de 132 itens exigiria 14 viradas de pagina --
-  // justamente o pedido que mais precisa do lote. Ele respeita a BUSCA: filtrar
-  // por '25k' e mandar selecionar todos seleciona os 25k.
+  // e mesmo com pageSize 50 um pedido de 132 itens exigiria tres viradas de
+  // pagina -- justamente o pedido que mais precisa do lote. Ele respeita a
+  // BUSCA: filtrar por '25k' e mandar selecionar todos seleciona os 25k.
   const selecionarTodosBtn = el('button', {
     className: 'btn btn--text btn--sm hidden',
     type: 'button',
@@ -1132,7 +1132,14 @@ export async function renderPedidoDetails(container, { params }) {
     // neste pedido" no caminho entre montar e a primeira resposta.
     loading: true,
     searchable: true,
-    pageSize: 10,
+    // 50, E NAO O DEFAULT 10 DO DATA-TABLE (chefe, 2026-08-24). O pedido da
+    // mapoteca e uma LISTA DE FOLHAS, e a pergunta que se faz aqui e sobre o
+    // conjunto ("quais faltam imprimir?"), nunca sobre uma linha. Medido no
+    // historico: pedido de 132 itens existe, e com 10 por pagina ele custava 14
+    // viradas so para ser lido. 50 e opcao valida do seletor
+    // (PAGE_SIZE_OPTIONS de components/data-table), entao quem quiser 10 troca
+    // na propria tela.
+    pageSize: 50,
     emptyMessage: 'Nenhum produto neste pedido',
     // MESMO GATE do botao de registrar impressao da linha, e pelo mesmo motivo:
     // ele espelha o verifyPerfil('operador') da rota. Sem escrita a coluna de

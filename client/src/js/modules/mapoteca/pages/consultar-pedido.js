@@ -6,10 +6,21 @@ import { isValidLocalizador, normalizeLocalizador } from '@utils/localizador.js'
 import { randomBackground } from '@utils/backgrounds.js';
 import { PREFIXO_API } from '@utils/base-path.js';
 
-// Situacao a partir da qual o material JA SAIU: 4 Remetido, 5 Concluido.
+// As situacoes que esta tela distingue, de `mapoteca.situacao_pedido`.
 const SITUACAO_REMETIDO = 4;
 const SITUACAO_CONCLUIDO = 5;
 const SITUACAO_CANCELADO = 6;
+const SITUACAO_AGUARDANDO_ENVIO = 8;
+
+// O material JA SAIU: 4 Remetido, 5 Concluido.
+//
+// E UMA LISTA, E NAO UM `>=`. Ate 2026-08-24 este teste era
+// `situacao_pedido_id >= 4`, e a leitura de "code maior quer dizer mais adiante
+// no fluxo" nunca foi verdade: o 7 (Aguardando producao) ja era ANTERIOR ao 4.
+// O 8 (Aguardando envio) tornou a mentira visivel, porque ele passaria no `>=`
+// dizendo ao solicitante que o pedido saiu no dia em que ele esta na prateleira
+// esperando despacho.
+const SITUACOES_JA_SAIU = [SITUACAO_REMETIDO, SITUACAO_CONCLUIDO];
 
 /**
  * Numero mais substantivo no plural certo.
@@ -184,7 +195,7 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
     // antes de despachar e prometer o que ainda pode mudar. Depois de remetido,
     // e fato.
     if (pedido.forma_entrega_nome) {
-      const jaSaiu = Number(pedido.situacao_pedido_id) >= SITUACAO_REMETIDO;
+      const jaSaiu = SITUACOES_JA_SAIU.includes(Number(pedido.situacao_pedido_id));
       rows.push(infoRow(jaSaiu ? 'Forma de entrega' : 'Forma de envio prevista',
         pedido.forma_entrega_nome));
     }
@@ -198,6 +209,9 @@ export async function renderConsultarPedido(container, { params = {} } = {}) {
       let envio = 'Não enviado';
       if (sit === SITUACAO_REMETIDO) envio = 'Enviado';
       else if (sit === SITUACAO_CONCLUIDO) envio = 'Enviado e concluído';
+      // O estagio entre imprimir e despachar tem texto proprio: 'Nao enviado'
+      // e verdade, e esconde do solicitante que o material dele ja esta pronto.
+      else if (sit === SITUACAO_AGUARDANDO_ENVIO) envio = 'Pronto, aguardando envio';
       rows.push(infoRow('Situação do envio', envio));
     }
     // A data que o cliente quer ver e a do envio, e ela e a data_atendimento:

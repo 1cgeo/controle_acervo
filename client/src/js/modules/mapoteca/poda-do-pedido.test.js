@@ -150,6 +150,11 @@ describe('a poda do pedido: o dominio de situacao no client', () => {
       CONCLUIDO: 5,
       CANCELADO: 6,
       AGUARDANDO_PRODUCAO: 7,
+      // O 8 nasceu DEPOIS da poda, em 2026-08-24, e nao reabre a numeracao: ele
+      // e o proximo code livre, e nao o lugar vago que o 1 deixou. Code de
+      // dominio nao se reaproveita, porque `auditoria.evento` ja guarda o 1 no
+      // historico de quem passou por ele.
+      AGUARDANDO_ENVIO: 8,
     });
   });
 

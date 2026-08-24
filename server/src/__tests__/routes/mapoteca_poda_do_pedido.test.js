@@ -73,11 +73,14 @@ describe('A situação 1 saiu, e a 2 só mudou de rótulo', () => {
     expect(linha).toBeNull()
   })
 
-  it('as outras seis continuam lá, e o code 2 se chama Pedido Recebido', async () => {
+  it('as outras continuam lá, e o code 2 se chama Pedido Recebido', async () => {
     const codes = await conn.any(
       'SELECT code, nome FROM mapoteca.situacao_pedido ORDER BY code'
     )
-    expect(codes.map(c => Number(c.code))).toEqual([2, 3, 4, 5, 6, 7])
+    // O 8 (Aguardando envio) nasceu em 2026-08-24, DEPOIS da poda, e é o
+    // próximo code livre: ele não ocupa a vaga que o 1 deixou. Code de domínio
+    // não se reaproveita, porque `auditoria.evento` guarda o 1 para sempre.
+    expect(codes.map(c => Number(c.code))).toEqual([2, 3, 4, 5, 6, 7, 8])
     // O ROTULO mudou e o CODE não: 'DIEx/Ofício do pedido recebido' nomeava o
     // documento, e o pedido de civil chega por e-mail. Trocar o code apagaria a
     // distinção com o 3 (Em andamento), que é trabalho já começado.

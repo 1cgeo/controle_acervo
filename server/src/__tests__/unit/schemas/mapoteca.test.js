@@ -129,8 +129,11 @@ describe('Schemas da mapoteca', () => {
       expect(value.situacao_pedido_id).toBe(2)
     })
 
-    it('as outras cinco situacoes continuam valendo', () => {
-      for (const code of [3, 4, 7]) {
+    it('as outras situacoes continuam valendo, e a 8 entrou', () => {
+      // O 8 (Aguardando envio) entrou no dominio em 2026-08-24. Ele esta aqui
+      // porque o Joi le `Object.values(SITUACAO_PEDIDO)`, e um code que o DDL
+      // tem e a constante nao teria recusa 400 com a cara de dado invalido.
+      for (const code of [3, 4, 7, 8]) {
         aceita(mapotecaSchema.pedido.validate({ ...pedidoBase, situacao_pedido_id: code }))
       }
       // 5 exige data_atendimento e 6 exige motivo, pelas RN02 e RN03.

@@ -38,8 +38,14 @@ import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { saveAuth, clearAuth } from '@store/auth-store.js';
 
 /**
- * Itens do pedido. Sao 25 para a paginacao existir (a pagina e de 10), e o
- * primeiro tem nome fora da serie para a busca e a ordenacao terem o que fazer.
+ * Itens do pedido. Sao 60 para a paginacao existir (a pagina e de 50 desde
+ * 2026-08-24), e o primeiro tem nome fora da serie para a busca e a ordenacao
+ * terem o que fazer.
+ *
+ * Eram 25 quando a pagina era de 10. O numero acompanha o pageSize da tabela de
+ * produtos de pages/pedidos/details.js, e nao um valor bonito: abaixo dele a
+ * tabela tem uma pagina so, e o teste de "a pagina sobrevive a gravacao"
+ * passaria sem exercitar nada.
  */
 function produtos() {
   const lista = [{
@@ -48,7 +54,7 @@ function produtos() {
     quantidade: 10, quantidade_impressa: 4, quantidade_restante: 6,
     impressao_concluida: false,
   }];
-  for (let i = 2; i <= 25; i += 1) {
+  for (let i = 2; i <= 60; i += 1) {
     lista.push({
       id: 900 + i,
       produto_nome: `Folha ${String(i).padStart(2, '0')}`,
@@ -77,7 +83,7 @@ const pedidoNovo = (extra = {}) => ({
   documento_solicitacao: 'DIEx 123',
   palavras_chave: [],
   produtos: produtos(),
-  impressao: { concluida: false, itens_concluidos: 0, total_itens: 25 },
+  impressao: { concluida: false, itens_concluidos: 0, total_itens: 60 },
   ...extra,
 });
 
@@ -228,11 +234,11 @@ describe('detalhe do pedido: a gravacao nao remonta a tela', () => {
 
     const proxima = tabelaProdutos(container).querySelector('[aria-label="Próxima página"]');
     proxima.click();
-    expect(paginaProdutos(container)).toBe('11-20 de 25');
+    expect(paginaProdutos(container)).toBe('51-60 de 60');
 
     await gravar(container);
 
-    expect(paginaProdutos(container)).toBe('11-20 de 25');
+    expect(paginaProdutos(container)).toBe('51-60 de 60');
 
     if (typeof cleanup === 'function') cleanup();
   });

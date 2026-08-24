@@ -11,8 +11,15 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 import { renderAtendimento } from '@modules/mapoteca/pages/atendimento/index.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 
-// Tres pedidos: um atrasado, um sem prazo e um remetido (que fica na fila porque
-// ainda falta fechar).
+// Tres pedidos DA FILA DE IMPRESSAO: um atrasado, um sem prazo e um
+// recem-recebido.
+//
+// As tres situacoes sao 2 e 3, e nao ha aqui um 7 nem um 4. A fila de
+// atendimento que a rota devolve e [2, 3, 8, 4] (SITUACOES_FILA_ATENDIMENTO de
+// server/src/mapoteca/query_fragments.js), entao 'Aguardando producao' nunca
+// chega nesta lista, e o 4 e o 8 pertencem a seccao de baixo. O 7 estava aqui
+// como um "qualquer coisa que nao seja Remetido", e passava porque a tela
+// partia a lista por `!estaRemetido`.
 const PEDIDOS = [
   {
     id: 55, localizador_pedido: 'AB12-CD34-EF56', cliente_nome: '18º BI Mtz',
@@ -24,7 +31,7 @@ const PEDIDOS = [
   },
   {
     id: 56, localizador_pedido: 'ZZ99-YY88-XX77', cliente_nome: '6º RCB',
-    situacao_pedido_id: 7, situacao_pedido_nome: 'Aguardando produção',
+    situacao_pedido_id: 3, situacao_pedido_nome: 'Em andamento',
     data_pedido: '2026-07-01', prazo: null, dias_para_prazo: null,
     documento_solicitacao: 'DIEx 456', total_itens: 0, itens_impressos: 0,
     quantidade_pedida: 0, quantidade_impressa: 0,
@@ -243,16 +250,17 @@ describe('renderAtendimento: atender um pedido', () => {
   });
 });
 
-// A SEÇÃO "REMETIDOS, AGUARDANDO CONCLUSÃO".
+// A SEÇÃO "IMPRESSOS: AGUARDANDO ENVIO OU CONCLUSÃO".
 //
-// O pedido Remetido (situação 4 no DDL, er/mapoteca.sql) chega pela MESMA
-// leitura da fila, com `?incluir_remetidos=true`. O servidor tem duas listas de
-// situação em aberto: a de IMPRESSÃO (1, 2 e 3), que o plugin do QGIS espera, e
-// a de ATENDIMENTO (1, 2, 3 e 4), que esta tela pede.
+// O pedido Aguardando envio (situação 8) e o Remetido (4), do DDL em
+// er/mapoteca.sql, chegam pela MESMA leitura da fila, com
+// `?incluir_remetidos=true`. O servidor tem duas listas de situação em aberto: a
+// de IMPRESSÃO (2 e 3), que o plugin do QGIS espera, e a de ATENDIMENTO
+// (2, 3, 8 e 4), que esta tela pede.
 //
-// Marcar Remetido é a última ação de quem atende, e era ela que apagava o pedido
-// desta tela sem nada lembrar que faltava fechá-lo.
-describe('renderAtendimento: os remetidos que a fila deixou para trás', () => {
+// Despachar e marcar Concluído são as duas últimas ações de quem atende, e eram
+// elas que apagavam o pedido desta tela sem nada lembrar que faltava fechá-lo.
+describe('renderAtendimento: o que a fila de impressão deixou para trás', () => {
   const REMETIDO = {
     id: 81, localizador_pedido: 'RR11-TT22-YY33', cliente_nome: '4º BE Cmb',
     situacao_pedido_id: 4, situacao_pedido_nome: 'Remetido',
@@ -266,14 +274,21 @@ describe('renderAtendimento: os remetidos que a fila deixou para trás', () => {
     quantidade_produtos: 1,
   };
 
-  const secaoRemetidos = (container) => [...container.querySelectorAll('.dashboard-section')]
-    .find(s => s.textContent.includes('Remetidos, aguardando conclusão'));
+  const AGUARDANDO_ENVIO = {
+    id: 83, localizador_pedido: 'EE44-FF55-GG66', cliente_nome: '2º BCom',
+    situacao_pedido_id: 8, situacao_pedido_nome: 'Aguardando envio',
+    data_pedido: '2026-05-04', documento_solicitacao: 'DIEx 902',
+    quantidade_produtos: 7,
+  };
+
+  const secaoFechamento = (container) => [...container.querySelectorAll('.dashboard-section')]
+    .find(s => s.textContent.includes('Impressos: aguardando envio ou conclusão'));
 
   test('lista o remetido e ignora o que já foi concluído', async () => {
     svc.getPedidosEmAberto.mockResolvedValue([REMETIDO, CONCLUIDO]);
     const { container, cleanup } = await montar();
 
-    const secao = secaoRemetidos(container);
+    const secao = secaoFechamento(container);
     expect(secao).toBeTruthy();
     expect(secao.textContent).toContain('4º BE Cmb');
     expect(secao.textContent).not.toContain('9º BE Cmb');
@@ -305,8 +320,8 @@ describe('renderAtendimento: os remetidos que a fila deixou para trás', () => {
     svc.getPedidosEmAberto.mockResolvedValue([CONCLUIDO]);
     const { container, cleanup } = await montar();
 
-    expect(secaoRemetidos(container).textContent)
-      .toContain('Nenhum pedido remetido esperando conclusão');
+    expect(secaoFechamento(container).textContent)
+      .toContain('Nenhum pedido esperando envio ou conclusão');
 
     if (typeof cleanup === 'function') cleanup();
   });
@@ -317,20 +332,64 @@ describe('renderAtendimento: os remetidos que a fila deixou para trás', () => {
     svc.getPedidosEmAberto.mockRejectedValue(new Error('Falha ao consultar os pedidos'));
     const { container, cleanup } = await montar();
 
-    const secao = secaoRemetidos(container);
+    const secao = secaoFechamento(container);
     expect(secao.textContent).toContain('Falha ao consultar os pedidos');
-    expect(secao.textContent).not.toContain('Nenhum pedido remetido esperando conclusão');
+    expect(secao.textContent).not.toContain('Nenhum pedido esperando envio ou conclusão');
 
     if (typeof cleanup === 'function') cleanup();
   });
 
-  test('o link leva à lista de pedidos já no filtro Remetido', async () => {
+  // DOIS links, e não um: a lista de pedidos filtra por UMA situação, e a seção
+  // mostra duas. Um link só mandaria metade da seção para uma tela que não a
+  // contém.
+  test('os links levam à lista de pedidos, um por situação', async () => {
     svc.getPedidosEmAberto.mockResolvedValue([]);
     const { container, cleanup } = await montar();
 
-    const link = secaoRemetidos(container).querySelector('a[href*="filtro=remetido"]');
-    expect(link).toBeTruthy();
-    expect(link.getAttribute('href')).toBe('#/mapoteca/pedidos?filtro=remetido');
+    const secao = secaoFechamento(container);
+    expect(secao.querySelector('a[href*="filtro=remetido"]').getAttribute('href'))
+      .toBe('#/mapoteca/pedidos?filtro=remetido');
+    expect(secao.querySelector('a[href*="filtro=aguardando_envio"]').getAttribute('href'))
+      .toBe('#/mapoteca/pedidos?filtro=aguardando_envio');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O QUE ESTE TESTE IMPEDE DE VOLTAR. A tela partia a fila de atendimento por
+  // `!estaRemetido`, e o Aguardando envio (8) entrou no domínio em 2026-08-24.
+  // Com o teste negado, um pedido JÁ IMPRESSO voltaria para a mesa de quem
+  // imprime, com a ação "Atender (imprimir e registrar)" ao lado.
+  test('o pedido em Aguardando envio fica fora da fila de impressão', async () => {
+    svc.getPedidosEmAberto.mockResolvedValue([AGUARDANDO_ENVIO, REMETIDO]);
+    const { container, cleanup } = await montar();
+
+    // A PROVA de que nenhum dos dois subiu para a fila de cima: ela se declara
+    // limpa, e o contador dela conta zero. Procurar a ausência do nome no
+    // container inteiro não provaria nada, porque o nome está na seção de baixo.
+    expect(container.querySelector('.page__meta').textContent)
+      .toBe('0 pedido(s) em aberto');
+    expect(container.textContent).toContain('A fila está limpa.');
+
+    const secao = secaoFechamento(container);
+    expect(secao.textContent).toContain('2º BCom');
+    expect(secao.textContent).toContain('Aguardando envio');
+    // A situação aparece na linha: sem ela, "falta despachar" e "falta
+    // concluir" seriam a mesma linha cinza.
+    expect(secao.textContent).toContain('Remetido');
+    expect(secao.textContent).toContain('2 pedido(s) a fechar');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // Quem despacha precisa da etiqueta, e o pedido em Aguardando envio já saiu da
+  // fila de cima, onde a etiqueta morava sozinha.
+  test('a etiqueta de envio alcança o pedido que aguarda envio', async () => {
+    svc.getPedidosEmAberto.mockResolvedValue([AGUARDANDO_ENVIO]);
+    const { container, cleanup } = await montar();
+
+    const botao = secaoFechamento(container)
+      .querySelector('[title="Etiqueta de envio"]');
+    expect(botao).toBeTruthy();
 
     if (typeof cleanup === 'function') cleanup();
   });

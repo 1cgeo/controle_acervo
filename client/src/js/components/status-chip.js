@@ -3,7 +3,13 @@ import { el } from '@utils/dom.js';
 /**
  * Map of situacao_pedido_id -> chip color variant.
  * 2 Pedido Recebido, 3 Em andamento, 4 Remetido, 5 Concluído, 6 Cancelado,
- * 7 Aguardando produção.
+ * 7 Aguardando produção, 8 Aguardando envio.
+ *
+ * O 8 REPETE o amarelo do 7 de propósito: as duas são esperas, e a paleta de
+ * `chips.css` tem sete variantes, das quais 'default' é o cinza que o
+ * `|| 'default'` já reserva para code desconhecido. Pintar o 8 de cinza o
+ * faria parecer um code que a tela não conhece. Quem desempata os dois é o
+ * RÓTULO, que o servidor escreve.
  *
  * COMEÇA NO 2 de propósito: o code 1 (Pré cadastramento) saiu do domínio em
  * 2026-08-08, e a lacuna na numeração fica, porque code de domínio não se
@@ -17,6 +23,7 @@ const SITUACAO_PEDIDO_VARIANT = {
   5: 'success',
   6: 'error',
   7: 'warning',
+  8: 'warning',
 };
 
 /**
@@ -31,7 +38,7 @@ export function chip(label, variant = 'default') {
 
 /**
  * Create a chip colored by situacao_pedido_id.
- * @param {number} situacaoPedidoId - 1..7
+ * @param {number} situacaoPedidoId - 2..8
  * @param {string} nome - display label (e.g. 'Em andamento')
  * @returns {HTMLElement}
  */

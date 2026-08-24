@@ -45,6 +45,11 @@ const TIPOS_MILITARES = [1, 2, 3];
 // um filtro proprio eles viram esquecimento quando a producao terminar, porque
 // ninguem lembra de procurar linha a linha.
 //
+// Aguardando envio (8) esta DENTRO da fila de atendimento, e ganha filtro pelo
+// motivo oposto: ele e o pedido pronto que espera despacho, e quem monta uma
+// remessa quer a lista dos que saem hoje, sem garimpar entre os que ainda estao
+// na impressao.
+//
 // Militar e Civil sao o corte do DASHBOARD, e nao o de quem atende. Sem estes
 // dois filtros nao havia como chegar aos 25 pedidos em andamento nem ao unico
 // pedido Remetido. O Remetido depende de alguem marca-lo Concluido justamente
@@ -67,6 +72,11 @@ const FILTROS = [
     id: 'aguardando_producao',
     label: 'Aguardando produção',
     casa: (p) => Number(p.situacao_pedido_id) === SITUACAO_PEDIDO.AGUARDANDO_PRODUCAO,
+  },
+  {
+    id: 'aguardando_envio',
+    label: 'Aguardando envio',
+    casa: (p) => Number(p.situacao_pedido_id) === SITUACAO_PEDIDO.AGUARDANDO_ENVIO,
   },
 ];
 

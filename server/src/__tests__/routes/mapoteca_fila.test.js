@@ -55,8 +55,9 @@ const fila = () => request(app)
   .get('/api/mapoteca/pedido/em_aberto')
   .set('Authorization', generateAdminToken())
 
-// A fila de ATENDIMENTO, que e a de impressao mais o pedido Remetido (4). A
-// situacao 7 tem de ficar fora das DUAS: a razao dela nao muda com a pergunta.
+// A fila de ATENDIMENTO, que e a de impressao mais o Aguardando envio (8) e o
+// Remetido (4). A situacao 7 tem de ficar fora das DUAS: a razao dela nao muda
+// com a pergunta.
 const filaAtendimento = () => request(app)
   .get('/api/mapoteca/pedido/em_aberto?incluir_remetidos=true')
   .set('Authorization', generateAdminToken())
@@ -110,3 +111,46 @@ describe('Fila de atendimento e a situacao Aguardando producao (7)', () => {
     expect(Number(linha.situacao_pedido_id)).toBe(7)
   })
 })
+
+// AS DUAS ESPERAS QUE COMECAM COM A MESMA PALAVRA E SAO OPOSTAS.
+//
+// Aguardando producao (7) espera CARTA QUE AINDA NAO EXISTE, e por isso fica
+// fora das duas filas. Aguardando envio (8, de 2026-08-24) espera so o DESPACHO
+// do que ja esta impresso: sai da fila de impressao, porque reimprimir e o erro
+// que aquela lista existe para evitar, e entra na de atendimento, porque ainda
+// falta uma acao nossa.
+describe('Fila e a situacao Aguardando envio (8)', () => {
+  it('fica FORA da fila de impressao, que e o que o plugin do QGIS le', async () => {
+    const clienteId = await criaCliente('OM Fila Envio')
+    const aguardandoEnvio = await criaPedido(clienteId, { situacao_pedido_id: 8 })
+    const emAndamento = await criaPedido(clienteId, { situacao_pedido_id: 3 })
+
+    const res = await fila()
+
+    expect(res.status).toBe(200)
+    const ids = res.body.dados.map(p => Number(p.id))
+    // Se ele voltar aqui, a fila volta a oferecer para imprimir o que ja saiu
+    // da impressora.
+    expect(ids).not.toContain(Number(aguardandoEnvio.id))
+    expect(ids).toContain(Number(emAndamento.id))
+  })
+
+  it('ENTRA na fila de atendimento, porque ainda falta despacha-lo', async () => {
+    const clienteId = await criaCliente('OM Fila Envio Atend')
+    const aguardandoEnvio = await criaPedido(clienteId, { situacao_pedido_id: 8 })
+    const concluido = await criaPedido(clienteId, {
+      situacao_pedido_id: 5,
+      data_atendimento: '2026-03-11'
+    })
+
+    const res = await filaAtendimento()
+
+    expect(res.status).toBe(200)
+    const ids = res.body.dados.map(p => Number(p.id))
+    expect(ids).toContain(Number(aguardandoEnvio.id))
+    // O controle negativo: o Concluido nao volta, entao a fila nao virou "todo
+    // pedido do ano".
+    expect(ids).not.toContain(Number(concluido.id))
+  })
+})
+

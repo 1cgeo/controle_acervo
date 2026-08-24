@@ -133,16 +133,21 @@ describe('o DDL e a migração contam a mesma história', () => {
     expect(ddlSemComentario).not.toMatch(/\bquantidade_fornecida\b/)
   })
 
-  // O `code` 1 sai da carga do domínio, e os outros seis ficam com os MESMOS
+  // O `code` 1 sai da carga do domínio, e os outros ficam com os MESMOS
   // números: o buraco na numeração é a decisão, e fechá-lo reescreveria a
   // situação de 166 pedidos e mentiria sobre o que está em `auditoria.evento`.
-  it('er/mapoteca.sql carrega as seis situações, começando no code 2', () => {
+  //
+  // O 8 (Aguardando envio) entrou em 2026-08-24, e é o próximo code LIVRE: ele
+  // não ocupa a vaga do 1, e não se encaixa entre o 3 e o 4 para "ficar na ordem
+  // do fluxo". Code de domínio não se renumera nem se reaproveita.
+  it('er/mapoteca.sql começa no code 2 e não reabre o 1', () => {
     const carga = ddl.match(
       /INSERT INTO mapoteca\.situacao_pedido[\s\S]*?;/
     )[0]
     const codes = [...carga.matchAll(/^\((\d+), '/gm)].map(m => Number(m[1]))
-    expect(codes).toEqual([2, 3, 4, 5, 6, 7])
+    expect(codes).toEqual([2, 3, 4, 5, 6, 7, 8])
     expect(carga).toContain("(2, 'Pedido Recebido')")
+    expect(carga).toContain("(8, 'Aguardando envio')")
   })
 
   it('o índice GIN das palavras-chave continua no DDL: é ele que serve o filtro', () => {

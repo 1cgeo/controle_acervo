@@ -57,6 +57,16 @@ const PEDIDO_AGUARDANDO = {
   quantidade_produtos: 33, itens_impressos: 0, localizador_pedido: 'AA10-BB20-CC30',
 };
 
+// O mesmo motivo do de cima: fora do lote padrao para nao mexer nas contagens
+// que os outros testes provam.
+const PEDIDO_AGUARDANDO_ENVIO = {
+  id: 59, data_pedido: '2026-06-14', cliente_nome: '2º Batalhão de Comunicações',
+  tipo_cliente_id: 1, tipo_cliente_nome: 'OM EB',
+  documento_solicitacao: 'DIEx 790', situacao_pedido_id: 8,
+  situacao_pedido_nome: 'Aguardando envio', prazo: '2026-09-30',
+  quantidade_produtos: 7, itens_impressos: 7, localizador_pedido: 'DD40-EE50-FF60',
+};
+
 /** Texto das linhas visiveis da tabela (o filtro age no corpo, nao no cabecalho). */
 const corpo = (container) => [...container.querySelectorAll('tbody tr')].map(tr => tr.textContent);
 
@@ -186,6 +196,33 @@ describe('renderPedidosList', () => {
     expect(linhas).toHaveLength(1);
     expect(linhas[0]).toContain('Comando Militar do Sul');
     expect(linhas[0]).toContain('AA10-BB20-CC30');
+
+    clicarFiltro(container, 'Todos');
+    expect(corpo(container)).toHaveLength(4);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O Aguardando envio ESTA na fila de atendimento, ao contrario do Aguardando
+  // produção, e ganha filtro pelo motivo oposto: quem monta a remessa do dia
+  // quer a lista dos que saem, sem garimpar entre os que ainda estão na
+  // impressão.
+  test('o filtro "Aguardando envio" isola a situação 8', async () => {
+    svc.getPedidos.mockResolvedValue([...PEDIDOS, PEDIDO_AGUARDANDO_ENVIO]);
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    clicarFiltro(container, 'Aguardando envio');
+    const linhas = corpo(container);
+    expect(linhas).toHaveLength(1);
+    expect(linhas[0]).toContain('2º Batalhão de Comunicações');
+    expect(linhas[0]).toContain('DD40-EE50-FF60');
+
+    // E não se confunde com o Aguardando produção, que começa igual e é o
+    // estágio oposto: aquele espera carta, este espera despacho.
+    clicarFiltro(container, 'Aguardando produção');
+    expect(corpo(container)).toHaveLength(0);
 
     clicarFiltro(container, 'Todos');
     expect(corpo(container)).toHaveLength(4);

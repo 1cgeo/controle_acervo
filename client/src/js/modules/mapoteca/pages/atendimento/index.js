@@ -8,7 +8,7 @@ import {
   getImpressaoDoPedido,
   baixarCartaDoPedido,
 } from '@modules/mapoteca/services/mapoteca-service.js';
-import { estaRemetido } from '@modules/mapoteca/situacao-pedido.js';
+import { estaNaFilaDeImpressao, estaEmFechamento } from '@modules/mapoteca/situacao-pedido.js';
 import { criarAvisoDeErro } from '@modules/mapoteca/pages/aviso-carga.js';
 import { openEtiquetaEnvioDialog } from '@modules/mapoteca/pages/pedidos/etiqueta-envio.js';
 // O dialogo de registrar impressao mora em pedidos/ e serve as DUAS telas. Ele
@@ -70,7 +70,7 @@ export async function renderAtendimento(container) {
 
   const contador = el('span', { className: 'page__meta' });
   const corpo = el('div');
-  const remetidos = el('div');
+  const fechamento = el('div');
 
   const root = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
@@ -89,7 +89,7 @@ export async function renderAtendimento(container) {
       ]),
     ]),
     corpo,
-    remetidos,
+    fechamento,
   ]);
   container.appendChild(root);
 
@@ -365,7 +365,7 @@ export async function renderAtendimento(container) {
   corpo.appendChild(avisoFila.element);
 
   // ---------------------------------------------------------------------------
-  // Remetidos, aguardando conclusão
+  // Impressos: aguardando envio ou conclusão
   // ---------------------------------------------------------------------------
   /**
    * O BECO SEM SAÍDA QUE ESTA SEÇÃO FECHA.
@@ -377,6 +377,12 @@ export async function renderAtendimento(container) {
    * pedido desta tela. Dali em diante ele depende de alguém abrir a lista de
    * pedidos, achar o filtro "Remetido" e marcar Concluído. Nada nesta tela
    * lembrava disso, e o pedido remetido ficava aberto por tempo indefinido.
+   *
+   * DESDE 2026-08-24 A SEÇÃO COBRE DOIS ESTÁGIOS, e não um. O Aguardando envio
+   * (8) entrou no domínio e cai aqui pelo mesmo motivo: ele saiu da fila de
+   * impressão (o material está pronto) e ainda não fechou. A coluna Situação é
+   * o que separa "falta despachar" de "falta concluir", e as duas ações são de
+   * pessoas diferentes em dias diferentes.
    *
    * A seção não repete a fila: ela é o que a fila deixou para trás. Fica ABAIXO
    * dela, de propósito, porque o trabalho de imprimir vem primeiro.
@@ -390,7 +396,7 @@ export async function renderAtendimento(container) {
    * porque não havia rota que devolvesse remetido. A janela de dois anos era
    * arbitrária e escondia o pedido mais antigo; agora não há janela nenhuma.
    */
-  const tabelaRemetidos = createDataTable({
+  const tabelaFechamento = createDataTable({
     columns: [
       {
         key: 'data_pedido',
@@ -413,6 +419,14 @@ export async function renderAtendimento(container) {
         sortable: true,
         render: (p) => formatNumber(p.quantidade_produtos),
       },
+      // A COLUNA QUE SEPARA OS DOIS ESTÁGIOS. Sem ela, "Aguardando envio" e
+      // "Remetido" seriam a mesma linha cinza, e a próxima ação de cada um é
+      // oposta: um espera despacho, o outro espera a marca de Concluído.
+      {
+        key: 'situacao_pedido_id',
+        label: 'Situação',
+        render: (p) => chipSituacaoPedido(p.situacao_pedido_id, p.situacao_pedido_nome),
+      },
       {
         key: 'localizador_pedido',
         label: 'Localizador',
@@ -424,8 +438,16 @@ export async function renderAtendimento(container) {
     defaultSort: { key: 'data_pedido', dir: 'asc' },
     // Fila limpa aqui é o estado bom, e o texto diz isso: sem ele a seção
     // pareceria quebrada nos dias em que não há nada a fechar.
-    emptyMessage: 'Nenhum pedido remetido esperando conclusão.',
+    emptyMessage: 'Nenhum pedido esperando envio ou conclusão.',
     actions: [
+      // A ETIQUETA FICA AQUI TAMBÉM, e não só na fila de cima. Quem despacha um
+      // pedido em Aguardando envio precisa dela, e ele já saiu da fila de
+      // impressão. Ela não escreve nada, então não pede perfil de operador.
+      {
+        icon: ICONS.localShipping,
+        title: 'Etiqueta de envio',
+        onClick: (p) => openEtiquetaEnvioDialog(p),
+      },
       {
         icon: ICONS.description,
         title: 'Abrir o pedido',
@@ -433,34 +455,42 @@ export async function renderAtendimento(container) {
       },
     ],
   });
-  cleanups.push(() => tabelaRemetidos._cleanup());
+  cleanups.push(() => tabelaFechamento._cleanup());
 
-  const contadorRemetidos = el('span', { className: 'dashboard-section__meta', textContent: '' });
+  const contadorFechamento = el('span', { className: 'dashboard-section__meta', textContent: '' });
   // "Tentar de novo" refaz a leitura ÚNICA, que alimenta as duas tabelas. Um
   // recarregador só para esta seção repetiria a mesma requisição.
-  const avisoRemetidos = criarAvisoDeErro(tabelaRemetidos, () => recarregar());
+  const avisoFechamento = criarAvisoDeErro(tabelaFechamento, () => recarregar());
 
-  remetidos.appendChild(el('div', { className: 'dashboard-section' }, [
+  fechamento.appendChild(el('div', { className: 'dashboard-section' }, [
     el('div', { className: 'dashboard-section__header' }, [
       el('h2', {
         className: 'dashboard-section__title',
-        textContent: 'Remetidos, aguardando conclusão',
+        textContent: 'Impressos: aguardando envio ou conclusão',
       }),
       el('div', { className: 'dashboard-section__controls' }, [
-        contadorRemetidos,
+        contadorFechamento,
+        // DOIS LINKS, e não um: a lista de pedidos filtra por UMA situação, e
+        // esta seção mostra duas. Um link só mandaria metade da seção para uma
+        // tela que não a contém.
+        el('a', {
+          className: 'btn btn--text btn--sm',
+          href: '#/mapoteca/pedidos?filtro=aguardando_envio',
+          textContent: 'Ver os que aguardam envio',
+        }),
         el('a', {
           className: 'btn btn--text btn--sm',
           href: '#/mapoteca/pedidos?filtro=remetido',
-          textContent: 'Ver na lista de pedidos',
+          textContent: 'Ver os remetidos',
         }),
       ]),
     ]),
     el('p', {
       className: 'dashboard__escopo',
-      textContent: 'O pedido remetido sai da fila acima. Marque Concluído para fechá-lo.'
-        + ' A lista cobre o ano corrente e o anterior.',
+      textContent: 'O pedido impresso sai da fila acima. Marque Remetido ao despachar,'
+        + ' e Concluído para fechá-lo.',
     }),
-    avisoRemetidos.element,
+    avisoFechamento.element,
   ]));
 
   /**
@@ -488,22 +518,30 @@ export async function renderAtendimento(container) {
       tabelaFila.update({ loading: true });
     }
 
-    tabelaRemetidos.update({ loading: true });
+    tabelaFechamento.update({ loading: true });
 
     try {
       const todos = await getPedidosEmAberto(true);
       if (disposed) return;
 
-      // O Remetido sai da fila de impressão e vai para a seção de baixo. O
-      // corte é por SITUAÇÃO, e não por posição na resposta.
-      pedidos = todos.filter(p => !estaRemetido(p));
-      const remetidosLinhas = todos.filter(estaRemetido);
+      // O que já saiu da impressão vai para a seção de baixo. O corte é por
+      // SITUAÇÃO, e não por posição na resposta.
+      //
+      // O TESTE É POSITIVO (`estaNaFilaDeImpressao`), e não `!estaRemetido`.
+      // Enquanto Remetido era a única situação da fila de atendimento fora da
+      // impressão, os dois davam o mesmo resultado. Com o Aguardando envio (8),
+      // o negativo mandaria para a mesa de quem IMPRIME um pedido já impresso.
+      pedidos = todos.filter(estaNaFilaDeImpressao);
+      // As DUAS listas sao positivas, e nao uma a negacao da outra: um
+      // Concluido que aparecesse na resposta nao e trabalho pendente de
+      // ninguem, e com a negacao ele entraria aqui como se fosse.
+      const linhasFechamento = todos.filter(estaEmFechamento);
 
-      tabelaRemetidos.update({ rows: remetidosLinhas, loading: false });
-      contadorRemetidos.textContent = remetidosLinhas.length
-        ? `${formatNumber(remetidosLinhas.length)} pedido(s) a fechar`
+      tabelaFechamento.update({ rows: linhasFechamento, loading: false });
+      contadorFechamento.textContent = linhasFechamento.length
+        ? `${formatNumber(linhasFechamento.length)} pedido(s) a fechar`
         : '';
-      avisoRemetidos.ok();
+      avisoFechamento.ok();
 
       const atrasados = pedidos.filter(p => Number(p.dias_para_prazo) < 0).length;
       contador.textContent = atrasados
@@ -521,9 +559,9 @@ export async function renderAtendimento(container) {
       // está limpa", e fila limpa e erro de carga são fatos diferentes.
       avisoFila.falhou(err.message || 'Erro ao carregar a fila');
       // As duas tabelas vieram da MESMA leitura, então as duas falham juntas.
-      tabelaRemetidos.update({ loading: false });
-      contadorRemetidos.textContent = '';
-      avisoRemetidos.falhou(err.message || 'Erro ao carregar os pedidos remetidos');
+      tabelaFechamento.update({ loading: false });
+      contadorFechamento.textContent = '';
+      avisoFechamento.falhou(err.message || 'Erro ao carregar os pedidos a fechar');
       showError(err.message || 'Erro ao carregar a fila de atendimento');
     }
   }

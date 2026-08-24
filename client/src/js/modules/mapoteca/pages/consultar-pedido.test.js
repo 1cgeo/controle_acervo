@@ -180,6 +180,9 @@ describe('renderConsultarPedido', () => {
       [3, 'Em andamento', 'Não enviado'],
       [4, 'Remetido', 'Enviado'],
       [5, 'Concluído', 'Enviado e concluído'],
+      // 'Não enviado' é verdade aqui e esconde do solicitante que o material
+      // dele já está pronto na prateleira.
+      [8, 'Aguardando envio', 'Pronto, aguardando envio'],
     ];
     for (const [id, nome, esperado] of casos) {
       svc.getPedidoPorLocalizador.mockResolvedValue({
@@ -216,6 +219,20 @@ describe('renderConsultarPedido', () => {
     container = await montar('AB12-CD34-EF56');
     expect(container.textContent).toContain('Forma de entrega');
     expect(container.textContent).not.toContain('Forma de envio prevista');
+  });
+
+  // O TESTE QUE PEGA A COMPARACAO POR ORDEM. Ate 2026-08-24 a tela decidia "ja
+  // saiu" por `situacao_pedido_id >= 4`, e o code 8 passaria nele: o pedido
+  // pronto na prateleira seria anunciado ao solicitante como despachado. Code
+  // de dominio nunca foi ordem de fluxo, e o 7 ja provava isso.
+  test('Aguardando envio (8) NAO conta como material que ja saiu', async () => {
+    svc.getPedidoPorLocalizador.mockResolvedValue({
+      ...PEDIDO, situacao_pedido_id: 8, situacao_pedido_nome: 'Aguardando envio',
+      forma_entrega_nome: 'Correios',
+    });
+    const container = await montar('AB12-CD34-EF56');
+    expect(container.textContent).toContain('Forma de envio prevista');
+    expect(container.textContent).not.toContain('Forma de entrega');
   });
 
   test('mostra o contato do 1o CGEO para duvidas, e so quando ha contato', async () => {

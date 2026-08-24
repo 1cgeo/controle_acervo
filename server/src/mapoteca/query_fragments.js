@@ -101,8 +101,9 @@ const ESCALA_DISPLAY_ITEM = `COALESCE(${ESCALA_DISPLAY}, 'Sem escala')`;
 // ABERTO PARA QUEM, e a mesma lista respondia a duas perguntas diferentes. As
 // situações vêm de `mapoteca.situacao_pedido` (er/mapoteca.sql):
 // 2 Pedido Recebido, 3 Em andamento, 4 Remetido, 5 Concluído, 6 Cancelado,
-// 7 Aguardando produção. NÃO EXISTE 1: 'Pré cadastramento' saiu em 2026-08-08
-// com zero pedidos, e as duas listas perderam um elemento cada.
+// 7 Aguardando produção, 8 Aguardando envio. NÃO EXISTE 1: 'Pré cadastramento'
+// saiu em 2026-08-08 com zero pedidos, e as duas listas perderam um elemento
+// cada.
 //
 // A pergunta de quem IMPRIME: o que ainda falta imprimir?
 // A pergunta de quem ATENDE: o que ainda falta FECHAR?
@@ -111,6 +112,12 @@ const ESCALA_DISPLAY_ITEM = `COALESCE(${ESCALA_DISPLAY}, 'Sem escala')`;
 // despachado, então some da fila de impressão com razão. Mas ele ainda espera a
 // marca de Concluído, e quem atende é quem a dá. Numa lista só, ou o impressor
 // via trabalho já feito, ou o atendente perdia o pedido de vista.
+//
+// Aguardando envio (8) separa as duas pelo mesmo motivo que o Remetido, um
+// passo antes: o material já está impresso e ainda não saiu. Ele entrou no
+// domínio em 2026-08-24, e antes disso esse pedido ficava em Em andamento, onde
+// a fila de impressão continuava oferecendo para imprimir o que já estava
+// impresso.
 //
 // Fora das DUAS listas ficam Concluído (5), Cancelado (6) e Aguardando
 // produção (7). Aguardando produção fica fora porque o pedido espera carta que
@@ -126,11 +133,14 @@ const SITUACOES_FILA_IMPRESSAO = [
 ];
 
 // A fila de ATENDIMENTO: o que ainda tem de ser fechado. É a de impressão mais
-// Remetido (4). Sem o Remetido aqui, o pedido despachado sumia da tela de
-// atendimento e dependia de alguém achá-lo na lista de pedidos, pelo filtro de
-// situação, para marcar Concluído. Ele ficava aberto por tempo indefinido.
+// Aguardando envio (8) e Remetido (4). Sem o Remetido aqui, o pedido despachado
+// sumia da tela de atendimento e dependia de alguém achá-lo na lista de
+// pedidos, pelo filtro de situação, para marcar Concluído. Ele ficava aberto por
+// tempo indefinido. O Aguardando envio entra pela mesma razão, e é o pedido que
+// ainda espera uma AÇÃO nossa: despachar.
 const SITUACOES_FILA_ATENDIMENTO = [
   ...SITUACOES_FILA_IMPRESSAO,
+  SITUACAO_PEDIDO.AGUARDANDO_ENVIO,
   SITUACAO_PEDIDO.REMETIDO
 ];
 

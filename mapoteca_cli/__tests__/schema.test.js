@@ -28,10 +28,11 @@ test('valid() vira lista exaustiva com = e allow() vira lista aditiva com |', ()
   const porNome = Object.fromEntries(
     esquema.camposDe(models.pedido).map(c => [c.nome, c])
   )
-  // .valid(...Object.values(SITUACAO_PEDIDO)): so estes SEIS codes. Eram sete
-  // ate 2026-08-08, quando o code 1 saiu do dominio; este teste le a constante
-  // viva, entao foi ele que acusou.
-  assert.strictEqual(porNome.situacao_pedido_id.tipo, 'int =2|3|4|5|6|7')
+  // .valid(...Object.values(SITUACAO_PEDIDO)): so estes SETE codes. Eram sete
+  // ate 2026-08-08, viraram seis quando o code 1 saiu do dominio, e voltaram a
+  // sete em 2026-08-24 com o 8 (Aguardando envio). Este teste le a constante
+  // viva, entao foi ele que acusou as duas vezes.
+  assert.strictEqual(porNome.situacao_pedido_id.tipo, 'int =2|3|4|5|6|7|8')
   // .allow(null, ''): alem do tipo base.
   assert.ok(porNome.ponto_contato.tipo.includes("|null|''"))
 })

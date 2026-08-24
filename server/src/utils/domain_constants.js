@@ -143,13 +143,19 @@ const TIPO_CLIENTE = {
 // PEDIDO_RECEBIDO no mesmo dia. So o rotulo mudou: o code e o mesmo, porque o
 // estagio existe -- ele so estava nomeado pelo DOCUMENTO, e o pedido de civil
 // chega por e-mail, sem DIEx nenhum.
+//
+// O 8 (Aguardando envio) entrou em 2026-08-24: o pedido impresso, embalado e
+// ainda nao despachado. NAO se confunde com o 7 (Aguardando producao), que
+// espera CARTA que ainda nao existe; este espera so o DESPACHO do que ja esta
+// pronto.
 const SITUACAO_PEDIDO = {
   PEDIDO_RECEBIDO: 2,
   EM_ANDAMENTO: 3,
   REMETIDO: 4,
   CONCLUIDO: 5,
   CANCELADO: 6,
-  AGUARDANDO_PRODUCAO: 7
+  AGUARDANDO_PRODUCAO: 7,
+  AGUARDANDO_ENVIO: 8
 }
 
 // mapoteca.tipo_midia

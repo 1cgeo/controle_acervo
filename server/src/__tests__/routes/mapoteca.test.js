@@ -206,6 +206,19 @@ describe('Mapoteca Routes', () => {
       expect(codes).toContain(7)
     })
 
+    // O 8 entrou em 2026-08-24. A rota de dominio e quem alimenta o SELECT do
+    // formulario de pedido: sem ele aqui, a situacao existe no banco e ninguem
+    // consegue escolhe-la na tela.
+    it('GET /api/mapoteca/dominio/situacao_pedido should include Aguardando envio (8)', async () => {
+      const res = await request(app)
+        .get('/api/mapoteca/dominio/situacao_pedido')
+        .set('Authorization', generateUserToken())
+      expect(res.status).toBe(200)
+      const linha = res.body.dados.find(d => Number(d.code) === 8)
+      expect(linha).toBeDefined()
+      expect(linha.nome).toBe('Aguardando envio')
+    })
+
     it('GET /api/mapoteca/dominio/tipo_midia should include Tyvek (8)', async () => {
       const res = await request(app)
         .get('/api/mapoteca/dominio/tipo_midia')

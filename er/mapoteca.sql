@@ -32,13 +32,22 @@ CREATE TABLE mapoteca.situacao_pedido(
 -- O 2 mudou de ROTULO em 2026-08-08 e nao de code: 'DIEx/Oficio do pedido
 -- recebido' nomeava o documento em vez do fato, e o pedido de civil chega por
 -- e-mail, sem DIEx nenhum.
+--
+-- O 8 entrou em 2026-08-24 (chefe) e nomeia o estagio entre imprimir e
+-- despachar: o material esta PRONTO na mapoteca e ainda nao saiu. Ele existia
+-- na pratica e nao no dominio, entao ficava escondido dentro de 'Em andamento',
+-- e a fila de impressao continuava oferecendo para imprimir o que ja estava
+-- impresso. Fica FORA da fila de impressao e DENTRO da de atendimento
+-- (server/src/mapoteca/query_fragments.js): ninguem reimprime, e ninguem o
+-- perde de vista antes de fechar.
 INSERT INTO mapoteca.situacao_pedido (code, nome) VALUES
 (2, 'Pedido Recebido'),
 (3, 'Em andamento'),
 (4, 'Remetido'),
 (5, 'Concluído'),
 (6, 'Cancelado'),
-(7, 'Aguardando produção');
+(7, 'Aguardando produção'),
+(8, 'Aguardando envio');
 
 CREATE TABLE mapoteca.tipo_midia(
 	code SMALLINT NOT NULL PRIMARY KEY,
