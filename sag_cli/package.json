@@ -1,7 +1,7 @@
 {
   "name": "sag-cli",
   "version": "1.0.0",
-  "description": "Interface de linha de comando de LEITURA do SAG (espelho do SIAFI), desenhada para agentes (agent-first). Alimenta e confere o modulo orcamento do SCA.",
+  "description": "Interface de linha de comando de LEITURA do SAG (espelho do SIAFI), desenhada para agentes (agent-first). Alimenta e confere o modulo orcamento do SAP.",
   "type": "commonjs",
   "main": "sag.js",
   "bin": {

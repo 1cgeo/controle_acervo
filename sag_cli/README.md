@@ -2,19 +2,19 @@
 
 CLI de **leitura** do SAG (Sistema de Apoio a Gestão), o espelho do SIAFI que a
 administração do Exército usa. Irmão do `orcamento_cli`, e com o papel oposto: o
-`orcamento_cli` escreve no SCA, este lê a fonte primária contra a qual o
-SCA se confere.
+`orcamento_cli` escreve no SAP, este lê a fonte primária contra a qual o
+SAP se confere.
 
 ## Por que ele existe
 
-O módulo `orcamento` do SCA era alimentado à mão, a partir de PDF. O dado
-nasce no SIAFI, e o SAG já o publica com todos os campos que o SCA guarda:
+O módulo `orcamento` do SAP era alimentado à mão, a partir de PDF. O dado
+nasce no SIAFI, e o SAG já o publica com todos os campos que o SAP guarda:
 número, data, ND, PTRES, fonte, PI, UG emitente, valor e o histórico inteiro. Digitar de
 novo o que a máquina já sabe é onde estava o custo, e é o que este CLI remove.
 
 Ele **não escreve**, em nenhum dos dois lados. O SAG é alimentado pelo SIAFI e
 pelos agentes da SALC: escrever daqui criaria uma segunda origem para o mesmo
-fato. Quem grava no SCA continua sendo o `orcamento_cli`, com os guardrails
+fato. Quem grava no SAP continua sendo o `orcamento_cli`, com os guardrails
 dele (dry-run contra o Joi vivo, confirmação de exclusão, releitura no destino).
 
 ## Como usar
@@ -30,7 +30,7 @@ sag conferir nc --ano 2026 --acao 20XE --ug-fav 160382
 ```
 
 Ambiente: `SAG_URL`, `SAG_USUARIO` (CPF, 11 dígitos) e `SAG_SENHA` (6 dígitos).
-O comando `conferir` usa também as chaves do SCA (`SCA_URL` e `SCA_TOKEN`,
+O comando `conferir` usa também as chaves do SAP (`SCA_URL` e `SCA_TOKEN`,
 ou `SCA_USER` e `SCA_SENHA`). Catálogo em `.env.example`. Nunca passe senha na linha
 de comando.
 
@@ -75,15 +75,15 @@ não suspeita de defeito: quem medir, atualiza o arquivo.
 
 ## Três armadilhas que já custaram, e onde elas moram
 
-**O SAG lista por ITEM; o SCA guarda por documento e ND.** Medido na
+**O SAG lista por ITEM; o SAP guarda por documento e ND.** Medido na
 2026NC420174: duas linhas, `VALOR_NC` 18.422,14 nas duas, e
 `DESTINO_VALOR_ITEM` 18.023,14 e 399,00, que somam o total. Ler o valor de
 `VALOR_NC` funciona enquanto a NC tem uma ND só e mente quando ela tem duas,
-que é um caso que o SCA modela de propósito. O agrupamento vive em
+que é um caso que o SAP modela de propósito. O agrupamento vive em
 `comandos/conferir.js`, e a regra de soma por documento em `lib/documentos.js`.
 
 **Duas convenções de número se cruzam aqui.** O SAG manda `"20.710,00"` e o
-SCA manda `"20710.00"`. Tratar todo ponto como milhar transforma o segundo em
+SAP manda `"20710.00"`. Tratar todo ponto como milhar transforma o segundo em
 2071000, e a conferência acusa divergência em toda linha correta. Aconteceu na
 primeira execução real; a regra que separa os dois casos está em
 `lib/valores.js`, com teste de regressão.
