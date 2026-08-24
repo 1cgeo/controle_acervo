@@ -150,6 +150,44 @@ models.pedidoAtualizacao = Joi.object().keys({
   meta_pit_id: Joi.number().integer().strict().allow(null)
 })
 
+// SO A SITUACAO, para a LISTA de pedidos mudar o estado sem abrir o pedido.
+//
+// POR QUE NAO REUSAR `pedidoAtualizacao`. O PUT /pedido reescreve a linha
+// inteira (o ColumnSet de PEDIDO_COLS grava `def: null` no campo ausente), e a
+// lista nao devolve nove campos que o pedido tem: ponto_contato,
+// contato_mapoteca, endereco_entrega, canal_recebimento_id, municipio,
+// qtd_imagens, observacao, observacao_interna e motivo_cancelamento. Medido na
+// producao em 2026-08-24, sobre 190 pedidos: observacao_interna em 131,
+// observacao em 108 e ponto_contato em 106. Montar aquele corpo com o que a
+// lista tem em maos apagaria os tres, com 200 e sem aviso nenhum.
+//
+// AS DUAS CONDICIONAIS SAO AS MESMAS de `pedidoBase` (RN02 e RN03), e continuam
+// aqui porque sao regra do DADO, e nao da tela: Concluido exige o dia em que o
+// material saiu, e Cancelado exige o motivo. Metade das mudancas de situacao
+// registradas na auditoria entre 2026-07-30 e 2026-08-24 (13 de 26) cai numa
+// dessas duas, entao um select solto na lista nao daria conta.
+//
+// SEM `min(data_pedido)` no Joi: a data do pedido nao vem no corpo, e a
+// comparacao mora no controller, que le a linha gravada.
+models.pedidoSituacao = Joi.object().keys({
+  situacao_pedido_id: Joi.number()
+    .integer()
+    .valid(...Object.values(SITUACAO_PEDIDO))
+    .required(),
+  // `.raw()` pelo motivo de sempre: a coluna e DATE, e sem ele o Joi converte
+  // para Date e a gravacao cai no dia anterior em UTC-3.
+  data_atendimento: Joi.when('situacao_pedido_id', {
+    is: SITUACAO_PEDIDO.CONCLUIDO,
+    then: Joi.date().iso().raw().required(),
+    otherwise: Joi.date().iso().raw().allow(null)
+  }),
+  motivo_cancelamento: Joi.when('situacao_pedido_id', {
+    is: SITUACAO_PEDIDO.CANCELADO,
+    then: Joi.string().required(),
+    otherwise: Joi.string().allow(null, '')
+  })
+})
+
 models.pedidoLocalizador = Joi.object().keys({
   localizador: Joi.string().pattern(/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/).required()
 })

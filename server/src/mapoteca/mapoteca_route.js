@@ -371,6 +371,37 @@ router.put(
   })
 )
 
+// SO A SITUACAO do pedido, para a LISTA muda-la sem abrir o detalhe.
+//
+// ROTA PROPRIA, e nao um campo a mais no PUT acima: aquele reescreve a linha
+// inteira, e a lista nao tem em maos nove dos campos do pedido (ver o
+// comentario de `atualizaSituacaoPedido`). Chamar o PUT completo com o que a
+// lista mostra apagaria observacao, observacao_interna e ponto_contato na
+// maioria dos pedidos.
+//
+// GERENTE, o mesmo piso do PUT /pedido: mudar a situacao e responder pela
+// area, e nao lancar (decisao do chefe, 2026-08-24).
+//
+// O caminho tem sufixo, entao ele nao disputa com '/pedido/:id' de cima.
+router.put(
+  '/pedido/:id/situacao',
+  verifyPerfil('gerente', 'mapoteca'),
+  schemaValidation({
+    params: mapotecaSchema.pedidoId,
+    body: mapotecaSchema.pedidoSituacao
+  }),
+  asyncHandler(async (req, res, next) => {
+    await mapotecaCtrl.atualizaSituacaoPedido(
+      req.params.id,
+      req.body,
+      req.usuarioUuid,
+      req.contexto
+    )
+    const msg = 'Situação do pedido atualizada com sucesso'
+    return res.sendJsonAndLog(true, msg, httpCode.OK)
+  })
+)
+
 router.delete(
   '/pedido',
   verifyPerfil('gerente', 'mapoteca'),

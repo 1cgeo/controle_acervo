@@ -1484,6 +1484,37 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
 
 ## Mapoteca e plugin
 
+- **A SITUAÇÃO DO PEDIDO SE MUDA NA LISTA, PELO CHIP, E POR ROTA PRÓPRIA**
+  (`PUT /api/mapoteca/pedido/:id/situacao`, 2026-08-24, decisão do chefe). Até aqui a situação só
+  mudava pelo modal de editar do detalhe, e chegar nele custava abrir o pedido e voltar. A lista já
+  MOSTRAVA a situação num chip: a célula que mostra o estado virou o lugar de trocá-lo, como o chip
+  de palavra-chave ao lado já fazia com a busca.
+  - **A rota é nova porque o `PUT /pedido` reescreve a LINHA INTEIRA.** O ColumnSet de `PEDIDO_COLS`
+    declara `def: null`, então campo que o corpo não traz vai a null, com 200 e sem aviso. A lista
+    (`GET /pedido`) não devolve NOVE campos que o pedido tem: `ponto_contato`, `contato_mapoteca`,
+    `endereco_entrega`, `canal_recebimento_id`, `municipio`, `qtd_imagens`, `observacao`,
+    `observacao_interna` e `motivo_cancelamento`. Medido na produção em 2026-08-24, sobre 190
+    pedidos: `observacao_interna` em 131, `observacao` em 108, `ponto_contato` em 106. Montar o
+    corpo do PUT com o que a lista tem em mãos apagaria os três. O `preserveOmitted` não cobria
+    nada disso: ele guarda só `palavras_chave`, `previsto_pit`, `meta_pit_id` e `data_prevista`.
+  - **A alternativa recusada era só de client:** ler `GET /pedido/:id` antes de gravar e reenviar o
+    pedido inteiro. Custa duas chamadas por mudança, reabre o D-1 das datas (as colunas são DATE, e
+    o `Date` que o driver monta volta como o dia anterior em UTC-3) e devolve o risco de apagar
+    campo a cada coluna nova do pedido.
+  - **A rota escreve TRÊS colunas, e não uma.** RN02 (Concluído exige `data_atendimento`) e RN03
+    (Cancelado exige `motivo_cancelamento`) são regra do DADO. Metade das mudanças de situação
+    registradas em `auditoria.evento` entre 2026-07-30 e 2026-08-24 (13 de 26) cai numa dessas
+    duas, então um select que grava ao trocar não daria conta: a tela abre um diálogo com o campo
+    que a situação escolhida exige.
+  - **Chave ausente NÃO MEXE**, a mesma disciplina do `preserveOmitted`: sair de Concluído não
+    apaga a data de atendimento nem sair de Cancelado apaga o motivo, porque os dois são registro
+    do que aconteceu. `null` explícito ainda limpa.
+  - **O piso é GERENTE**, o mesmo do `PUT /pedido` (decisão do chefe). Quem tem consulta ou
+    operador vê o chip parado, e o client só o torna clicável nesse perfil: chip que abre diálogo
+    para terminar em 403 é pior que chip nenhum.
+  - **Sem mudança em lote**, por ora. A `data-table` já tem seleção múltipla (`selectable`), então
+    o dia em que ela for pedida a rota é que decide se aceita array.
+
 - **O PEDIDO IMPRESSO E NÃO DESPACHADO TEM SITUAÇÃO PRÓPRIA** (`situacao_pedido` code 8,
   'Aguardando envio', 2026-08-24, decisão do chefe). Entre imprimir e remeter existe um estágio real:
   o material está pronto, embalado, e ainda não saiu. Ele não tinha nome no domínio, então ficava

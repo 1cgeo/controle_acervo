@@ -183,6 +183,10 @@ const COBERTAS = new Set([
   'DELETE /cliente',
   'POST /pedido',
   'PUT /pedido',
+  // SO A SITUACAO, para a lista muda-la sem abrir o pedido. Rota propria porque
+  // o PUT acima reescreve a linha inteira e a lista nao tem nove dos campos do
+  // pedido em maos. Os casos dela vivem em mapoteca_situacao_do_pedido.test.js.
+  'PUT /pedido/:id/situacao',
   'DELETE /pedido',
   'POST /produto_pedido',
   // O LOTE: varios itens num POST so, numa transacao. Ele audita UM evento por

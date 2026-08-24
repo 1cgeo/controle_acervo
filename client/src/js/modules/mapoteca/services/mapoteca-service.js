@@ -183,6 +183,30 @@ export function updatePedido(pedido) {
   return apiPut(`${BASE}/pedido`, pedido);
 }
 
+/**
+ * SO A SITUACAO do pedido, sem reescrever a linha.
+ *
+ * E O QUE A LISTA USA, e ela nao pode usar `updatePedido`: o PUT /pedido
+ * substitui o pedido inteiro, e a lista nao tem em maos nove dos campos dele
+ * (ponto_contato, contato_mapoteca, endereco_entrega, canal_recebimento_id,
+ * municipio, qtd_imagens, observacao, observacao_interna e
+ * motivo_cancelamento). Montar aquele corpo daqui apagaria os tres mais
+ * preenchidos da producao, com 200 e sem aviso nenhum.
+ *
+ * `data_atendimento` e obrigatorio para Concluido (RN02) e
+ * `motivo_cancelamento` para Cancelado (RN03). Chave AUSENTE preserva o valor
+ * gravado; `null` explicito limpa.
+ *
+ * @param {number} id
+ * @param {{situacao_pedido_id:number, data_atendimento?:string|null,
+ *   motivo_cancelamento?:string|null}} dados
+ */
+export function updateSituacaoPedido(id, dados) {
+  invalidate('pedidos');
+  invalidate('dashboard');
+  return apiPut(`${BASE}/pedido/${id}/situacao`, dados);
+}
+
 /** @param {number[]} ids */
 export function deletePedidos(ids) {
   invalidate('pedidos');

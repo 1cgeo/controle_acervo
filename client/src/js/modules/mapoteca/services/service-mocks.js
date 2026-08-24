@@ -44,7 +44,7 @@ const OBJETOS = [
 /** Mutacoes e downloads. O default e `null`. */
 const ACOES = [
   'createCliente', 'updateCliente', 'deleteClientes',
-  'createPedido', 'updatePedido', 'deletePedidos',
+  'createPedido', 'updatePedido', 'updateSituacaoPedido', 'deletePedidos',
   'createProdutoPedido', 'createProdutosPedido', 'updateProdutoPedido', 'deleteProdutosPedido',
   'registrarImpressao', 'corrigirDataImpressao', 'deleteImpressoes',
   'createTipoMaterial', 'updateTipoMaterial', 'deleteTiposMaterial',

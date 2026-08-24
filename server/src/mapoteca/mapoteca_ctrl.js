@@ -1052,6 +1052,108 @@ controller.atualizaPedido = async (pedido, usuarioUuid, contexto) => {
   });
 };
 
+/**
+ * SO A SITUACAO do pedido, para a LISTA muda-la sem abrir o detalhe.
+ *
+ * POR QUE NAO E O `atualizaPedido` ACIMA. Aquele reescreve a linha inteira: o
+ * ColumnSet de PEDIDO_COLS declara `def: null`, entao campo que o corpo nao
+ * traz vai a null com 200 e sem aviso. A LISTA de pedidos nao devolve nove
+ * campos que o pedido tem, e tres deles estao preenchidos na maioria das linhas
+ * (medido em 2026-08-24, sobre 190 pedidos: observacao_interna em 131,
+ * observacao em 108, ponto_contato em 106). Mudar a situacao pela lista por
+ * aquele caminho apagaria os tres.
+ *
+ * TRES COLUNAS SAO ESCRITAS, e nao uma: RN02 (Concluido exige o dia em que o
+ * material saiu) e RN03 (Cancelado exige o motivo) sao regra do DADO, e o Joi
+ * ja as cobra em `pedidoSituacao`. As duas nao se separam da situacao.
+ *
+ * CHAVE AUSENTE = NAO MEXE, a mesma disciplina do `preserveOmitted`. Sair de
+ * Concluido nao apaga a data de atendimento nem sair de Cancelado apaga o
+ * motivo: os dois sao registro do que aconteceu, e quem os quiser limpar manda
+ * `null` explicito ou edita o pedido inteiro.
+ *
+ * AS DATAS SAEM DO BANCO JA COMO 'AAAA-MM-DD' (`to_char`), e voltam assim para
+ * o UPDATE. Reenviar o Date que o driver monta faria a coluna DATE gravar o dia
+ * anterior em UTC-3, que e o mesmo D-1 que o `.raw()` do Joi evita na entrada.
+ */
+controller.atualizaSituacaoPedido = async (id, dados, usuarioUuid, contexto) => {
+  const usuarioId = await getUsuarioId(usuarioUuid);
+
+  return db.conn.tx(async t => {
+    // A linha INTEIRA antes da mudanca vira o `dados_antes` da auditoria, e as
+    // duas datas em texto vem de carona para a comparacao e para o UPDATE.
+    const linha = await t.oneOrNone(
+      `SELECT *,
+              to_char(data_pedido, 'YYYY-MM-DD') AS data_pedido_iso,
+              to_char(data_atendimento, 'YYYY-MM-DD') AS data_atendimento_iso
+         FROM mapoteca.pedido WHERE id = $1`,
+      [id]
+    );
+
+    if (!linha) {
+      throw new AppError('Pedido não encontrado', httpCode.NotFound);
+    }
+
+    const {
+      data_pedido_iso: dataPedidoIso,
+      data_atendimento_iso: dataAtendimentoIso,
+      ...pedidoAtual
+    } = linha;
+
+    const dataAtendimento = dados.data_atendimento !== undefined
+      ? dados.data_atendimento
+      : dataAtendimentoIso;
+    const motivoCancelamento = dados.motivo_cancelamento !== undefined
+      ? dados.motivo_cancelamento
+      : pedidoAtual.motivo_cancelamento;
+
+    // O mesmo `min(data_pedido)` que o PUT completo cobra pelo Joi. Aqui ele
+    // mora no controller porque a data do pedido nao vem no corpo: quem a
+    // conhece e a linha gravada.
+    if (dataAtendimento && dataAtendimento < dataPedidoIso) {
+      throw new AppError(
+        'A data de atendimento não pode ser anterior à data do pedido.',
+        httpCode.BadRequest
+      );
+    }
+
+    await t.none(
+      `UPDATE mapoteca.pedido
+          SET situacao_pedido_id = $<situacao_pedido_id>,
+              data_atendimento = $<data_atendimento>,
+              motivo_cancelamento = $<motivo_cancelamento>,
+              usuario_atualizacao_id = $<usuario_atualizacao_id>,
+              data_atualizacao = $<data_atualizacao>
+        WHERE id = $<id>`,
+      {
+        id,
+        situacao_pedido_id: dados.situacao_pedido_id,
+        data_atendimento: dataAtendimento || null,
+        motivo_cancelamento: motivoCancelamento || null,
+        usuario_atualizacao_id: usuarioId,
+        data_atualizacao: new Date()
+      }
+    );
+
+    // O depois sai do BANCO, e nao do corpo: o corpo traz o que se pediu, e a
+    // auditoria guarda o que se gravou. Os dois lados vem da mesma fonte.
+    const pedidoNovo = await t.one(
+      `SELECT * FROM mapoteca.pedido WHERE id = $1`,
+      [id]
+    );
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'mapoteca.pedido',
+      registroId: id,
+      operacao: 'U',
+      antes: pedidoAtual,
+      depois: pedidoNovo,
+      usuarioUuid,
+      contexto
+    });
+  });
+};
+
 controller.getPedidoByLocalizador = async (localizador) => {
   return db.conn.task(async t => {
     // Rota PUBLICA (sem autenticacao). A lista de colunas e explicita, e nunca

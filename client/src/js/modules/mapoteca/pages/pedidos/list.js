@@ -11,6 +11,7 @@ import { formatDate, formatNumber } from '@utils/format.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { permissoes } from '@store/auth-store.js';
 import { SITUACAO_PEDIDO } from '@modules/mapoteca/situacao-pedido.js';
+import { openSituacaoPedidoDialog } from './dialog-situacao.js';
 import { criarAvisoDeErro } from '../aviso-carga.js';
 
 /**
@@ -270,7 +271,37 @@ export async function renderPedidosList(container, ctx) {
       {
         key: 'situacao_pedido_nome',
         label: 'Situação',
-        render: (row) => chipSituacaoPedido(row.situacao_pedido_id, row.situacao_pedido_nome),
+        // O CHIP MUDA A SITUACAO, sem abrir o pedido. E a mesma ideia do chip de
+        // palavra-chave acima: a celula que MOSTRA o estado e o lugar natural
+        // para troca-lo, e a lista era o unico caminho ate a situacao de um
+        // pedido que ja saiu da fila de atendimento.
+        //
+        // O dialogo nao e enfeite: metade das mudancas registradas na auditoria
+        // (13 de 26, entre 2026-07-30 e 2026-08-24) exige um segundo campo, que
+        // e a data de atendimento do Concluido ou o motivo do Cancelado.
+        //
+        // SO PARA GERENTE, o mesmo piso que o servidor cobra em
+        // PUT /pedido/:id/situacao. Quem tem consulta ou operador ve o chip
+        // parado, como antes.
+        render: (row) => {
+          const alvo = chipSituacaoPedido(row.situacao_pedido_id, row.situacao_pedido_nome);
+          if (!pode.gerente) return alvo;
+          alvo.title = 'Mudar a situação deste pedido';
+          alvo.style.cursor = 'pointer';
+          // O chip e um <span>, entao o papel e o foco vao na mao: sem eles o
+          // teclado nao alcanca a unica acao da celula.
+          alvo.setAttribute('role', 'button');
+          alvo.tabIndex = 0;
+          const abrir = () => openSituacaoPedidoDialog(row, load);
+          alvo.addEventListener('click', abrir);
+          alvo.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              abrir();
+            }
+          });
+          return alvo;
+        },
       },
       { key: 'prazo', label: 'Prazo', sortable: true, render: (row) => formatDate(row.prazo) },
       {

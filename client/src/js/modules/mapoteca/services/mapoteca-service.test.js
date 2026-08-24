@@ -79,6 +79,18 @@ describe('mapoteca-service: clientes e pedidos', () => {
     expect(apiDelete).toHaveBeenCalledWith('/mapoteca/pedido', { pedido_ids: [9] });
   });
 
+  // A ROTA DA SITUACAO E OUTRA, e o caminho e o que fecha a cadeia entre o
+  // dialogo da lista e o servidor: '/mapoteca/pedido' aqui reescreveria a linha
+  // inteira do pedido, que e exatamente o que esta funcao existe para evitar.
+  test('updateSituacaoPedido bate no sufixo /situacao, com o id na URL', async () => {
+    await svc.updateSituacaoPedido(192, { situacao_pedido_id: 8 });
+    expect(apiPut).toHaveBeenCalledWith('/mapoteca/pedido/192/situacao', {
+      situacao_pedido_id: 8,
+    });
+    // O PUT do pedido inteiro nao e chamado por tabela nenhuma daqui.
+    expect(apiPut).toHaveBeenCalledTimes(1);
+  });
+
   // A busca por etiqueta e do SERVIDOR: ela usa o indice GIN de
   // `mapoteca.pedido.palavras_chave`, e filtrar aqui, sobre a lista ja baixada,
   // daria a busca "por pedaco" que o campo nao promete.

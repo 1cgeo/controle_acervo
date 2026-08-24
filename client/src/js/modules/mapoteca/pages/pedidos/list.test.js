@@ -467,4 +467,90 @@ describe('busca por palavra-chave na lista de pedidos', () => {
 
     if (typeof cleanup === 'function') cleanup();
   });
+
+  // A SITUACAO SE MUDA NA LISTA, pelo chip, sem abrir o pedido. O dialogo vem do
+  // arquivo de verdade (nao esta mockado), entao estes casos provam tambem a
+  // ligacao entre os dois. O comportamento do dialogo em si mora em
+  // dialog-situacao.test.js.
+  //
+  // O chip se procura DENTRO da linha do localizador, e nunca pelo texto solto:
+  // dois pedidos do lote estao 'Em andamento', e o primeiro do DOM e o outro.
+  const chipDaLinha = (container, localizador) => {
+    const linha = [...container.querySelectorAll('tbody tr')]
+      .find(tr => tr.textContent.includes(localizador));
+    if (!linha) throw new Error(`pedido "${localizador}" nao esta na tela`);
+    return linha.querySelector('td:nth-child(6) .chip');
+  };
+
+  const SITUACOES = [
+    { code: 3, nome: 'Em andamento' },
+    { code: 8, nome: 'Aguardando envio' },
+  ];
+
+  test('o chip de Situacao abre o dialogo de mudanca para o gerente', async () => {
+    document.body.innerHTML = '';
+    svc.getDominioSituacaoPedido.mockResolvedValue(SITUACOES);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    const chip = chipDaLinha(container, 'AB12-CD34-EF56');
+    expect(chip.textContent).toBe('Em andamento');
+    expect(chip.getAttribute('role')).toBe('button');
+
+    chip.click();
+    await flush();
+
+    expect(document.querySelector('.modal__title').textContent)
+      .toBe('Situação do pedido AB12-CD34-EF56');
+
+    if (typeof cleanup === 'function') cleanup();
+    document.body.innerHTML = '';
+  });
+
+  test('salvar a situacao recarrega a lista', async () => {
+    document.body.innerHTML = '';
+    svc.getDominioSituacaoPedido.mockResolvedValue(SITUACOES);
+    svc.updateSituacaoPedido.mockResolvedValue(null);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    const antes = svc.getPedidos.mock.calls.length;
+    chipDaLinha(container, 'AB12-CD34-EF56').click();
+    await flush();
+
+    const select = document.querySelector('.modal select');
+    select.value = '8';
+    select.dispatchEvent(new Event('change'));
+    [...document.querySelectorAll('.modal__footer button')]
+      .find(b => b.textContent.trim() === 'Salvar').click();
+    await flush();
+
+    expect(svc.updateSituacaoPedido).toHaveBeenCalledWith(55, { situacao_pedido_id: 8 });
+    // A lista releu do servidor: sem isso o chip continuaria dizendo a situacao
+    // antiga ate alguem trocar o ano ou recarregar a pagina.
+    expect(svc.getPedidos.mock.calls.length).toBeGreaterThan(antes);
+
+    if (typeof cleanup === 'function') cleanup();
+    document.body.innerHTML = '';
+  });
+
+  // Quem tem consulta ou operador ve o chip PARADO: o servidor cobra gerente em
+  // PUT /pedido/:id/situacao, e um chip que abre dialogo para terminar em 403
+  // e pior do que chip nenhum.
+  test('quem tem consulta ve o chip parado', async () => {
+    logarComo({ mapoteca: CONSULTA });
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    const chip = chipDaLinha(container, 'AB12-CD34-EF56');
+    expect(chip.textContent).toBe('Em andamento');
+    expect(chip.getAttribute('role')).toBeNull();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
 });
