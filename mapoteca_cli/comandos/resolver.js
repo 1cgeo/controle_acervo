@@ -5,7 +5,7 @@
 // exige.
 //
 //   mapoteca resolver 2962-4-NE 2963-1 ...   folha do documento -> uuid_versao
-//   mapoteca cliente resolver "6 RCB"        sigla do documento -> cliente_id
+//   mapoteca cliente resolver "6 RCB"        nome ou sigla do documento -> cliente_id
 //
 // Por que existem:
 //
@@ -287,14 +287,57 @@ function chave (texto) {
 }
 
 /**
- * Casa um termo contra a lista de clientes. A base guarda o nome POR EXTENSO
- * ("6o Regimento de Cavalaria Blindado") e o documento assina a sigla ("6o RCB"),
- * entao alem do nome inteiro procura-se por PALAVRA: quem digitou "Cavalaria
- * Blindado Alegrete" precisa achar a mesma OM.
+ * A MESMA normalizacao, sem separador nenhum. E o que faz "CRO/3", "CRO 3",
+ * "cro-3" e "cro3" virarem a mesma coisa: a sigla que o documento assina troca
+ * de barra para espaco para nada conforme quem digitou.
+ */
+function chaveCompacta (texto) {
+  return chave(texto).replace(/ /g, '')
+}
+
+/**
+ * Pontua a SIGLA do cliente contra o termo, na forma compacta.
+ *
+ * A base guarda a sigla numa coluna propria (`mapoteca.cliente.sigla`, "CRO/3")
+ * ao lado do nome por extenso, e o documento assina pela sigla. Sem esta conta,
+ * "CRO 3" nao achava ninguem entre os 179 clientes (medido em 2026-08-25),
+ * enquanto "Comissao Regional de Obras" achava o 146. E "nao achei" nao para
+ * ali: o `acharOuCriarCliente` do `cadastrar` casa por nome EXATO e CRIA quando
+ * nao acha, entao a mesma OM entra duas vezes e o historico dela racha em dois.
+ *
+ * A CONTENCAO SO VALE QUANDO A SIGLA COBRE METADE DO TERMO. Sem essa regra, uma
+ * sigla de tres letras casa dentro de qualquer nome por extenso compactado
+ * ("REG" dentro de "comissaoREGionaldeobras") e entra na lista como ruido.
+ */
+function pontuarSigla (sigla, alvoCompacto) {
+  const s = chaveCompacta(sigla)
+  if (!s || !alvoCompacto) return 0
+  if (s === alvoCompacto) return 900
+
+  const menor = Math.min(s.length, alvoCompacto.length)
+  const maior = Math.max(s.length, alvoCompacto.length)
+  if (menor < 3 || menor * 2 < maior) return 0
+
+  return (alvoCompacto.includes(s) || s.includes(alvoCompacto)) ? 350 : 0
+}
+
+/**
+ * Casa um termo contra a lista de clientes, pelo NOME e pela SIGLA. A base
+ * guarda o nome POR EXTENSO ("6o Regimento de Cavalaria Blindado") e a sigla
+ * ("6o RCB") em colunas separadas, e o documento ora usa um, ora a outra.
+ *
+ * Alem do nome inteiro procura-se por PALAVRA: quem digitou "Cavalaria Blindado
+ * Alegrete" precisa achar a mesma OM.
+ *
+ * As duas contas SOMAM, entao quem casa pelos dois lados fica acima de quem
+ * casa por um so. A sigla exata (900) vale menos que o nome exato (1000) e mais
+ * que o nome que apenas CONTEM o termo (500): sigla e identificador, e nome por
+ * extenso e prosa.
  */
 function casarClientes (clientes, termo) {
   const alvo = chave(termo)
   if (!alvo) return []
+  const alvoCompacto = chaveCompacta(termo)
   const palavras = alvo.split(' ').filter(p => p.length > 2)
 
   return clientes
@@ -306,6 +349,7 @@ function casarClientes (clientes, termo) {
       else if (alvo.includes(nome)) pontos = 400
       const casadas = palavras.filter(p => nome.includes(p))
       pontos += casadas.length * 10
+      pontos += pontuarSigla(c.sigla, alvoCompacto)
       return { cliente: c, pontos, palavras_casadas: casadas.length }
     })
     .filter(r => r.pontos > 0)
@@ -327,9 +371,10 @@ async function resolverCliente (args, cfg) {
     return {
       texto: `Nenhum cliente casa com "${termo}" entre os ${clientes.length} cadastrados.`,
       avisos: [
-        'Antes de criar um cliente novo, tente pela palavra-chave do nome por extenso ' +
-        '(a base guarda "6o Regimento de Cavalaria Blindado", nao "6o RCB"), ou pela ' +
-        'cidade. Criar duplicata racha o historico da OM em dois.'
+        'A busca ja cobriu o nome por extenso E a sigla, e "CRO/3", "CRO 3" e "cro3" ' +
+        'sao a mesma coisa aqui. Antes de criar um cliente novo, tente pela ' +
+        'palavra-chave do nome por extenso ou pela cidade. Criar duplicata racha o ' +
+        'historico da OM em dois.'
       ]
     }
   }
@@ -337,6 +382,9 @@ async function resolverCliente (args, cfg) {
   const linhas = casados.slice(0, argsLib.numero(flags, 'limite', 10)).map(c => ({
     id: c.cliente.id,
     nome: c.cliente.nome,
+    // A sigla SAI na tabela porque e por ela que metade dos casamentos acontece:
+    // sem mostra-la, quem buscou "CRO 3" nao ve por que a linha entrou.
+    sigla: c.cliente.sigla,
     tipo_cliente_nome: c.cliente.tipo_cliente_nome,
     total_pedidos: c.cliente.total_pedidos,
     data_ultimo_pedido: c.cliente.data_ultimo_pedido,
@@ -347,7 +395,7 @@ async function resolverCliente (args, cfg) {
   const out = saida.lista(linhas, {
     formato: flags.json ? 'json' : (flags.formato || 'tsv'),
     campos: argsLib.lista(flags.campos),
-    padrao: ['id', 'nome', 'tipo_cliente_nome', 'total_pedidos', 'data_ultimo_pedido', 'palavras_casadas']
+    padrao: ['id', 'nome', 'sigla', 'tipo_cliente_nome', 'total_pedidos', 'data_ultimo_pedido', 'palavras_casadas']
   })
 
   const avisos = []
@@ -373,5 +421,7 @@ module.exports = {
   resolverUmMi,
   casarClientes,
   chave,
+  chaveCompacta,
+  pontuarSigla,
   TIPO_PRODUTO_PADRAO
 }

@@ -109,9 +109,11 @@ const REGRAS = {
   ],
 
   cliente: [
-    'A base guarda o nome POR EXTENSO ("6o Regimento de Cavalaria Blindado"); o',
-    'documento assina a sigla ("6o RCB"). Procure por extenso e por palavra-chave',
-    'ANTES de criar, ou a mesma OM entra duas vezes e o historico dela racha em duas.',
+    'A base guarda o nome POR EXTENSO ("6o Regimento de Cavalaria Blindado") e a',
+    'sigla ("CRO/3") em COLUNAS separadas; o documento assina pela sigla. Procure',
+    'pelos dois ANTES de criar, ou a mesma OM entra duas vezes e o historico dela',
+    'racha em duas. O "cliente resolver" ja cobre os dois, e para ele "CRO/3",',
+    '"CRO 3" e "cro3" sao a mesma coisa.',
     'A sigla e a secao pertencem ao pedido (campo demandante), nao ao nome do cliente.',
     'ponto_contato_principal e o contato PERENE da OM; o contato de um pedido especifico',
     'vai em pedido.ponto_contato.',
