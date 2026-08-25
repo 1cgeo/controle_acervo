@@ -18,12 +18,17 @@
 // atravessar de uma para a outra. Aqui e uma invocacao, com --dry-run que valida
 // TUDO offline antes de tocar a rede.
 //
-// `situacao` existe por um motivo diferente: o PUT da mapoteca SUBSTITUI a linha
-// inteira. Fechar um pedido mandando so {id, situacao_pedido_id} apaga o cliente,
-// o prazo, o contato e o documento, calado. Este verbo le o pedido, troca so o
-// que muda e reenvia o corpo completo, ja com as datas recortadas em
-// 'YYYY-MM-DD' (o servidor as devolve como timestamp ISO e as regrava crua, o
-// que num fuso a oeste de Greenwich grava o DIA ANTERIOR).
+// `situacao` existe por um motivo diferente: o PUT da COLECAO da mapoteca
+// SUBSTITUI a linha inteira. Fechar um pedido mandando so {id,
+// situacao_pedido_id} apaga o cliente, o prazo, o contato e o documento, calado.
+//
+// Desde 2026-08-24 existe a rota ESTREITA `PUT /pedido/:id/situacao`, que grava
+// TRES colunas (situacao, data de atendimento, motivo de cancelamento) e nao
+// pode apagar as outras vinte e uma. O verbo usa essa rota no caso simples, e
+// so desce ao caminho largo por `--localizador-envio` ou `--observacao-envio`,
+// que sao colunas fora dela. As datas saem sempre recortadas em 'YYYY-MM-DD' (o
+// servidor as devolve como timestamp ISO e as regrava cruas, o que num fuso a
+// oeste de Greenwich grava o DIA ANTERIOR).
 
 const fs = require('fs')
 const path = require('path')
@@ -80,6 +85,56 @@ async function itens (args, cfg) {
 // situacao (leitura, alteracao pontual, reenvio do corpo completo)
 // ---------------------------------------------------------------------------
 
+// As duas colunas de ENVIO que a rota estreita nao conhece. Enquanto o verbo
+// aceitar estas flags, elas sao o unico motivo que resta para descer ao caminho
+// largo, que reescreve a linha inteira.
+const FLAGS_SO_DO_CAMINHO_LARGO = ['localizador-envio', 'observacao-envio']
+
+/**
+ * O corpo da rota ESTREITA: as tres colunas de `pedidoSituacao`, e nada mais.
+ *
+ * CHAVE AUSENTE = NAO MEXE, a mesma disciplina que o servidor aplica ali. Mas
+ * quando a linha JA TEM data de atendimento ou motivo de cancelamento, os dois
+ * voltam no corpo: a gravacao e identica, e e o que satisfaz RN02 (Concluido
+ * exige o dia em que o material saiu) e RN03 (Cancelado exige o motivo) sem
+ * obrigar quem chama a redigitar o que ja esta gravado.
+ *
+ * A data sai recortada em 'AAAA-MM-DD'. O servidor a devolve como timestamp
+ * ISO, e reenvia-la assim faria a coluna DATE guardar o DIA ANTERIOR num fuso a
+ * oeste de Greenwich.
+ */
+function corpoSituacao (atual, nova, dataAtendimento, motivo) {
+  const corpo = { situacao_pedido_id: nova }
+  const data = dataAtendimento || esquema.soData(atual.data_atendimento)
+  if (data) corpo.data_atendimento = data
+  const razao = motivo || atual.motivo_cancelamento
+  if (razao) corpo.motivo_cancelamento = razao
+  return corpo
+}
+
+/**
+ * O corpo do caminho LARGO: as 24 chaves de `pedidoAtualizacao`, remontadas a
+ * partir do que o GET devolveu.
+ *
+ * Reconstroi SO com as chaves que o schema conhece: a leitura traz dezenas de
+ * campos resolvidos por JOIN (cliente_nome, situacao_pedido_nome) que o
+ * stripUnknown descartaria. Campo que o GET nao trouxer NAO entra, e e por isso
+ * que este caminho e o ultimo recurso: o PUT da colecao grava `def: null` no
+ * ausente, com 200 e sem aviso.
+ */
+function corpoPedidoInteiro (m, atual, id, nova) {
+  const chaves = esquema.camposDe(m.pedidoAtualizacao).map(c => c.nome)
+  const camposData = new Set(esquema.camposDataDe(m.pedidoAtualizacao))
+  const corpo = {}
+  for (const chave of chaves) {
+    if (!(chave in atual)) continue
+    corpo[chave] = camposData.has(chave) ? esquema.soData(atual[chave]) : atual[chave]
+  }
+  corpo.id = id
+  corpo.situacao_pedido_id = nova
+  return corpo
+}
+
 async function situacao (args, cfg) {
   const flags = args.flags
   const id = Number(argsLib.exigir(flags, 'id', 'id do pedido'))
@@ -94,32 +149,35 @@ async function situacao (args, cfg) {
   const r = await http.autenticada(cfg, 'GET', `${CAMINHO}/${id}`)
   const atual = r.dados || {}
 
-  // Reconstroi o corpo a partir do que o servidor devolveu, mas SO com as chaves
-  // que o schema conhece: a leitura traz dezenas de campos resolvidos por JOIN
-  // (cliente_nome, situacao_pedido_nome) que o stripUnknown descartaria.
-  const chaves = esquema.camposDe(m.pedidoAtualizacao).map(c => c.nome)
-  const camposData = new Set(esquema.camposDataDe(m.pedidoAtualizacao))
-  const corpo = {}
-  for (const chave of chaves) {
-    if (!(chave in atual)) continue
-    corpo[chave] = camposData.has(chave) ? esquema.soData(atual[chave]) : atual[chave]
-  }
-  corpo.id = id
-  corpo.situacao_pedido_id = nova
-
   const dataAtendimento = argsLib.texto(flags, 'data-atendimento')
-  if (dataAtendimento) corpo.data_atendimento = dataAtendimento
   const motivo = argsLib.texto(flags, 'motivo')
-  if (motivo) corpo.motivo_cancelamento = motivo
   const localizador = argsLib.texto(flags, 'localizador-envio')
-  if (localizador) corpo.localizador_envio = localizador
   const obsEnvio = argsLib.texto(flags, 'observacao-envio')
-  if (obsEnvio) corpo.observacao_envio = obsEnvio
 
-  const v = esquema.validarCorpo(m.pedidoAtualizacao, corpo)
+  // A ESCOLHA DA ROTA. O caso simples vai pela estreita, que escreve tres
+  // colunas e nao pode apagar as outras vinte e uma. So as duas flags de envio
+  // obrigam o caminho largo, porque `localizador_envio` e `observacao_envio`
+  // nao estao em `pedidoSituacao`.
+  const largas = FLAGS_SO_DO_CAMINHO_LARGO.filter(f => argsLib.texto(flags, f))
+  const estreito = largas.length === 0
+
+  const modelo = estreito ? m.pedidoSituacao : m.pedidoAtualizacao
+  const rota = estreito ? `${CAMINHO}/${id}/situacao` : CAMINHO
+  const corpo = estreito
+    ? corpoSituacao(atual, nova, dataAtendimento, motivo)
+    : corpoPedidoInteiro(m, atual, id, nova)
+
+  if (!estreito) {
+    if (dataAtendimento) corpo.data_atendimento = dataAtendimento
+    if (motivo) corpo.motivo_cancelamento = motivo
+    if (localizador) corpo.localizador_envio = localizador
+    if (obsEnvio) corpo.observacao_envio = obsEnvio
+  }
+
+  const v = esquema.validarCorpo(modelo, corpo)
   if (!v.ok) {
     const erro = new Error(esquema.explicarErro(
-      m.pedidoAtualizacao, v.erros,
+      modelo, v.erros,
       'A situacao nova exige campos que o pedido ainda nao tem. Contrato: mapoteca schema pedido'
     ))
     erro.jaFormatado = true
@@ -131,20 +189,25 @@ async function situacao (args, cfg) {
     return {
       texto: [
         `[dry-run] nada foi GRAVADO. O pedido ${id} iria de "${antes}" para o code ${nova}.`,
-        `  PUT /api${CAMINHO}`,
+        `  PUT /api${rota}`,
         JSON.stringify(v.valor, null, 2)
       ].join('\n'),
       // Este e o unico --dry-run do CLI que nao e totalmente offline, e dize-lo
-      // e obrigatorio: o verbo so existe porque LE o pedido antes de reenvia-lo,
-      // e um dry-run que nao lesse mostraria um corpo inventado.
+      // e obrigatorio: o verbo LE o pedido antes de montar o corpo, e um dry-run
+      // que nao lesse mostraria um corpo inventado.
       avisos: [
-        'Este dry-run fez um GET do pedido (leitura) para montar o corpo completo. ' +
-        'Nenhuma escrita ocorreu.'
+        'Este dry-run fez um GET do pedido (leitura) para montar o corpo. ' +
+        'Nenhuma escrita ocorreu.',
+        estreito
+          ? 'Rota ESTREITA: escreve situacao, data de atendimento e motivo de ' +
+            'cancelamento, e nao toca em nenhuma outra coluna.'
+          : `Caminho LARGO (por ${largas.map(f => '--' + f).join(' e ')}): o PUT da ` +
+            'colecao SUBSTITUI a linha inteira, e campo que o GET nao trouxe volta a null.'
       ]
     }
   }
 
-  const resp = await http.autenticada(cfg, 'PUT', CAMINHO, { corpo: v.valor })
+  const resp = await http.autenticada(cfg, 'PUT', rota, { corpo: v.valor })
 
   // Le de volta: a mensagem de sucesso do servidor nao e prova de gravacao, e
   // "disse OK e nada gravou" e a familia de erro que mais custou tempo aqui.

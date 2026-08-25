@@ -119,7 +119,8 @@ O comando é **idempotente**: rodá-lo de novo com o mesmo plano completa o que 
 
 - **Validação local**: o corpo é conferido contra o Joi antes de sair da máquina. Corpo torto falha em milissegundos, com o contrato do campo errado impresso junto, em vez de custar um round-trip e um 400 genérico.
 - **Campo descartado em silêncio**: o servidor valida o corpo com `stripUnknown`, então campo com nome errado (`prazo_entrega` em vez de `prazo`) some sem erro. O CLI avisa. É a diferença entre "gravei" e "achei que gravei".
-- **A armadilha do PUT**: o `PUT` da mapoteca vai na coleção, leva o id no **corpo** e **substitui a linha inteira**. Mandar só o campo que mudou zera todos os outros, calado. O CLI lista exatamente quais campos voltariam ao default antes de enviar, e o verbo `pedido situacao` faz o ciclo ler, alterar e reenviar por você.
+- **A armadilha do PUT**: o `PUT` da mapoteca vai na coleção, leva o id no **corpo** e **substitui a linha inteira**. Mandar só o campo que mudou zera todos os outros, calado. O CLI lista exatamente quais campos voltariam ao default antes de enviar.
+- **Rota estreita quando ela existe**: `pedido situacao` escreve por `PUT /pedido/:id/situacao`, que grava três colunas (situação, data de atendimento, motivo de cancelamento) e não alcança as outras vinte e uma. Ele só desce ao `PUT` da coleção quando vem `--localizador-envio` ou `--observacao-envio`, que são colunas fora daquela rota; aí sim faz o ciclo ler, alterar e reenviar o corpo inteiro. O `--dry-run` diz qual dos dois caminhos usaria.
 - **Data que grava o dia anterior**: o servidor devolve as datas como timestamp ISO e o schema as regrava cruas numa coluna `DATE`. Num fuso a oeste de Greenwich isso grava `D-1`. Todo reenvio passa pelo recorte para `YYYY-MM-DD`.
 - **Exclusão em lote e irreversível**: o `DELETE` sempre leva um array de ids, e excluir um pedido apaga todos os itens dele junto. Exige `--confirmar` com a mesma lista repetida; confirmar `42` quando se pediu `42,43` não passa.
 - **Escrita em recurso derivado**: `estoque` é só leitura desde 2026-08-08, porque o saldo passou a ser o acumulado do livro de movimentos. `estoque criar` não monta corpo nenhum nem gasta requisição: responde que a escrita é em `movimento` e qual contrato ler.
@@ -133,7 +134,7 @@ O comando é **idempotente**: rodá-lo de novo com o mesmo plano completa o que 
 
 É **offline** (não toca a rede, não usa credencial, não precisa de `SCA_URL`) em `criar`, `atualizar`, `deletar`, `pedido cadastrar`, `pedido anexar` e `imprimir`.
 
-As exceções são `pedido situacao`, `pedido corrigir` e `item mover`, que fazem um **GET** para montar o corpo completo antes de mostrá-lo. Eles avisam isso na saída. Nenhuma escrita ocorre.
+As exceções são `pedido situacao`, `pedido corrigir` e `item mover`, que fazem um **GET** para montar o corpo antes de mostrá-lo. Eles avisam isso na saída. Nenhuma escrita ocorre.
 
 Como o `--dry-run` não escreve, ele **não** exige `--confirmar`: é ele que mostra o que a confirmação autorizaria.
 
