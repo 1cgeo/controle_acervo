@@ -985,6 +985,15 @@ async function mover (args, cfg) {
     const corpo = {}
     for (const chave of chaves) {
       if (!(chave in item)) continue
+      // Chave NULA fica de FORA, e nao entra como null explicito. O
+      // `produtoPedidoAtualizacao` tem `.xor('uuid_versao','nome_avulso')`, e o
+      // Joi conta chave presente com valor null como PREENCHIDA. Item de acervo
+      // chega do GET com uuid preenchido e `nome_avulso: null`, entao o corpo
+      // levava os dois e reprovava com "conflict between exclusive peers": o
+      // verbo movia avulso e nunca movia item do acervo (medido em 2026-08-25,
+      // itens 1920 e 1921 do pedido 132). Omitir o nulo devolve a MESMA linha,
+      // porque o PUT substitui e grava null no que o corpo nao traz.
+      if (item[chave] === null || item[chave] === undefined) continue
       corpo[chave] = camposData.has(chave) ? esquema.soData(item[chave]) : item[chave]
     }
     corpo.id = item.id
