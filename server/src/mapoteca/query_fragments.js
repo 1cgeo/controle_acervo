@@ -144,6 +144,34 @@ const SITUACOES_FILA_ATENDIMENTO = [
   SITUACAO_PEDIDO.REMETIDO
 ];
 
+// O pedido CANCELADO não é produção, e não soma.
+//
+// A régua não nasceu aqui: `pit_execucao_ctrl.js` já a escrevia à mão na Meta 4,
+// e o `dashboard_ctrl.js` a obtém de graça pelo `FILTRO_ENTREGUE_ANO`, que só
+// admite Remetido e Concluído. Quem ficou de fora foram o relatório e o Anuário,
+// que somam por `data_pedido` e por `data_atendimento` sem olhar situação. Ela
+// muda de lugar para cá pelo mesmo motivo do `PIVO_TIPO_ESCALA` acima: são seis
+// consultas que TÊM de concordar, e o code 6 escrito à mão em seis lugares é
+// onde uma esquece.
+//
+// POR IGUALDADE NEGADA, e nunca por ordem. Não escreva `situacao_pedido_id < 6`
+// nem `>= N`: o code é domínio, não posição de fluxo. Não existe code 1, e o 8
+// entrou depois do 7. A coluna é NOT NULL (er/mapoteca.sql), então o `<>` não
+// descarta linha por nulo.
+//
+// E NÃO É `IN (REMETIDO, CONCLUIDO)`, que parece equivalente e não é: medido em
+// 2026-08-25, o pedido 178 está EM ANDAMENTO, tem `data_atendimento` e 168
+// cópias. Trocar um pelo outro derrubaria o Anuário de julho por um motivo que
+// nada tem a ver com cancelamento.
+//
+// ONDE ELA NÃO VALE: `mapoteca.impressao_item`. Aquela tabela registra papel que
+// já saiu do plotter, e cancelar um pedido não desimprime a folha nem devolve o
+// insumo. Excluir o cancelado de lá apagaria consumo real. Esta régua vale para
+// `produto_pedido.quantidade` e para `pedido.qtd_imagens`, que são o que se
+// PEDIU e o que se ENTREGOU, e param de valer quando o pedido morre.
+const PEDIDO_NAO_CANCELADO = (alias = "p") =>
+  `${alias}.situacao_pedido_id <> ${SITUACAO_PEDIDO.CANCELADO}`;
+
 // O arquivo IMPRIMÍVEL de uma versão: o PDF do produto cartográfico em si.
 //
 // A regra é uma só, usada pelo download do plugin (prepareDownloadImpressao) e
@@ -222,6 +250,7 @@ module.exports = {
   PRODUTO_ESCALA_ID,
   ITEM_E_AVULSO,
   PIVO_TIPO_ESCALA,
+  PEDIDO_NAO_CANCELADO,
   SITUACOES_FILA_IMPRESSAO,
   SITUACOES_FILA_ATENDIMENTO,
   JOIN_ARQUIVO_IMPRIMIVEL,

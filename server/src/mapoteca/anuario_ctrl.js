@@ -37,7 +37,7 @@ const { db } = require("../database");
 const {
   domainConstants: { TIPO_CLIENTE, TIPO_MIDIA, TIPO_ESCALA, TIPO_PRODUTO }
 } = require("../utils");
-const { QTD_EFETIVA, MIDIA_EFETIVA, filtroPeriodoMes } = require("./query_fragments");
+const { QTD_EFETIVA, MIDIA_EFETIVA, filtroPeriodoMes, PEDIDO_NAO_CANCELADO } = require("./query_fragments");
 
 const controller = {};
 
@@ -165,6 +165,7 @@ const getItensEntregues = ({ ano, mes, cumulativo }) =>
     LEFT JOIN acervo.versao v ON v.uuid_versao = pp.uuid_versao
     LEFT JOIN acervo.produto prod ON prod.id = v.produto_id
     WHERE ped.data_atendimento IS NOT NULL
+      AND ${PEDIDO_NAO_CANCELADO("ped")}
       AND ${filtroPeriodoMes("ped.data_atendimento", { cumulativo })}
     GROUP BY 1, 2, 3, 4
     `,
@@ -183,6 +184,7 @@ const getImagensEntregues = ({ ano, mes, cumulativo }) =>
     FROM mapoteca.pedido ped
     JOIN mapoteca.cliente c ON c.id = ped.cliente_id
     WHERE ped.data_atendimento IS NOT NULL
+      AND ${PEDIDO_NAO_CANCELADO("ped")}
       AND ped.qtd_imagens IS NOT NULL
       AND ped.qtd_imagens > 0
       AND NOT EXISTS (

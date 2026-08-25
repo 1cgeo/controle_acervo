@@ -16,6 +16,7 @@ const {
 const {
   QTD_EFETIVA,
   MIDIA_EFETIVA,
+  PEDIDO_NAO_CANCELADO,
   ESCALA_DISPLAY,
   ESCALA_DISPLAY_ITEM,
   JOIN_PRODUTO_ITEM,
@@ -100,6 +101,10 @@ controller.getRelatorioPedidosMil = async (ano) => {
       -- da coluna Total da aba Mil. Sem tipo nem escala do dominio, ele cai no
       -- FILTER de "outros_produtos", que e exatamente onde a aba o espera.
       ${JOIN_PRODUTO_ITEM}
+      -- Fora do WHERE, e nunca dentro dos treze FILTER do PIVO_TIPO_ESCALA:
+      -- a coluna outros_produtos e definida por NEGACAO, e um FILTER esquecido
+      -- linha nao fechar.
+      WHERE ${PEDIDO_NAO_CANCELADO("pm")}
     ),
     agregado AS (
       SELECT pedido_id,${PIVO_TIPO_ESCALA}
@@ -110,7 +115,13 @@ controller.getRelatorioPedidosMil = async (ano) => {
       ROW_NUMBER() OVER (ORDER BY p.data_pedido, p.id)::int AS numero,
       p.id AS pedido_id,
       p.localizador_pedido,
-      (a.pedido_id IS NOT NULL) AS possui_detalhamento,
+      -- Pergunta ao banco, e nao ao agregado: desde que a CTE itens exclui o
+      -- pedido cancelado, derivar daqui faria um cancelado COM itens sair como
+      -- "ninguem detalhou". A coluna diz se ha item, e as treze de quantidade
+      -- e que dizem quanto conta.
+      EXISTS (
+        SELECT 1 FROM mapoteca.produto_pedido pp2 WHERE pp2.pedido_id = p.id
+      ) AS possui_detalhamento,
       p.data_pedido,
       p.documento_solicitacao,
       p.previsto_pit,
@@ -253,6 +264,7 @@ controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
     LEFT JOIN mapoteca.tipo_midia tmf ON tmf.code = pp.tipo_midia_fornecida_id
     LEFT JOIN mapoteca.forma_entrega fe ON fe.code = p.forma_entrega_id
     WHERE ${mes ? filtroPeriodoMes("p.data_pedido", { cumulativo: true }) : filtroAno("p.data_pedido")}
+      AND ${PEDIDO_NAO_CANCELADO("p")}
     ORDER BY p.data_pedido, p.id, pp.id
     `,
     { ano, mes, omds: instituicao.sigla }
@@ -338,6 +350,7 @@ controller.getRelatorioTematicos = async (ano) => {
     ) arq ON TRUE
     WHERE pp.producao_especifica = TRUE
       AND ${filtroAno("p.data_pedido")}
+      AND ${PEDIDO_NAO_CANCELADO("p")}
     ORDER BY p.data_pedido, p.id, pp.id
     `,
     { ano, statusCarregado: STATUS_ARQUIVO.CARREGADO }
@@ -366,6 +379,7 @@ controller.getRelatorioPedidosResumo = async (ano) => {
       -- um INNER em acervo.versao o apagaria do total deste resumo.
       ${JOIN_PRODUTO_ITEM}
       WHERE ${filtroAno("p.data_pedido")}
+        AND ${PEDIDO_NAO_CANCELADO("p")}
     ),
     agregado AS (
       SELECT pedido_id,${PIVO_TIPO_ESCALA}
