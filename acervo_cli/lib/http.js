@@ -7,6 +7,8 @@ const { URL } = require('url')
 
 const { caminhoSessao } = require('./config')
 
+// Padrao, quando a configuracao nao diz outra coisa (ver resolverTimeout em
+// lib/config.js). Rota que le byte precisa de mais, e quem chama informa.
 const TIMEOUT_MS = 120000
 
 // Margem de seguranca antes da expiracao do JWT. O SCA assina com validade de
@@ -65,7 +67,7 @@ function requisitar (cfg, metodo, caminho, opcoes = {}) {
   const opcoesReq = {
     method: metodo,
     headers: cabecalhos,
-    timeout: TIMEOUT_MS
+    timeout: cfg.timeoutMs || TIMEOUT_MS
   }
   // Servidor HTTPS com certificado self-signed na rede interna.
   if (cfg.insecure && url.protocol === 'https:') {
@@ -119,7 +121,15 @@ function requisitar (cfg, metodo, caminho, opcoes = {}) {
     })
 
     req.on('timeout', () => {
-      req.destroy(new Error(`tempo esgotado (${TIMEOUT_MS} ms)`))
+      const espera = opcoesReq.timeout
+      // Desistir AQUI nao cancela o servidor: a rota que le byte continua
+      // rodando la. Por isso a mensagem manda esperar mais em vez de repetir,
+      // que numa rota de escrita duplicaria o trabalho.
+      req.destroy(new Error(
+        `tempo esgotado (${espera} ms). O servidor pode ainda estar processando: ` +
+        'rota que le arquivo no volume demora com lote grande. ' +
+        'Espere mais com --timeout <segundos> (ou SCA_TIMEOUT), em vez de repetir a chamada.'
+      ))
     })
     req.on('error', err => {
       reject(new Error(

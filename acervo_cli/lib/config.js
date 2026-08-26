@@ -44,7 +44,31 @@ function caminhoSessao (server) {
  *   SCA_USER    login de admin
  *   SCA_SENHA   senha (preferir esta a passar --senha na linha de comando)
  *   SCA_TOKEN   JWT pronto (pula o login)
+ *   SCA_TIMEOUT segundos de espera por resposta (padrao 120)
  */
+// O TIMEOUT E DE ROTA, e nao do CLI. As rotas que LEEM BYTE (catalogar,
+// atualizar-checksum, renomear-padrao, corrigir-nome-fisico) seguram a conexao
+// enquanto o servidor le o volume, e 120 s cobre um punhado de arquivos, nao um
+// lote de dezenas de gigabytes. O default fica onde estava; quem sabe que vai
+// esperar diz quanto.
+//
+// O timeout do CLIENTE nao cancela o servidor: desistir aqui deixa a escrita
+// correndo la. Por isso o numero e ajustavel em vez de generoso por padrao --
+// quem espera de menos numa rota de escrita fica sem saber o que aconteceu.
+const TIMEOUT_PADRAO_S = 120
+
+function resolverTimeout (flags) {
+  const bruto = flags.timeout !== undefined && flags.timeout !== true
+    ? flags.timeout
+    : process.env.SCA_TIMEOUT
+  if (bruto === undefined || bruto === null || bruto === '') return TIMEOUT_PADRAO_S * 1000
+  const segundos = Number(bruto)
+  if (!Number.isFinite(segundos) || segundos <= 0) {
+    throw new Error(`--timeout precisa ser um numero de SEGUNDOS maior que zero (recebi ${JSON.stringify(bruto)}).`)
+  }
+  return Math.round(segundos * 1000)
+}
+
 function resolver (flags, exigirServidor = true) {
   const server = flags.server || process.env.SCA_URL || process.env.SCA_SERVER
 
@@ -73,6 +97,7 @@ function resolver (flags, exigirServidor = true) {
     token: flags.token || process.env.SCA_TOKEN || null,
     insecure: flags.insecure === true,
     semCache: flags['sem-cache'] === true,
+    timeoutMs: resolverTimeout(flags),
     cliente
   }
 }

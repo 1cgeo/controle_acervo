@@ -91,7 +91,7 @@ const COBERTAS = new Set([
   'PUT /arquivo', 'DELETE /arquivo',
   'POST /upload-web/produto', 'POST /upload-web/versao', 'POST /upload-web/arquivos',
   'POST /catalogar/product', 'POST /confirm-upload',
-  'POST /atualizar-checksum', 'POST /renomear-padrao',
+  'POST /atualizar-checksum', 'POST /renomear-padrao', 'POST /corrigir-nome-fisico',
   // projetos/
   'POST /projeto', 'PUT /projeto', 'DELETE /projeto',
   'POST /lote', 'PUT /lote', 'DELETE /lote',

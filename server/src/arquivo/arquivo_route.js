@@ -364,4 +364,38 @@ router.post(
   })
 );
 
+// Correcao do NOME FISICO gravado, quando ele nao casa com a entrada real do
+// diretorio. E a IRMA INVERSA do renomear-padrao: la o catalogo manda e o byte
+// se move, aqui o disco manda e o catalogo se corrige. Nenhum byte e tocado.
+//
+// Existe para o volume com `layout_origem`, onde os arquivos sao do fornecedor:
+// renomear um `.img` do ERDAS quebraria a referencia interna ao `.ige`, entao a
+// unica ponta que pode ceder e a nossa. O renomear-padrao nem alcanca esses
+// arquivos, e o `PUT /arquivo` nao escreve `nome_arquivo`.
+//
+// Comeca em dry_run=true e confere o sha256 por DEFAULT.
+router.post(
+  '/corrigir-nome-fisico',
+  verifyAdmin,
+  schemaValidation({
+    body: arquivoSchema.corrigirNomeFisico
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await arquivoCtrl.corrigirNomeFisico(
+      req.body.arquivos,
+      req.body.conferir_checksum,
+      req.body.dry_run,
+      req.body.motivo,
+      req.usuarioUuid,
+      req.contexto
+    );
+
+    const msg = dados.dry_run
+      ? `Plano conferido no volume: ${dados.corrigidos} corrigiria(m), ${dados.falhas} recusado(s) (nada foi alterado)`
+      : `Nome físico corrigido: ${dados.corrigidos} arquivo(s), ${dados.falhas} recusado(s)`;
+
+    return res.sendJsonAndLog(dados.falhas === 0, msg, httpCode.OK, dados);
+  })
+);
+
 module.exports = router

@@ -78,6 +78,9 @@ SESSAO
 AMBIENTE  (catalogo em env-guia.md; nunca ponha senha na linha de comando)
   SCA_URL     URL do backend, ex.: http://IP:3015
   SCA_USER    login de admin        SCA_SENHA   senha
+  SCA_TIMEOUT segundos de espera por resposta (padrao 120); a flag e --timeout.
+              Rota que LE BYTE no volume (catalogar, atualizar-checksum,
+              renomear-padrao, corrigir-nome-fisico) passa disso com lote grande
   SCA_TOKEN   JWT pronto (dispensa login)
 
 FLAGS GLOBAIS

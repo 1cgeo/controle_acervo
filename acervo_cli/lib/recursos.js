@@ -476,6 +476,25 @@ const RECURSOS = {
           'funcao que o invariante 7a audita). O corpo tem dry_run, que vem true por ' +
           'DEFAULT: mande dry_run=false para renomear de verdade. Sem arquivo_ids ele ' +
           'pega os divergentes ate `limite`; chame em laco ate `restantes` zerar'
+      },
+      'corrigir-nome-fisico': {
+        metodo: 'POST',
+        caminho: '/arquivo/corrigir-nome-fisico',
+        corpo: 'corrigirNomeFisico',
+        acesso: 'admin',
+        envelope: 'registro',
+        nota: 'a IRMA INVERSA do renomear-padrao: la o catalogo manda e o BYTE se ' +
+          'move, aqui o DISCO manda e o CATALOGO se corrige. Nenhum byte e tocado. ' +
+          'Serve o volume com layout_origem, onde o arquivo e do fornecedor e ' +
+          'renomear o .img do ERDAS quebraria a referencia interna ao .ige. O nome ' +
+          'novo vem no corpo porque ele nao e computavel: e uma entrada de ' +
+          'diretorio. O servidor NAO acredita no corpo, ele le o diretorio e compara ' +
+          'caractere a caractere (readdir, e nao fs.access, que ignora caixa no ' +
+          'Windows e nao no Linux). Recusa se o nome atual ainda existir no volume ' +
+          '(seria renome), se o nome novo nao existir, se o tamanho nao bater ou se ' +
+          'o sha256 nao bater. dry_run e conferir_checksum vem TRUE por default. ' +
+          'NAO mexe em tipo_status_id: quem marcou o erro foi a verificacao do ' +
+          'acervo, e e ela que tira a marca'
       }
     }
   },

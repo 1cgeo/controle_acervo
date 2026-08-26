@@ -2789,4 +2789,234 @@ controller.renomearPadrao = async (arquivoIds, limite, dryRun, motivo, usuarioUu
   return resultado;
 };
 
+/**
+ * Corrige o NOME FISICO gravado (`nome_arquivo`, e a extensao quando vem), sem
+ * tocar em disco.
+ *
+ * A DIFERENCA PARA O `renomearPadrao`, e ela e o desenho inteiro: la o CATALOGO
+ * manda e o byte se move; aqui o DISCO manda e o catalogo se corrige. O caso que
+ * pede isto e o volume com `layout_origem`, onde os arquivos sao do fornecedor e
+ * foram catalogados onde estao: renomear um `.img` do ERDAS quebraria a
+ * referencia interna ao `.ige`, entao a unica ponta que pode ceder e a nossa.
+ *
+ * O CLIENTE PROPOE, O SERVIDOR VE. O nome alvo nao e computavel a partir de
+ * metadado nenhum, ele e uma entrada de diretorio. Por isso a rota nao acredita
+ * no corpo: ela le o diretorio e compara os nomes CARACTERE A CARACTERE.
+ *
+ * A comparacao exata e o ponto, e nao um detalhe de implementacao. `fs.access`
+ * responderia "existe" para os dois nomes no Windows e para um so no Linux, o
+ * que faria o mesmo conserto passar numa maquina e reprovar noutra. `readdir`
+ * devolve o nome REAL, e a comparacao em JavaScript distingue caixa em qualquer
+ * plataforma. Foi esse ponto cego que deixou 62 arquivos catalogados com o nome
+ * errado por 26 dias: quem conferiu, conferiu pelo SMB do Windows.
+ *
+ * As cinco recusas, e cada uma existe por um modo de errar:
+ *   1. o nome ATUAL ainda existe no volume -> o pedido e um renome, e esta rota
+ *      nao move byte. Aceitar aqui faria a linha apontar para OUTRO arquivo.
+ *   2. o nome ALVO nao existe no volume -> o cliente errou o nome, e gravar
+ *      trocaria um caminho quebrado por outro.
+ *   3. o tamanho no disco nao bate com o gravado -> nao e o arquivo que
+ *      catalogamos.
+ *   4. o sha256 nao bate (quando `conferir_checksum`) -> idem, com prova forte.
+ *   5. o trio (volume, nome, extensao) ja e de outro arquivo -> colisao, que os
+ *      indices unicos tambem barrariam, mas aqui a mensagem diz com QUEM.
+ *
+ * NAO MEXE em `tipo_status_id` de proposito. Quem marcou os arquivos com erro
+ * foi a verificacao do acervo, e e ela que tem de tirar a marca: a ferramenta
+ * que escreve nao se declara certa sozinha.
+ */
+controller.corrigirNomeFisico = async (arquivos, conferirChecksum, dryRun, motivo, usuarioUuid, contexto) => {
+  const ids = arquivos.map(a => a.id);
+  const registros = await db.conn.any(`
+    SELECT a.id, a.nome_arquivo, a.extensao, a.checksum, a.tamanho_mb,
+           a.tipo_arquivo_id, a.volume_armazenamento_id,
+           vol.volume, p.id AS produto_id
+    FROM acervo.arquivo a
+    JOIN acervo.versao v ON v.id = a.versao_id
+    JOIN acervo.produto p ON p.id = v.produto_id
+    LEFT JOIN acervo.volume_armazenamento vol ON vol.id = a.volume_armazenamento_id
+    WHERE a.id IN ($<ids:csv>)`, { ids });
+
+  const porId = new Map(registros.map(r => [Number(r.id), r]));
+
+  const resultado = {
+    dry_run: dryRun,
+    conferir_checksum: conferirChecksum,
+    pedidos: arquivos.length,
+    corrigidos: 0,
+    sem_mudanca: 0,
+    falhas: 0,
+    detalhe: []
+  };
+
+  // Cache de listagem por diretorio: um lote inteiro costuma cair na MESMA
+  // pasta, e ler o diretorio uma vez por arquivo custaria centenas de idas ao
+  // volume de rede para responder a mesma pergunta.
+  const cacheDir = new Map();
+  const listar = async (dir) => {
+    if (!cacheDir.has(dir)) {
+      try {
+        cacheDir.set(dir, new Set(await fs.readdir(dir)));
+      } catch (e) {
+        cacheDir.set(dir, null);
+      }
+    }
+    return cacheDir.get(dir);
+  };
+
+  // O separador depende do VOLUME, não da plataforma de quem chama: em Windows
+  // o `caminhoNoVolume` devolve UNC com contrabarra, em Linux o caminho POSIX
+  // do ponto de montagem. Cortar pelos dois cobre os dois sem perguntar onde
+  // este processo roda.
+  const CONTRABARRA = '\\';
+  const partirCaminho = (caminho) => {
+    const corte = Math.max(caminho.lastIndexOf('/'), caminho.lastIndexOf(CONTRABARRA));
+    return { dir: caminho.slice(0, corte), base: caminho.slice(corte + 1) };
+  };
+
+  for (const pedido of arquivos) {
+    const item = { id: pedido.id, status: null, motivo: null };
+    const reg = porId.get(Number(pedido.id));
+
+    const recusar = (razao) => {
+      item.status = 'falha';
+      item.motivo = razao;
+      resultado.falhas++;
+      resultado.detalhe.push(item);
+    };
+
+    if (!reg) { recusar('arquivo não encontrado no acervo'); continue; }
+
+    const extensaoNova = pedido.extensao === undefined ? reg.extensao : pedido.extensao;
+    item.de = `${reg.nome_arquivo}.${reg.extensao}`;
+    item.para = `${pedido.nome_arquivo}.${extensaoNova}`;
+
+    if (Number(reg.tipo_arquivo_id) === TIPO_ARQUIVO.TILESERVER) {
+      recusar('Tileserver não tem arquivo físico no volume; o nome dele é uma URL'); continue;
+    }
+    if (!reg.volume) {
+      recusar('arquivo sem volume de armazenamento registrado'); continue;
+    }
+    const inseguro = motivoCaminhoInseguro(pedido.nome_arquivo);
+    if (inseguro) { recusar(`nome_arquivo ${inseguro}`); continue; }
+    if (typeof extensaoNova !== 'string' || extensaoNova === '' ||
+        extensaoNova.includes('/') || extensaoNova.includes('\\') ||
+        extensaoNova.split('.').includes('..')) {
+      recusar('extensão inválida (não pode ser vazia nem conter separador de caminho)'); continue;
+    }
+
+    if (pedido.nome_arquivo === reg.nome_arquivo && extensaoNova === reg.extensao) {
+      item.status = 'sem_mudanca';
+      item.motivo = 'o nome gravado já é este';
+      resultado.sem_mudanca++;
+      resultado.detalhe.push(item);
+      continue;
+    }
+
+    const caminhoAtual = caminhoNoVolume(reg.volume, `${reg.nome_arquivo}.${reg.extensao}`);
+    const caminhoAlvo = caminhoNoVolume(reg.volume, `${pedido.nome_arquivo}.${extensaoNova}`);
+    const atual = partirCaminho(caminhoAtual);
+    const alvo = partirCaminho(caminhoAlvo);
+
+    const dirAlvo = await listar(alvo.dir);
+    if (dirAlvo === null) { recusar('a pasta do nome novo não abriu no volume'); continue; }
+    if (!dirAlvo.has(alvo.base)) {
+      recusar('o nome novo NÃO existe no volume (comparação exata, caixa inclusa)'); continue;
+    }
+
+    const dirAtual = await listar(atual.dir);
+    if (dirAtual !== null && dirAtual.has(atual.base)) {
+      recusar('o nome atual EXISTE no volume: isto seria renomear, e esta rota não move byte'); continue;
+    }
+
+    // O colidente se procura no banco antes de tentar gravar: o índice único
+    // barraria igual, mas com uma mensagem que não diz com quem colidiu.
+    const colisao = await db.conn.oneOrNone(`
+      SELECT id FROM acervo.arquivo
+      WHERE volume_armazenamento_id = $<volumeId> AND nome_arquivo = $<nome>
+        AND extensao = $<ext> AND id <> $<id>`,
+    { volumeId: reg.volume_armazenamento_id, nome: pedido.nome_arquivo, ext: extensaoNova, id: reg.id });
+    if (colisao) { recusar(`o nome novo já é do arquivo ${colisao.id} neste volume`); continue; }
+
+    let medido;
+    try {
+      medido = await fs.stat(caminhoAlvo);
+    } catch (e) {
+      recusar('não consegui medir o arquivo no nome novo'); continue;
+    }
+    const mbDisco = medido.size / (1024 * 1024);
+    const mbGravado = Number(reg.tamanho_mb);
+    // Um centésimo de MB: `tamanho_mb` é gravado como ponto flutuante a partir
+    // do mesmo cálculo, então a diferença legítima é de arredondamento.
+    if (Math.abs(mbDisco - mbGravado) > 0.01) {
+      recusar(`tamanho no volume (${mbDisco.toFixed(4)} MB) difere do gravado (${mbGravado.toFixed(4)} MB)`);
+      continue;
+    }
+    item.tamanho_mb = Number(mbDisco.toFixed(4));
+
+    if (conferirChecksum) {
+      try {
+        const { checksum } = await calculateChecksumStream(caminhoAlvo);
+        if (checksum !== reg.checksum) {
+          recusar('o sha256 do arquivo no nome novo difere do gravado'); continue;
+        }
+        item.checksum_conferido = true;
+      } catch (e) {
+        recusar('não consegui ler o arquivo no nome novo para o sha256'); continue;
+      }
+    }
+
+    if (dryRun) {
+      item.status = 'corrigiria';
+      resultado.corrigidos++;
+      resultado.detalhe.push(item);
+      continue;
+    }
+
+    try {
+      await db.conn.tx(async t => {
+        const antes = await auditoriaCtrl.lerAntes(t, 'acervo.arquivo', reg.id, 'Arquivo');
+        const depois = await t.oneOrNone(`
+          UPDATE acervo.arquivo
+          SET nome_arquivo = $<nome>, extensao = $<ext>, data_modificacao = NOW(),
+              usuario_modificacao_uuid = $<usuarioUuid>
+          WHERE id = $<id> AND nome_arquivo = $<atual> AND extensao = $<extAtual>
+          RETURNING *`,
+        {
+          nome: pedido.nome_arquivo, ext: extensaoNova, usuarioUuid, id: reg.id,
+          atual: reg.nome_arquivo, extAtual: reg.extensao
+        });
+        if (!depois) {
+          throw new Error('UPDATE afetou 0 linha(s); outro processo mexeu neste arquivo');
+        }
+        await auditoriaCtrl.registrar(t, {
+          tabela: 'acervo.arquivo',
+          registroId: reg.id,
+          operacao: 'U',
+          antes,
+          depois,
+          usuarioUuid,
+          contexto,
+          motivo,
+          entidadeId: reg.produto_id
+        });
+      });
+      item.status = 'corrigido';
+      resultado.corrigidos++;
+      resultado.detalhe.push(item);
+    } catch (erro) {
+      recusar(`falha ao gravar: ${erro.message}`);
+    }
+  }
+
+  logger.info('Correção de nome físico', {
+    usuarioUuid, motivo, dryRun,
+    pedidos: arquivos.length,
+    corrigidos: resultado.corrigidos,
+    falhas: resultado.falhas
+  });
+
+  return resultado;
+};
+
 module.exports = controller;

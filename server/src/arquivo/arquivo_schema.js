@@ -418,4 +418,41 @@ models.renomearPadrao = Joi.object().keys({
   motivo: Joi.string().min(5).required()
 });
 
+// Corrige o NOME FISICO gravado quando ele nao casa com a entrada real do
+// diretorio. NAO move byte: aqui quem esta errado e o catalogo, nao o arquivo.
+//
+// POR QUE EXISTE. A catalogacao in-place nomeia o arquivo auxiliar (.rrd, .rde,
+// .igw do ERDAS) com o nome do arquivo PRINCIPAL da versao, em vez de ler o
+// diretorio. Enquanto o fornecedor e consistente isso coincide, e coincidiu em
+// 336 auxiliares de quatro lotes. No Lote 1 do Convenio RS ele nao foi: 62
+// auxiliares vieram com outra caixa, e o catalogo ficou apontando um caminho que
+// so existe onde o sistema de arquivos ignora caixa. Pelo SMB do Windows todos
+// abriam; pelo NFS do servidor, os 62 "nao existiam" (26/08/2026).
+//
+// POR QUE O NOME VEM DO CLIENTE, ao contrario do renomearPadrao. La o alvo e
+// derivavel do metadado, e por isso deriva-lo e o certo. Aqui o alvo e um FATO
+// do diretorio, que metadado nenhum computa. Por isso o servidor nao aceita a
+// palavra do cliente: ele exige VER a entrada de diretorio (readdir, comparacao
+// exata) antes de gravar, e recusa quando o nome atual ainda existe no volume,
+// porque ai o pedido seria um renome, e renome nesta rota nao ha.
+models.corrigirNomeFisico = Joi.object().keys({
+  arquivos: Joi.array()
+    .items(Joi.object().keys({
+      id: Joi.number().integer().strict().positive().required(),
+      nome_arquivo: Joi.string().required(),
+      // Opcional: a caixa errada tambem pode estar na extensao (.RRD por .rrd).
+      // Ausente preserva a gravada.
+      extensao: Joi.string()
+    }))
+    .unique((a, b) => a.id === b.id)
+    .min(1)
+    .max(500)
+    .required(),
+  // O tamanho sozinho nao prova identidade, so descarta o obvio. O default e
+  // conferir o sha256, e desliga-lo e uma decisao consciente de quem chama.
+  conferir_checksum: Joi.boolean().default(true),
+  dry_run: Joi.boolean().default(true),
+  motivo: Joi.string().min(5).required()
+});
+
 module.exports = models
