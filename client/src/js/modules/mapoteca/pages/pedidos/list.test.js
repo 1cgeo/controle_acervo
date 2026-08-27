@@ -554,3 +554,126 @@ describe('busca por palavra-chave na lista de pedidos', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 });
+
+// A COLUNA DE CEP NASCE ESCONDIDA e aparece quando a busca da TABELA casa por
+// ela. Nao confundir com o campo de palavra-chave da barra de filtros, que vai
+// ao servidor: o CEP ja chega na linha, e quem filtra e a caixa da tabela.
+const PEDIDOS_COM_CEP = [
+  {
+    id: 172, data_pedido: '2026-08-20', cliente_nome: '5ª Divisão de Exército',
+    tipo_cliente_id: 1, tipo_cliente_nome: 'OM EB',
+    documento_solicitacao: 'DIEx 200', situacao_pedido_id: 8,
+    situacao_pedido_nome: 'Aguardando envio', prazo: '2026-09-10',
+    quantidade_produtos: 3, itens_impressos: 3, localizador_pedido: 'AA10-BB20-CC30',
+    cep_etiqueta: '81150-900',
+  },
+  {
+    id: 184, data_pedido: '2026-08-22', cliente_nome: 'Artilharia Divisionária da 5ª DE',
+    tipo_cliente_id: 1, tipo_cliente_nome: 'OM EB',
+    documento_solicitacao: 'DIEx 201', situacao_pedido_id: 8,
+    situacao_pedido_nome: 'Aguardando envio', prazo: '2026-09-11',
+    quantidade_produtos: 5, itens_impressos: 5, localizador_pedido: 'DD11-EE22-FF33',
+    // GRAVADO SEM HIFEN de proposito: o campo e texto livre no banco, e a busca
+    // tem de achar os dois pedidos com um termo so.
+    cep_etiqueta: '81150900',
+  },
+  {
+    id: 190, data_pedido: '2026-08-23', cliente_nome: 'Comando Militar do Sul',
+    tipo_cliente_id: 1, tipo_cliente_nome: 'OM EB',
+    documento_solicitacao: 'DIEx 202', situacao_pedido_id: 3,
+    situacao_pedido_nome: 'Em andamento', prazo: '2026-09-12',
+    quantidade_produtos: 1, itens_impressos: 0, localizador_pedido: 'GG44-HH55-II66',
+    // Sem etiqueta salva: 181 dos 195 pedidos estavam assim em 2026-08-27.
+    cep_etiqueta: null,
+  },
+];
+
+/** A caixa de busca da TABELA, que e outra coisa do campo de palavra-chave. */
+const buscaDaTabela = (container) =>
+  container.querySelector('.data-table-toolbar__search-input');
+
+const digitarNaTabela = (container, texto) => {
+  const campo = buscaDaTabela(container);
+  campo.value = texto;
+  campo.dispatchEvent(new Event('input', { bubbles: true }));
+};
+
+const cabecalhos = (container) =>
+  [...container.querySelectorAll('thead th')].map(th => th.textContent.trim());
+
+describe('renderPedidosList: busca por CEP da etiqueta', () => {
+  beforeEach(() => {
+    logarComo({ mapoteca: GERENTE });
+    svc.getPedidos.mockResolvedValue(PEDIDOS_COM_CEP);
+    svc.getAnosMapoteca.mockResolvedValue([ANO_ATUAL, ANO_ANTERIOR]);
+  });
+
+  test('a coluna CEP nao aparece na abertura da tela', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    expect(cabecalhos(container)).not.toContain('CEP');
+    expect(corpo(container).length).toBe(3);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('buscar o CEP filtra os pedidos e revela a coluna', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    digitarNaTabela(container, '81150');
+
+    expect(cabecalhos(container)).toContain('CEP');
+    const linhas = corpo(container);
+    expect(linhas.length).toBe(2);
+    expect(linhas.join(' ')).toContain('81150-900');
+    expect(linhas.join(' ')).not.toContain('Comando Militar do Sul');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('o hifen nao decide: 81150900 e 81150-900 acham os dois pedidos', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    digitarNaTabela(container, '81150900');
+    expect(corpo(container).length).toBe(2);
+
+    digitarNaTabela(container, '81150-900');
+    expect(corpo(container).length).toBe(2);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('buscar por outra coluna nao revela o CEP', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    digitarNaTabela(container, 'Comando');
+
+    expect(corpo(container).length).toBe(1);
+    expect(cabecalhos(container)).not.toContain('CEP');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('apagar a busca esconde a coluna de novo', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    digitarNaTabela(container, '81150');
+    expect(cabecalhos(container)).toContain('CEP');
+
+    digitarNaTabela(container, '');
+    expect(cabecalhos(container)).not.toContain('CEP');
+    expect(corpo(container).length).toBe(3);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});

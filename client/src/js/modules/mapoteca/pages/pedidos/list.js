@@ -333,6 +333,29 @@ export async function renderPedidosList(container, ctx) {
         label: 'Impressão',
         render: (row) => `${row.itens_impressos ?? 0}/${row.quantidade_produtos ?? 0}`,
       },
+      {
+        key: 'cep_etiqueta',
+        label: 'CEP',
+        // A COLUNA NASCE ESCONDIDA e aparece quando a busca casa por ela. A
+        // razao de ela existir e a mesma da coluna de palavras-chave acima:
+        // filtrar por algo que a tela nao mostra deixa quem filtrou sem saber
+        // POR QUE aquela linha entrou. A diferenca e que o CEP nao serve a
+        // leitura do dia a dia, e uma coluna a mais no meio das oito que ja
+        // disputam a largura custaria mais do que paga.
+        //
+        // A busca a alcanca mesmo escondida: `colunasVisiveis()` decide o que se
+        // PINTA, e a varredura da busca continua no conjunto inteiro.
+        revelarNaBusca: true,
+        // O CEP e texto livre no banco (`Joi.string().max(9)`, sem mascara), e o
+        // dialogo da etiqueta so preenche com hifen quando extrai o CEP do
+        // endereco. Quem digitar 90850240 grava assim, e cabe nos 9 caracteres.
+        // Comparar so os digitos, dos dois lados, e o que faz 81150900 achar
+        // 81150-900 e o contrario tambem.
+        searchNormalize: (texto) => texto.replace(/\D/g, ''),
+        // SEM `sortable`, de proposito: ordenar por uma coluna que some quando a
+        // busca se apaga deixaria a lista ordenada por um criterio invisivel.
+        render: (row) => row.cep_etiqueta || '-',
+      },
       { key: 'localizador_pedido', label: 'Localizador' },
     ],
     rows: [],

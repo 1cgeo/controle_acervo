@@ -20,7 +20,7 @@ function normalizeText(value) {
  * actions and (optional) multi-selection.
  *
  * @param {Object} options
- * @param {Array<{key:string, label:string, render?:(row:Object)=>(string|Node), sortable?:boolean, className?:string, sortValue?:(row:Object)=>(number|string)}>} options.columns
+ * @param {Array<{key:string, label:string, render?:(row:Object)=>(string|Node), sortable?:boolean, className?:string, sortValue?:(row:Object)=>(number|string), searchNormalize?:(texto:string)=>string, revelarNaBusca?:boolean}>} options.columns
  *        - render(row) returns a string or a DOM Node for the cell; default is row[key] ?? '-'.
  *        - sortable: enables click-to-sort on the header (sorts by row[key]).
  *        - sortValue(row): valor usado na ordenação, quando row[key] não serve.
@@ -28,6 +28,15 @@ function normalizeText(value) {
  *          chega como STRING no JSON, e comparar '1000.00' com '500.00' como
  *          texto ordena errado. Segundo, há coluna cujo critério é derivado
  *          (percentual liquidado), e não uma coluna do registro.
+ *        - searchNormalize(texto): normaliza os DOIS lados da busca, o valor da
+ *          célula e o termo digitado. Existe para a coluna cujo texto na tela
+ *          não é o texto que se digita para achá-la. O CEP é o caso de origem:
+ *          `mapoteca.etiqueta_envio.cep` é texto livre, aparece com hífen ou
+ *          sem, e quem procura digita de qualquer um dos dois jeitos.
+ *        - revelarNaBusca: a coluna NASCE ESCONDIDA e aparece quando a busca
+ *          corrente casar POR ELA. Escondida, ela continua entrando na busca.
+ *          É o que deixa a coluna explicar por que aquela linha entrou, sem
+ *          ocupar a tela nas buscas que não falam dela.
  * @param {{key:string, dir?:('asc'|'desc')}} [options.defaultSort] - ordem inicial
  *        da tabela. O clique no cabeçalho continua mandando a partir daí.
  * @param {(row:Object)=>string} [options.rowClassName] - classe extra do <tr>,
@@ -75,6 +84,9 @@ export function createDataTable({
   let sortDir = defaultSort && defaultSort.dir === 'desc' ? -1 : 1; // 1 asc, -1 desc
   let currentPage = 0;
   let currentPageSize = PAGE_SIZE_OPTIONS.includes(pageSize) ? pageSize : 10;
+  // As CHAVES das colunas `revelarNaBusca` que a busca corrente revelou. Guarda
+  // chave, e nunca a coluna, porque o cabeçalho se remonta a cada render.
+  let colunasReveladas = new Set();
   // Guarda CHAVES, nunca o objeto da linha. Ver keyOf().
   const selected = new Set();
 
@@ -146,13 +158,41 @@ export function createDataTable({
     paginationEl,
   ]);
 
+  /**
+   * A célula casa com o termo da busca?
+   *
+   * Com `searchNormalize`, a normalização vale nos DOIS lados. Aplicá-la só no
+   * valor faria '81150-900' digitado deixar de achar '81150900' gravado, que é
+   * metade do problema que ela existe para resolver.
+   *
+   * A GUARDA DO TERMO VAZIO não é detalhe. `searchNormalize` de CEP tira o que
+   * não é dígito, então 'Cap' vira '' e `includes('')` é sempre verdadeiro: sem
+   * a guarda, buscar por um nome casaria pelo CEP em toda linha que tem CEP, e
+   * revelaria a coluna sempre.
+   */
+  function casaColuna(col, row) {
+    const valor = normalizeText(row[col.key]);
+    if (!col.searchNormalize) return valor.includes(searchTerm);
+    const termo = col.searchNormalize(searchTerm);
+    return termo !== '' && col.searchNormalize(valor).includes(termo);
+  }
+
+  /**
+   * As colunas que a tabela PINTA agora.
+   *
+   * Difere de `columns`, que é o conjunto inteiro e continua sendo o que a
+   * BUSCA varre: coluna escondida que não fosse buscada nunca teria como se
+   * revelar.
+   */
+  function colunasVisiveis() {
+    return columns.filter(col => !col.revelarNaBusca || colunasReveladas.has(col.key));
+  }
+
   function getFilteredRows() {
     let result = allRows;
 
     if (searchTerm) {
-      result = result.filter(row =>
-        columns.some(col => normalizeText(row[col.key]).includes(searchTerm))
-      );
+      result = result.filter(row => columns.some(col => casaColuna(col, row)));
     }
 
     if (sortKey) {
@@ -246,7 +286,7 @@ export function createDataTable({
       cells.push(el('th', { className: 'data-table__checkbox-cell' }, [headerCheckbox]));
     }
 
-    for (const col of columns) {
+    for (const col of colunasVisiveis()) {
       if (col.sortable) {
         const indicator = sortKey === col.key ? (sortDir === 1 ? '▲' : '▼') : '';
 
@@ -351,7 +391,7 @@ export function createDataTable({
       cells.push(el('td', { className: 'data-table__checkbox-cell' }, [estado.checkbox]));
     }
 
-    for (const col of columns) {
+    for (const col of colunasVisiveis()) {
       const td = el('td', { className: col.className || '' });
       estado.dataCells.push(td);
       cells.push(td);
@@ -374,7 +414,7 @@ export function createDataTable({
     const estado = rowState.get(tr);
     estado.row = row;
 
-    columns.forEach((col, i) => {
+    colunasVisiveis().forEach((col, i) => {
       const td = estado.dataCells[i];
       const content = col.render ? col.render(row) : (row[col.key] ?? '-');
       if (content instanceof Node) {
@@ -424,7 +464,7 @@ export function createDataTable({
     // devolviam logo depois: era a causa principal do "a tela fica se movendo".
     const headCells = [];
     if (selectable) headCells.push(el('th', { className: 'data-table__checkbox-cell' }));
-    for (const col of columns) headCells.push(el('th', { textContent: col.label }));
+    for (const col of colunasVisiveis()) headCells.push(el('th', { textContent: col.label }));
     if (actions.length) {
       headCells.push(el('th', { className: 'data-table__actions-cell', textContent: 'Ações' }));
     }
@@ -557,6 +597,24 @@ export function createDataTable({
     releaseHeight();
 
     const filtered = getFilteredRows();
+
+    // A COLUNA `revelarNaBusca` APARECE quando a busca corrente casou POR ELA, e
+    // some quando a busca muda ou se apaga. Lê `filtered`, e não a página: a
+    // linha que casou pelo CEP pode estar na página 2, e a coluna tem de estar
+    // de pé quando a pessoa chegar nela.
+    const reveladas = new Set(
+      columns
+        .filter(col => col.revelarNaBusca && searchTerm && filtered.some(row => casaColuna(col, row)))
+        .map(col => col.key)
+    );
+    const mudouAsColunas = reveladas.size !== colunasReveladas.size
+      || [...reveladas].some(chave => !colunasReveladas.has(chave));
+    colunasReveladas = reveladas;
+    // O CORPO SE RECONCILIA entre renders, e `paintRow` casa a i-ésima coluna
+    // visível com a i-ésima célula que `buildRow` criou. Um <tr> montado com N
+    // células e repintado com N+1 colunas escorregaria o conteúdo de coluna,
+    // calado. Descartar a tabela força a remontagem com o número certo.
+    if (mudouAsColunas) resetTable();
 
     if (!filtered.length) {
       resetTable();

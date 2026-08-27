@@ -286,4 +286,48 @@ describe('Mapoteca - Etiqueta de envio do pedido', () => {
     const linhas = await auditoria(pedidoId)
     expect(linhas.length).toBeGreaterThanOrEqual(1)
   })
+
+  // O CEP DA ETIQUETA SAI NA LISTA DE PEDIDOS, e e por ele que a tela busca.
+  //
+  // A lista tem `LEFT JOIN mapoteca.etiqueta_envio`, entao o pedido SEM etiqueta
+  // tem de continuar na lista, com o campo nulo. Um INNER JOIN aqui apagaria da
+  // tela 181 dos 195 pedidos, calado -- que e o mesmo erro que os fragmentos de
+  // `query_fragments.js` existem para evitar no item avulso.
+  it('GET /pedido devolve o cep da etiqueta, e nulo quando nao ha etiqueta', async () => {
+    // UM cliente e dois pedidos: `criaCliente` usa sempre o mesmo nome, e
+    // `unique_cliente_nome_sigla` recusa o segundo cadastro com 409.
+    const clienteId = await criaCliente()
+    const comEtiqueta = await criaPedido(clienteId)
+    const semEtiqueta = await criaPedido(clienteId)
+    await salvar(comEtiqueta, ETIQUETA)
+
+    const res = await request(app)
+      .get('/api/mapoteca/pedido?ano=2026')
+      .set('Authorization', generateUserToken())
+    expect(res.status).toBe(200)
+
+    const linhaDe = id => res.body.dados.find(p => Number(p.id) === id)
+
+    expect(linhaDe(comEtiqueta).cep_etiqueta).toBe(ETIQUETA.cep)
+    // O pedido sem etiqueta CONTINUA na lista.
+    expect(linhaDe(semEtiqueta)).toBeDefined()
+    expect(linhaDe(semEtiqueta).cep_etiqueta).toBeNull()
+  })
+
+  // UMA etiqueta por pedido (unique_etiqueta_por_pedido), entao a juncao nao
+  // multiplica a linha do pedido. Se um dia a restricao cair, este teste acusa.
+  it('a juncao da etiqueta nao duplica o pedido na lista', async () => {
+    const pedidoId = await criaPedidoNovo()
+    await salvar(pedidoId, ETIQUETA)
+    // Grava DE NOVO: o upsert substitui, e nao acrescenta uma segunda linha.
+    await salvar(pedidoId, { ...ETIQUETA, cep: '90850-240' })
+
+    const res = await request(app)
+      .get('/api/mapoteca/pedido?ano=2026')
+      .set('Authorization', generateUserToken())
+
+    const linhas = res.body.dados.filter(p => Number(p.id) === pedidoId)
+    expect(linhas.length).toBe(1)
+    expect(linhas[0].cep_etiqueta).toBe('90850-240')
+  })
 })

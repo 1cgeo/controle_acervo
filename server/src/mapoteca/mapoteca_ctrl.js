@@ -504,6 +504,17 @@ controller.getPedidos = async (ano, palavraChave = null) => {
            p.data_prevista,
            p.localizador_pedido, p.localizador_envio, p.observacao_envio,
            p.forma_entrega_id, fe.nome AS forma_entrega_nome,
+           -- O CEP DA ETIQUETA, e nao o do cadastro do cliente. Ele existe na
+           -- lista para a BUSCA da tabela alcanca-lo: a coluna nasce escondida
+           -- e so aparece quando a busca casa por ela.
+           --
+           -- A fonte e uma so de proposito. O endereco_entrega_principal do
+           -- cliente traz um CEP em 148 dos 195 pedidos, contra 14 pela
+           -- etiqueta, e ainda assim nao serve: medido em 2026-08-27, ele
+           -- DIVERGE da etiqueta em 2 dos 14 (pedidos 172 e 191). A etiqueta e
+           -- o endereco que foi para o PACOTE, e e por ele que se procura um
+           -- envio. (Sem crase aqui: template literal.)
+           ee.cep AS cep_etiqueta,
            u.nome AS usuario_criacao_nome,
            -- As duas datas do REGISTRO, distintas da data_pedido, que e a data
            -- do DIEx. A lista mostra a alteracao para quem procura o pedido
@@ -522,6 +533,9 @@ controller.getPedidos = async (ano, palavraChave = null) => {
     LEFT JOIN mapoteca.forma_entrega AS fe ON fe.code = p.forma_entrega_id
     LEFT JOIN dgeo.usuario AS u ON u.id = p.usuario_criacao_id
     LEFT JOIN pit.meta_vigente AS mp ON mp.id = p.meta_pit_id
+    -- Nao multiplica linha: a restricao unique_etiqueta_por_pedido garante UMA
+    -- etiqueta por pedido, e ela ja e o indice que esta juncao usa.
+    LEFT JOIN mapoteca.etiqueta_envio AS ee ON ee.pedido_id = p.id
     WHERE ${filtroAno('p.data_pedido')}
       ${palavraChave
         ? `-- O operador e @>, e o cast para varchar[] existe para ele: o GIN de
