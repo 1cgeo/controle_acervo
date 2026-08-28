@@ -634,6 +634,7 @@ AS $$
         WHEN 7 THEN 'TEM'    WHEN 8 THEN 'CDGVTEM' WHEN 9 THEN 'M3D'
         WHEN 10 THEN 'PC'    WHEN 11 THEN 'CDGVCO' WHEN 12 THEN 'INSUMO'
         WHEN 13 THEN 'LEVTOPO'
+        WHEN 14 THEN 'P360'
         ELSE 'TP' || p_tipo_produto_id::text
       END AS tp,
       's' || lpad(p_subtipo_produto_id::text, 2, '0') AS sub,

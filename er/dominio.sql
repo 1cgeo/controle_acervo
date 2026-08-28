@@ -137,7 +137,10 @@ INSERT INTO dominio.tipo_produto (code, nome) VALUES
 (10, 'Ponto de controle'),
 (11, 'CDGV Carta Ortoimagem'),
 (12, 'Insumos fotogramétricos'),
-(13, 'Levantamento topográfico');
+(13, 'Levantamento topográfico'),
+-- A panoramica 360 do ebgeo_360: um produto por PROJETO, e nao por foto. Ver
+-- migrations/2026-08-28_a_panoramica_360_entra_no_dominio.sql.
+(14, 'Panorâmica 360');
 
 CREATE TABLE dominio.subtipo_produto (
 	code SMALLINT NOT NULL PRIMARY KEY,
@@ -180,7 +183,10 @@ INSERT INTO dominio.subtipo_produto (code, nome, tipo_id) VALUES
 (27, 'Carta Ortoimagem Especial', 7),
 (28, 'Carta Topográfica Não-SCN', 2),
 (29, 'Carta Aeronáutica', 7),
-(30, 'CDGV Especial', 8);
+(30, 'CDGV Especial', 8),
+-- Nomeia a REPRESENTACAO da panoramica, como o 25 faz para o Modelo 3D: hoje
+-- ela existe em piramide de tiles, e o full_webp foi podado em 2026-08-19.
+(31, 'Panorâmica 360 em pirâmide de tiles', 14);
 
 -- Carta Topografica Militar define seu proprio produto (distinta da carta civil no
 -- mesmo MI): a chave de identidade do produto e o subtipo, nao o tipo.
