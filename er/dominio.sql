@@ -39,7 +39,11 @@ INSERT INTO dominio.tipo_escala (code, nome) VALUES
 (2, '1:50.000'),
 (3, '1:100.000'),
 (4, '1:250.000'),
-(5, 'Escala personalizada');
+(5, 'Escala personalizada'),
+-- O produto sem escala: modelo 3D e panoramica 360 nao tem denominador, e a
+-- escala de um tileset varia com a distancia da camera. Ver
+-- migrations/2026-08-28_o_modelo_3d_nao_tem_escala.sql.
+(6, 'Sem escala');
 
 CREATE TABLE dominio.situacao_carregamento(
 	code SMALLINT NOT NULL PRIMARY KEY,
