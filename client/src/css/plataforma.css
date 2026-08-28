@@ -775,6 +775,14 @@
   color: var(--color-primary);
 }
 
+/* Quantos itens da meta as caixas de filtro tiraram da tela. Fica APAGADA de
+   proposito: ela avisa que o subtotal ao lado conta mais linhas do que se ve,
+   e nao e um estado da meta. */
+.grade-pit__origem--oculta {
+  background-color: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  color: var(--text-secondary);
+}
+
 .grade-pit__realizado { display: block; }
 
 /* O planejado e o numero de referencia, nao o dado: menor e apagado. */

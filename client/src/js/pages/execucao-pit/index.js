@@ -1,7 +1,7 @@
 import { el, clearChildren } from '@utils/dom.js';
 import { reconciliar } from '@utils/reconciliar.js';
 import { showSuccess, showError, showWarning } from '@utils/toast.js';
-import { createSelectField } from '@components/form-fields/form-fields.js';
+import { createSelectField, createCheckboxField } from '@components/form-fields/form-fields.js';
 import { estadoErro } from '@components/estado-erro.js';
 import {
   getGradePit,
@@ -48,6 +48,17 @@ const numero = (v) => (v == null ? '·' : String(v));
  * jogada fora a cada desenho, e trocar o modo bastava para isso: a tela pulava e
  * o campo aberto numa célula morria com a linha que o continha.
  *
+ * AS DUAS CAIXAS ESCONDEM LINHA, e nunca número. Trinta e sete linhas de meta
+ * cabem na tela, mas a pergunta do mês é "o que falta EU lançar": as automáticas
+ * ninguém digita, e a meta que já fechou o ano não pede mais nada. Escondê-las
+ * deixa na tela só o trabalho que sobrou. Nada do que sai daqui muda de valor: o
+ * subtotal do grupo continua contando o item escondido, e o resumo diz quantas
+ * saíram. Filtro que apaga em silêncio faz a pessoa ler a tela como o ano
+ * inteiro.
+ *
+ * A CAIXA DAS AUTOMÁTICAS SEGUE O MODO, pela mesma razão que a etiqueta da linha
+ * segue: a mesma meta pode ter o plano calculado e o realizado à mão.
+ *
  * SÓ A FOLHA RECEBE LANÇAMENTO. A meta que se subdivide vira linha de grupo com
  * o subtotal dos itens; quem entrega é o item. O servidor recusa lançamento no
  * cabeçalho, e oferecê-lo aqui seria oferecer o 400.
@@ -68,6 +79,8 @@ export async function renderExecucaoPit(container, _ctx) {
   let anoSelecionado = hoje.getFullYear();
   let modo = EXECUTAR;
   let linhas = [];
+  let esconderAutomaticas = false;
+  let esconderConcluidas = false;
 
   const anoFilter = createSelectField({
     label: 'Ano',
@@ -99,6 +112,33 @@ export async function renderExecucaoPit(container, _ctx) {
     },
   });
 
+  // "Planejar (o que se pretende)" nao cabe nos 200px padrao da barra de
+  // filtros, e o `<select>` corta a frase no meio: sobra "Planejar (o que se",
+  // que e onde a explicacao entre parenteses estava justamente. O modificador
+  // `--largo` ja existe na barra para o campo que precisa de mais.
+  modoFilter.element.classList.add('form-field--largo');
+
+  const caixaDeFiltro = (label, title, aoMudar) => {
+    const campo = createCheckboxField({ label, checked: false, onChange: aoMudar });
+    campo.element.title = title;
+    return campo;
+  };
+
+  const automaticasFilter = caixaDeFiltro(
+    'Esconder as automáticas',
+    'A meta cujo número o sistema calcula, no modo em que a grade está. '
+      + 'A mesma meta pode ter o plano calculado e o realizado à mão, '
+      + 'então trocar de modo muda quais somem.',
+    (marcado) => { esconderAutomaticas = marcado; desenhar(); },
+  );
+
+  const concluidasFilter = caixaDeFiltro(
+    'Esconder as concluídas',
+    'A meta cujo realizado já alcançou a quantidade do ano. '
+      + 'Meta sem quantidade do ano cadastrada nunca conclui, e fica na tela.',
+    (marcado) => { esconderConcluidas = marcado; desenhar(); },
+  );
+
   const grade = el('div', { className: 'grade-pit' });
   // O `<tr>` de cada linha de grupo, para o subtotal ser corrigido sem
   // refazer a grade.
@@ -119,7 +159,12 @@ export async function renderExecucaoPit(container, _ctx) {
     el('div', {
       className: 'page__filters',
       style: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '16px' },
-    }, podeEscrever ? [anoFilter.element, modoFilter.element] : [anoFilter.element]),
+    }, [
+      anoFilter.element,
+      podeEscrever ? modoFilter.element : null,
+      automaticasFilter.element,
+      concluidasFilter.element,
+    ]),
     resumo,
     grade,
     montarLegenda(),
@@ -209,6 +254,39 @@ export async function renderExecucaoPit(container, _ctx) {
   function calculada(linha) {
     return modo === PLANEJAR ? !!linha.planejada_calculada : !!linha.realizada_calculada;
   }
+
+  /**
+   * A meta que JA FECHOU o ano: o realizado alcançou a quantidade prevista.
+   *
+   * A RÉGUA É A DO ANO, e não a do mês: a coluna `%` da direita é essa mesma
+   * conta, então a caixa esconde exatamente o que a tela já mostra em 100%.
+   *
+   * META SEM QUANTIDADE DO ANO NUNCA CONCLUI. Sem o denominador não há o que
+   * alcançar, e escondê-la por "realizado maior que zero" apagaria da tela justo
+   * a meta que está com o cadastro incompleto.
+   */
+  function concluida(linha) {
+    const previsto = Number(linha.quantidade_prevista);
+    if (!previsto || previsto <= 0) return false;
+    return Number(linha.realizado || 0) >= previsto;
+  }
+
+  const visivel = (linha) => !(esconderAutomaticas && calculada(linha))
+    && !(esconderConcluidas && concluida(linha));
+
+  /**
+   * As linhas que a grade DESENHA.
+   *
+   * O array `linhas` continua inteiro, e é de propósito: `subtotalDoGrupo` soma
+   * por ele. O subtotal é fato da META, e não da caixa marcada; recalculá-lo
+   * sobre o que sobrou faria a meta parecer menos adiantada só porque o item
+   * pronto saiu da tela.
+   */
+  const linhasVisiveis = () => linhas.filter(visivel);
+
+  /** Quantos itens da meta a caixa tirou da tela. */
+  const ocultosDoGrupo = (numeroMeta) => linhas
+    .filter(l => l.numero_meta === numeroMeta && !visivel(l)).length;
 
   /**
    * O mês que ainda não chegou, no ano que está na tela.
@@ -332,9 +410,18 @@ export async function renderExecucaoPit(container, _ctx) {
       });
       if (disposed) return;
 
+      // A gravação pode CRUZAR a régua da caixa: lançar o último item de uma
+      // meta com "Esconder as concluídas" marcada a conclui, e ela tem de sair
+      // da tela agora. Fora esse caso a grade não se remonta, e é o que preserva
+      // a célula para onde o Tab acabou de levar o foco.
+      const eraVisivel = visivel(linha);
       aplicarLocalmente(linha, mes, valor);
-      redesenharLinha(linha);
-      montarResumo();
+      if (visivel(linha) !== eraVisivel) {
+        desenhar();
+      } else {
+        redesenharLinha(linha);
+        montarResumo();
+      }
       showSuccess(modo === PLANEJAR ? 'Planejamento salvo' : 'Execução lançada');
     } catch (err) {
       if (disposed) return;
@@ -444,6 +531,9 @@ ${motivo}` : '');
 
   const assinaturaDoGrupo = (linha) => JSON.stringify([
     linha.descricao, subtotalDoGrupo(linha.numero_meta),
+    // A marca de item escondido muda com a caixa, e sem ela na assinatura o
+    // grupo ficaria com a contagem da caixa anterior.
+    linha.ocultos || 0,
   ]);
 
   /**
@@ -559,6 +649,12 @@ ${motivo}` : '');
     tr.replaceChild(el('td', { className: 'grade-pit__rotulo' }, [
       el('span', { className: 'grade-pit__codigo', textContent: `Meta ${linha.numero_meta}` }),
       linha.descricao || '',
+      linha.ocultos ? el('span', {
+        className: 'grade-pit__origem grade-pit__origem--oculta',
+        title: 'Itens escondidos pelas caixas acima. O subtotal desta linha '
+          + 'continua contando todos eles.',
+        textContent: `${linha.ocultos} escondido(s)`,
+      }) : null,
     ]), tr.firstChild);
     redesenharGrupo(linha.numero_meta);
   }
@@ -699,6 +795,10 @@ ${motivo}` : '');
           // `descricao` é o nome que a linha de grupo imprime. Ele vem de
           // `pit.meta.nome`, e não da declaração de revisão nenhuma.
           descricao: item.nome || '',
+          // O subtotal ao lado conta TODOS os itens da meta, inclusive os que a
+          // caixa escondeu. Sem esta marca, o grupo mostraria 24 com um item de
+          // 2 embaixo, e a soma pareceria errada.
+          ocultos: ocultosDoGrupo(item.numero_meta),
         });
       }
       saida.push(item);
@@ -738,6 +838,23 @@ ${motivo}` : '');
       return;
     }
 
+    const visiveis = linhasVisiveis();
+
+    // O ANO CHEIO COM A TELA VAZIA É OUTRO ESTADO, e dizer aqui "nenhuma meta
+    // cadastrada" seria mentir sobre o ano: quem marcou as duas caixas num ano
+    // já fechado esconde as trinta e sete linhas, e leria que o PIT não existe.
+    if (!visiveis.length) {
+      descartarGrade();
+      grade.appendChild(el('p', {
+        style: { padding: '24px', color: 'var(--text-secondary)' },
+      }, [
+        `As ${linhas.length} meta(s) de ${anoSelecionado} estão escondidas pelas `,
+        'caixas acima. Desmarque uma delas para ver a grade.',
+      ]));
+      montarResumo();
+      return;
+    }
+
     // A tabela só se cria quando NÃO existe. Nos demais desenhos ela fica, e é
     // o que permite reconciliar o corpo em vez de refazê-lo. O cabeçalho é
     // constante: doze meses e três totais, em qualquer ano.
@@ -758,7 +875,7 @@ ${motivo}` : '');
     // As linhas vêm ordenadas por (numero_meta, item), e o cabeçalho de cada
     // meta é INSERIDO aqui, antes do primeiro item dela. O subtotal do grupo sai
     // do array `linhas`, e não do DOM, então a ordem não o afeta.
-    reconciliar(corpoTabela, comCabecalhosDeGrupo(linhas), {
+    reconciliar(corpoTabela, comCabecalhosDeGrupo(visiveis), {
       chave: chaveDaLinha,
       criar: (linha) => (linha.grupo ? linhaDeGrupo(linha) : linhaDaMeta(linha)),
       atualizar: (tr, linha) => (linha.grupo
@@ -776,7 +893,12 @@ ${motivo}` : '');
     const divergentes = folhas.filter(l => l.quantidade_prevista != null
       && (l.planejado ?? 0) !== l.quantidade_prevista).length;
 
+    // O QUE SAIU DA TELA SE DIZ. Contagem de filtro que some em silêncio faz a
+    // pessoa ler as linhas que sobraram como se fossem o ano inteiro.
+    const escondidas = folhas.length - linhasVisiveis().length;
+
     const partes = [`${folhas.length} meta(s) em ${anoSelecionado}.`];
+    if (escondidas) partes.push(`${escondidas} escondida(s) pelas caixas.`);
     if (semPrevisto) partes.push(`${semPrevisto} sem quantidade do ano.`);
     if (divergentes) partes.push(`${divergentes} com o plano fora da quantidade do ano.`);
     resumo.textContent = partes.join(' ');

@@ -354,6 +354,20 @@
   min-width: 0;
 }
 
+/* O filtro que e CAIXA nao estica. A largura de 200px e o `width: 100%` acima
+   servem ao campo que se digita; num checkbox eles dao um quadrado de 200px e
+   um rotulo espremido ao lado. A caixa ocupa o que o rotulo dela pedir. */
+.page__filters > .form-field--checkbox {
+  flex: 0 0 auto;
+  align-items: center;
+  padding-bottom: var(--space-xs);
+}
+
+.page__filters .form-field__checkbox {
+  width: 18px;
+  flex: 0 0 18px;
+}
+
 /* Acao (Limpar, Nova revisao) e contagem ficam na linha, alinhadas pela base
    dos campos e encostadas na DIREITA da propria celula.
 

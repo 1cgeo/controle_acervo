@@ -445,3 +445,229 @@ describe('execucao do PIT: a celula calculada nao se digita', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 });
+
+// -----------------------------------------------------------------------------
+// AS DUAS CAIXAS: esconder as automaticas e esconder as concluidas
+// -----------------------------------------------------------------------------
+//
+// A pergunta do mes na grade e "o que falta EU lancar". As automaticas ninguem
+// digita e a meta que ja fechou o ano nao pede mais nada, entao as duas caixas
+// deixam na tela so o trabalho que sobrou.
+//
+// O que estes casos FIXAM, e que nao se ve olhando a tela:
+//  - a caixa esconde LINHA e nunca numero: o subtotal do grupo continua contando
+//    o item escondido, e a linha de grupo diz quantos sairam;
+//  - a caixa das automaticas SEGUE O MODO, pela mesma razao que a etiqueta da
+//    linha segue: a mesma meta pode ter o plano calculado e o realizado a mao;
+//  - meta sem quantidade do ano NUNCA conclui, e nao some;
+//  - com tudo escondido a tela NAO diz que o ano esta vazio, que e a afirmacao
+//    oposta e a que faria a pessoa cadastrar meta duplicada.
+describe('execucao do PIT: as caixas que escondem linha', () => {
+  // Quatro itens, e cada um cobre um ramo: manual em aberto (fica sempre),
+  // manual concluida, automatica, e a sem quantidade do ano. Com menos que isso
+  // um filtro que escondesse demais passaria.
+  const GRADE_FILTRO = () => [
+    {
+      meta_id: '2', ano: 2026, numero_meta: 1, nome: 'Producao de Geoinformacao',
+      item: '1.1', descricao: 'Produzir Carta Topografica 1:25.000',
+      quantidade_prevista: 24, unidade: 'carta',
+      meses: [{ id: '11', mes: 5, planejada: 1, realizada: 8 }],
+      realizado: 8, planejado: 1,
+    },
+    {
+      meta_id: '3', ano: 2026, numero_meta: 1, nome: 'Producao de Geoinformacao',
+      item: '1.2', descricao: 'Produzir Carta Ortoimagem',
+      quantidade_prevista: 5, unidade: 'carta',
+      meses: [{ id: '12', mes: 5, planejada: 5, realizada: 5 }],
+      realizado: 5, planejado: 5,
+    },
+    {
+      meta_id: '4', ano: 2026, numero_meta: 2, nome: 'Capacitacao',
+      item: '2.1', descricao: 'Capacitar o efetivo',
+      quantidade_prevista: 10, unidade: 'militar',
+      origem: 'as capacitacoes cadastradas',
+      planejada_calculada: true, realizada_calculada: true,
+      meses: [{ id: '20', mes: 5, planejada: 2, realizada: 2 }],
+      realizado: 2, planejado: 2,
+    },
+    {
+      meta_id: '5', ano: 2026, numero_meta: 3, nome: 'Apoio',
+      item: '3.1', descricao: 'Atender demanda de apoio',
+      quantidade_prevista: null, unidade: null,
+      meses: [{ id: '30', mes: 5, planejada: null, realizada: 3 }],
+      realizado: 3, planejado: 0,
+    },
+  ];
+
+  /** Marca ou desmarca a caixa pelo rotulo, como a pessoa a marca. */
+  function marcarCaixa(container, rotulo, marcado = true) {
+    const label = [...container.querySelectorAll('.page__filters label')]
+      .find(l => l.textContent.includes(rotulo));
+    const caixa = label.parentElement.querySelector('input[type="checkbox"]');
+    caixa.checked = marcado;
+    caixa.dispatchEvent(new Event('change'));
+  }
+
+  const temItem = (container, item) => linhas(container)
+    .some(tr => tr.textContent.includes(item));
+
+  test('a caixa das automaticas tira a calculada e deixa a que se digita', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce(GRADE_FILTRO());
+
+    const { container, cleanup } = await montar();
+    expect(temItem(container, '2.1')).toBe(true);
+
+    marcarCaixa(container, 'Esconder as automáticas');
+    await flush();
+
+    expect(temItem(container, '2.1')).toBe(false);
+    // VARIANCIA: as tres manuais ficam. Sem isto, uma caixa que esvaziasse a
+    // grade passaria.
+    expect(temItem(container, '1.1')).toBe(true);
+    expect(temItem(container, '1.2')).toBe(true);
+    expect(temItem(container, '3.1')).toBe(true);
+
+    // E desmarcar traz de volta.
+    marcarCaixa(container, 'Esconder as automáticas', false);
+    await flush();
+    expect(temItem(container, '2.1')).toBe(true);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A CAIXA SEGUE O MODO. A meta com o plano calculado e o realizado a mao e
+  // automatica em Planejar e manual em Executar, e a caixa tem de concordar com
+  // a etiqueta da propria linha.
+  test('a caixa das automaticas segue o modo Planejar/Executar', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce([{
+      ...GRADE_FILTRO()[0],
+      origem: 'as versoes do acervo',
+      planejada_calculada: true,
+      realizada_calculada: false,
+    }]);
+
+    const { container, cleanup } = await montar();
+
+    marcarCaixa(container, 'Esconder as automáticas');
+    await flush();
+    // Em Executar o numero e digitado, entao a linha fica.
+    expect(temItem(container, '1.1')).toBe(true);
+
+    trocarModo(container, 'quantidade_planejada');
+    await flush();
+    // Em Planejar o numero vem do sistema, e a mesma linha some.
+    expect(temItem(container, '1.1')).toBe(false);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('a caixa das concluidas tira a que fechou o ano, e a sem quantidade fica', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce(GRADE_FILTRO());
+
+    const { container, cleanup } = await montar();
+
+    marcarCaixa(container, 'Esconder as concluídas');
+    await flush();
+
+    // 1.2 entregou os 5 que o ano pedia.
+    expect(temItem(container, '1.2')).toBe(false);
+    // 1.1 entregou 8 dos 24.
+    expect(temItem(container, '1.1')).toBe(true);
+    // 3.1 nao tem quantidade do ano: sem denominador nao ha o que alcancar, e
+    // esconde-la apagaria da tela justo a meta com o cadastro incompleto.
+    expect(temItem(container, '3.1')).toBe(true);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O NUMERO NAO MUDA COM A CAIXA. O subtotal e fato da META: recalcula-lo sobre
+  // o que sobrou faria a meta parecer menos adiantada so porque o item pronto
+  // saiu da tela.
+  test('o subtotal do grupo conta o item escondido, e a linha diz quantos', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce(GRADE_FILTRO());
+
+    const { container, cleanup } = await montar();
+
+    marcarCaixa(container, 'Esconder as concluídas');
+    await flush();
+
+    const grupo = linhas(container).find(tr => tr.textContent.includes('Meta 1'));
+    const celulasDoGrupo = [...grupo.children];
+    // Realizado do grupo: 8 do item 1.1 mais os 5 do 1.2, que saiu da tela.
+    expect(celulasDoGrupo[celulasDoGrupo.length - 3].textContent).toBe('13');
+    expect(celulasDoGrupo[celulasDoGrupo.length - 2].textContent).toBe('29');
+    // E o grupo AVISA que ha item fora da tela, senao a soma pareceria errada.
+    expect(grupo.textContent).toContain('1 escondido(s)');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('o resumo diz quantas linhas as caixas tiraram', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce(GRADE_FILTRO());
+
+    const { container, cleanup } = await montar();
+    expect(container.textContent).toContain('4 meta(s) em 2026.');
+    expect(container.textContent).not.toContain('escondida(s)');
+
+    marcarCaixa(container, 'Esconder as automáticas');
+    marcarCaixa(container, 'Esconder as concluídas');
+    await flush();
+
+    // A automatica e a concluida: duas saem, e as quatro continuam sendo o ano.
+    expect(container.textContent).toContain('4 meta(s) em 2026.');
+    expect(container.textContent).toContain('2 escondida(s) pelas caixas.');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // Com as duas caixas num ano ja fechado a grade fica vazia, e dizer aqui
+  // "nenhuma meta cadastrada" seria a afirmacao OPOSTA sobre o ano.
+  test('a grade esvaziada pelas caixas nao se confunde com ano sem meta', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce([GRADE_FILTRO()[1]]);
+
+    const { container, cleanup } = await montar();
+
+    marcarCaixa(container, 'Esconder as concluídas');
+    await flush();
+
+    expect(linhas(container).length).toBe(0);
+    expect(container.textContent).toContain('escondidas pelas');
+    expect(container.textContent).not.toContain('Nenhuma meta cadastrada');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A GRAVACAO CRUZA A REGUA: lancar o que faltava conclui a meta, e com a caixa
+  // marcada ela tem de sair da tela na hora.
+  test('a meta que a gravacao conclui sai da tela com a caixa marcada', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce(GRADE_FILTRO());
+
+    const { container, cleanup } = await montar();
+
+    marcarCaixa(container, 'Esconder as concluídas');
+    await flush();
+    expect(temItem(container, '1.1')).toBe(true);
+
+    // Maio ja tem 8; lancar 24 fecha os 24 do ano.
+    const item = linhas(container).find(tr => tr.textContent.includes('1.1'));
+    const maio = celulas(item)[4];
+    maio.click();
+    await flush();
+    const input = maio.querySelector('input');
+    input.value = '24';
+    input.dispatchEvent(new Event('blur'));
+    await flush();
+
+    expect(salvarExecucaoPit).toHaveBeenCalled();
+    expect(temItem(container, '1.1')).toBe(false);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
