@@ -55,7 +55,8 @@ INSERT INTO dominio.situacao_carregamento (code, nome) VALUES
 (2, 'Carregado BDGEx Ostensivo'),
 (3, 'Carregado BDGEx Operações'),
 (4, 'Carregado IGW'),
-(5, 'Carregado GEDW');
+(5, 'Carregado GEDW'),
+(6, 'Carregado EBGeo');
 
 CREATE TABLE dominio.tipo_arquivo(
 	code SMALLINT NOT NULL PRIMARY KEY,

@@ -50,7 +50,11 @@ const SITUACAO_CARREGAMENTO = {
   CARREGADO_BDGEX_OSTENSIVO: 2,
   CARREGADO_BDGEX_OPERACOES: 3,
   CARREGADO_IGW: 4,
-  CARREGADO_GEDW: 5
+  CARREGADO_GEDW: 5,
+  // O EBGeo entrou em 2026-08-31: e o destino do Modelo 3D e da Panoramica 360,
+  // e sem ele a 2.4 do RPCMTec nao podia listar nenhum dos dois. O GEDW ao lado
+  // e o portal da Airbus do TREx, e nao serve de sinonimo.
+  CARREGADO_EBGEO: 6
 }
 
 // dominio.subtipo_produto: os TRINTA codes, e não mais um subconjunto.
@@ -99,7 +103,10 @@ const SUBTIPO_PRODUTO = {
   CARTA_ORTOIMAGEM_ESPECIAL: 27,
   CARTA_TOPOGRAFICA_NAO_SCN: 28,
   CARTA_AERONAUTICA: 29,
-  CDGV_ESPECIAL: 30
+  CDGV_ESPECIAL: 30,
+  // O 31 nasceu com o tipo 14 (Panoramica 360) em 2026-08-28 e ficou de fora
+  // desta lista. Ele nomeia a REPRESENTACAO, como o 25 faz para o Modelo 3D.
+  PANORAMICA_360_TILES: 31
 }
 
 // dominio.tipo_produto (subconjuntos usados em relatórios da mapoteca)
