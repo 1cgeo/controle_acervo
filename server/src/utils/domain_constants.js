@@ -106,7 +106,10 @@ const SUBTIPO_PRODUTO = {
   CDGV_ESPECIAL: 30,
   // O 31 nasceu com o tipo 14 (Panoramica 360) em 2026-08-28 e ficou de fora
   // desta lista. Ele nomeia a REPRESENTACAO, como o 25 faz para o Modelo 3D.
-  PANORAMICA_360_TILES: 31
+  PANORAMICA_360_TILES: 31,
+  // O interior navegavel em primeira pessoa, que nao e 3D Tiles e nao tem
+  // geometria propria: o referencial e local, e o acervo guarda a do predio.
+  MODELO_3D_INDOOR: 32
 }
 
 // dominio.tipo_produto (subconjuntos usados em relatórios da mapoteca)

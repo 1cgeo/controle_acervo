@@ -187,7 +187,8 @@ INSERT INTO dominio.subtipo_produto (code, nome, tipo_id) VALUES
 (30, 'CDGV Especial', 8),
 -- Nomeia a REPRESENTACAO da panoramica, como o 25 faz para o Modelo 3D: hoje
 -- ela existe em piramide de tiles, e o full_webp foi podado em 2026-08-19.
-(31, 'Panorâmica 360 em pirâmide de tiles', 14);
+(31, 'Panorâmica 360 em pirâmide de tiles', 14),
+(32, 'Modelo 3D indoor navegável', 9);
 
 -- Carta Topografica Militar define seu proprio produto (distinta da carta civil no
 -- mesmo MI): a chave de identidade do produto e o subtipo, nao o tipo.
