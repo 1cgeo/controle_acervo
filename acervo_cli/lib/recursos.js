@@ -205,9 +205,18 @@ const RECURSOS = {
         envelope: 'mensagem',
         confirmar: {
           campo: 'produto_ids',
-          motivo: 'exclui o produto E todas as suas versoes e arquivos (soft-delete: ' +
-            'as linhas vao para as tabelas *_deletado e os bytes ficam no volume, ' +
-            'mas o acervo deixa de enxerga-los)'
+          // SO O ARQUIVO E SOFT-DELETE, e o texto antigo prometia mais do que o
+          // banco entrega: ele dizia "as linhas vao para as tabelas *_deletado",
+          // no plural, e as unicas que existem sao `acervo.arquivo_deletado` e
+          // `acervo.download_deletado`. Nao ha `produto_deletado` nem
+          // `versao_deletado`. Quem apagasse um produto SEM arquivo (uma folha
+          // so planejada, por exemplo) nao deixaria linha em tabela de trilha
+          // nenhuma, e iria procurar a recuperacao onde ela nao esta.
+          motivo: 'exclui o produto E todas as suas versoes e arquivos. O ARQUIVO ' +
+            'e soft-delete (a linha vai para acervo.arquivo_deletado e os bytes ' +
+            'ficam no volume); as linhas de PRODUTO, VERSAO e relacionamento sao ' +
+            'REMOVIDAS. O que resta delas e o evento em auditoria.evento, com ' +
+            'dados_antes e o motivo, e e de la que sai qualquer reconstrucao'
         }
       },
       'excluir-versao': {
@@ -218,7 +227,16 @@ const RECURSOS = {
         envelope: 'mensagem',
         confirmar: {
           campo: 'versao_ids',
-          motivo: 'exclui a versao E os arquivos dela (soft-delete)'
+          // Ver o comentario do excluir-produto: "soft-delete" sozinho era falso
+          // aqui pela mesma razao. A nota da ULTIMA VERSAO entra junto porque a
+          // guarda do servidor recusa deixar produto sem versao nenhuma, e quem
+          // le a ajuda descobria isso pelo 400.
+          motivo: 'exclui a versao E os arquivos dela. O ARQUIVO e soft-delete (a ' +
+            'linha vai para acervo.arquivo_deletado e os bytes ficam no volume); ' +
+            'as linhas de VERSAO e de relacionamento sao REMOVIDAS, e o que resta ' +
+            'delas e o evento em auditoria.evento, com dados_antes e o motivo. ' +
+            'A UNICA versao de um produto e recusada (400): ali o ato e ' +
+            'excluir-produto, que leva o produto junto'
         }
       },
       'criar-produtos': {

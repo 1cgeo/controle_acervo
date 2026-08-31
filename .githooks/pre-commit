@@ -63,16 +63,27 @@ fi
 # ---------------------------------------------------------------------------
 # Sem Python, o hook FALHA em vez de deixar passar em silencio. Guard que se
 # desliga sozinho quando falta dependencia nao e guard.
+#
+# EXISTIR NAO E RODAR, e no Windows os dois se separam (medido em 2026-08-31).
+# O `command -v python` acha o ATALHO da Microsoft Store, que nao e o
+# interpretador: ele imprime "Python nao foi encontrado" e sai com 49. O laco
+# antigo parava no primeiro nome que EXISTIA, escolhia esse atalho, e o guard
+# abortava todo commit da maquina com uma mensagem que acusava vazamento onde
+# nao havia. Nesta maquina `python` e `python3` saem com 49 e so o `py` roda.
+#
+# Por isso a sonda: cada candidato tem de EXECUTAR antes de ser escolhido. O
+# custo e um processo trivial por candidato, e ele compra a diferenca entre
+# "nao ha Python" e "ha, e nao e este nome".
 for py in python python3 py; do
-  if command -v "$py" >/dev/null 2>&1; then
-    "$py" scripts/check_vazamento.py || {
-      echo ""
-      echo "COMMIT ABORTADO pelo guard anti-vazamento."
-      echo "Troque o valor pela CHAVE do config.env (catalogo em .env.example)."
-      exit 1
-    }
-    exit 0
-  fi
+  command -v "$py" >/dev/null 2>&1 || continue
+  "$py" -c "pass" >/dev/null 2>&1 || continue
+  "$py" scripts/check_vazamento.py || {
+    echo ""
+    echo "COMMIT ABORTADO pelo guard anti-vazamento."
+    echo "Troque o valor pela CHAVE do config.env (catalogo em .env.example)."
+    exit 1
+  }
+  exit 0
 done
 
 echo "COMMIT ABORTADO: nao achei Python para rodar scripts/check_vazamento.py."

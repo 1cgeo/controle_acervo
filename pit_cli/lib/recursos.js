@@ -295,6 +295,30 @@ const RECURSOS = {
         nota: 'o digitado e o calculado lado a lado, sem escrever nada. É o ' +
           'portão para virar uma meta de Manual para automática'
       },
+      // O IRMAO DO ENSAIO, e faltava. O ensaio responde "o calculado reproduz o
+      // digitado?"; o diagnostico responde a pergunta anterior, "o que esta
+      // ligado a esta meta, e o que falta ligar?". A rota existe desde a 1.19.0
+      // (`GET /api/metas/execucao/diagnostico`) e nunca entrou aqui: quem usava o
+      // CLI para virar uma meta descobria a versao sem `data_prevista` pelo
+      // planejado ZERO da grade, que e o silencio que esta rota existe para
+      // quebrar. Sem ela o conserto virava consulta SQL a mao ao banco de
+      // producao, que e justamente o que o CLI existe para evitar.
+      diagnostico: {
+        metodo: 'GET',
+        caminho: '/metas/execucao/diagnostico',
+        query: 'gradeQuery',
+        acesso: 'login',
+        envelope: 'lista',
+        colunas: [
+          'meta_id', 'numero_meta', 'item', 'descricao', 'unidade',
+          'quantidade_prevista', 'cadastradas', 'faltam',
+          'previstas', 'sem_data', 'fora_do_ano', 'planejado_calculado'
+        ],
+        nota: 'o que falta CADASTRAR na meta automatica. `sem_data` e a versao ' +
+          'ligada a meta sem data_prevista, que nao entra no planejado e some ' +
+          'como zero; `fora_do_ano` e a que tem data de outro ano. O item Manual ' +
+          'fica de fora: nele o numero e o lancamento, e nao ha entidade a cobrar'
+      },
       lancar: {
         metodo: 'POST',
         caminho: '/metas/execucao',
