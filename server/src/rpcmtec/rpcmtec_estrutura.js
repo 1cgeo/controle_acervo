@@ -410,7 +410,10 @@ const SECOES = [
         titulo: 'Situação RPNP',
         origem: ORIGEM.CALCULADA,
         fonte: 'orcamento.rpnp',
-        pendencia: 'Nenhum RPNP cadastrado',
+        // A 4.3 esconde o RPNP ja quitado (ver `gerarRpnp`), entao a tabela
+        // vazia nao significa mais "nada cadastrado": significa que nada
+        // sobrou a liquidar. O texto tem de ser verdadeiro nos dois casos.
+        pendencia: 'Nenhum RPNP com saldo a liquidar',
         cabecalhos: ['Empenho', 'Finalidade', 'Valor Empenhado', 'Valor a liquidar'],
         grade: [2040, 2670, 2100, 3000]
       },

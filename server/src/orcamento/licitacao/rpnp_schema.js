@@ -31,8 +31,11 @@ const camposBase = {
   // min(0) pelo mesmo motivo do valor_a_liquidar abaixo: o empenho anulado por
   // inteiro carrega zero e continua sendo um resto a pagar do exercicio.
   valor_empenhado: Joi.number().min(0).strict().allow(null),
-  // pode ser 0: um RPNP totalmente liquidado nao tem mais saldo a liquidar,
-  // mas continua sendo carregado/exibido (subsecao 4.3). Por isso min(0), nao positive().
+  // pode ser 0: um RPNP totalmente liquidado nao tem mais saldo a liquidar, e
+  // continua CADASTRADO. Por isso min(0), e nao positive(). O que ele nao faz
+  // mais e aparecer na subsecao 4.3, que desde 2026-08-31 so lista o resto com
+  // saldo (ver `gerarRpnp` em rpcmtec_ctrl.js) -- e o corte de la usa o saldo
+  // CALCULADO no mes, nao este campo, que guarda o saldo de hoje.
   valor_a_liquidar: Joi.number().min(0).strict().allow(null)
 }
 

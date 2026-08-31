@@ -776,23 +776,47 @@ const gerarCreditosRecebidos = async (ano, inicio, cutoff, classificacaoId) => {
 // células (15 empenhos por 5 meses) batem ao centavo. As três que não batem
 // (2025NE000116 em fevereiro e março, 2025NE000266 em maio) são de quem
 // escreveu o documento ter fechado o número em dia diferente do da liquidação.
+// O RPNP JA RESOLVIDO NAO ENTRA. Decisao do chefe em 2026-08-31: a 4.3 e a
+// tabela do que AINDA falta liquidar, e linha com saldo zero e ruido que cresce
+// mes a mes -- em agosto/2026 doze dos quinze restos ja estavam quitados, e a
+// tabela gastava doze linhas para dizer nada. A linha continua no cadastro e no
+// modulo orcamento: o que sai e a EXIBICAO nesta subsecao.
+//
+// O CORTE E `IS DISTINCT FROM 0`, e nao `> 0`, por dois casos que `> 0`
+// esconderia justamente por serem defeito:
+//   * saldo NEGATIVO e impossivel, e denuncia liquidacao lancada a mais ou
+//     estorno do SIAFI que ninguem lancou (foi o caso da 2025NE000266 em
+//     2026-08-31, com a NS 2026NS000320 estornada e nao registrada);
+//   * `valor_empenhado` nulo deixa o saldo nulo, e nulo e "nao se sabe", que
+//     precisa aparecer. `<> 0` devolveria NULL e sumiria com a linha em
+//     silencio.
+//
+// O saldo do corte e o CALCULADO, nao o `r.valor_a_liquidar` digitado: quem
+// decide se a linha aparece e a mesma conta que preenche a coluna, senao a
+// tabela esconderia linha por um numero que ela nao mostra.
 const gerarRpnp = async (ano, inicio, cutoff) => {
   const linhas = await db.conn.any(
-    `SELECT
-       COALESCE(r.empenho_label, ne.numero) AS empenho,
-       r.finalidade,
-       r.valor_empenhado,
-       r.valor_empenhado - COALESCE((
-         SELECT SUM(lq.valor_liquidado)
-         FROM orcamento.liquidacao AS lq
-         WHERE lq.nota_empenho_id = r.nota_empenho_id
-           AND lq.data IS NOT NULL
-           AND lq.data >= $<inicio> AND lq.data <= $<cutoff>
-       ), 0) AS valor_a_liquidar
-     FROM orcamento.rpnp AS r
-     LEFT JOIN orcamento.nota_empenho AS ne ON ne.id = r.nota_empenho_id
-     WHERE r.ano = $<ano>
-     ORDER BY r.id`,
+    `WITH residuo AS (
+       SELECT
+         r.id,
+         COALESCE(r.empenho_label, ne.numero) AS empenho,
+         r.finalidade,
+         r.valor_empenhado,
+         r.valor_empenhado - COALESCE((
+           SELECT SUM(lq.valor_liquidado)
+           FROM orcamento.liquidacao AS lq
+           WHERE lq.nota_empenho_id = r.nota_empenho_id
+             AND lq.data IS NOT NULL
+             AND lq.data >= $<inicio> AND lq.data <= $<cutoff>
+         ), 0) AS valor_a_liquidar
+       FROM orcamento.rpnp AS r
+       LEFT JOIN orcamento.nota_empenho AS ne ON ne.id = r.nota_empenho_id
+       WHERE r.ano = $<ano>
+     )
+     SELECT empenho, finalidade, valor_empenhado, valor_a_liquidar
+     FROM residuo
+     WHERE valor_a_liquidar IS DISTINCT FROM 0
+     ORDER BY id`,
     { ano, inicio, cutoff }
   )
 
@@ -872,9 +896,32 @@ const gerarLicitacoes = async (ano, tipos, cutoff) => {
 // `data_emissao` nula: nulo é "o dia não é conhecido", e esconder a linha faria
 // o material sumir do relatório inteiro em vez de aparecer no mês errado. As dez
 // linhas de 2025 estão nesse caso, e o filtro de ano já as mantém fora de 2026.
+// O EMPENHO SAI PELO NUMERO DO SIAFI, com queda no `ne.numero`, exatamente como
+// na 4.3. As NEs de 2025 entraram pelo RPCA Tecnico daquele ano, que publica o
+// codigo interno do documento (`RPCA-405096`) e nao o numero do SIAFI: a 4.6
+// anunciava "RPCA-405096" para o nobreak que o SIAFI chama de 2025NE000276, e o
+// chefe leu isso em 2026-08-31 sem reconhecer o empenho. Quem sabe os dois
+// numeros e `orcamento.rpnp.empenho_label`, que ja e a fonte do rotulo da 4.3.
+//
+// SUBCONSULTA ESCALAR, e nao JOIN: um mesmo empenho pode ser carregado como RPNP
+// em mais de um exercicio, e o JOIN duplicaria a linha de material. `ORDER BY
+// r.ano DESC LIMIT 1` fixa qual rotulo vence, e `LEFT JOIN` sem isso seria uma
+// duplicacao silenciosa.
+//
+// O QUE ESTA REGRA NAO ALCANCA: recebimento cujo empenho nunca virou RPNP
+// continua saindo com o codigo RPCA, porque o numero do SIAFI nao esta em lugar
+// nenhum do banco. Consertar esses exige gravar o numero na propria NE.
 const gerarRecebimentoMaterial = async (ano, cutoff) => {
   const linhas = await db.conn.any(
-    `SELECT ne.numero AS empenho, rm.material, rm.prazo_entrega, rm.situacao
+    `SELECT COALESCE((
+              SELECT r.empenho_label
+              FROM orcamento.rpnp AS r
+              WHERE r.nota_empenho_id = ne.id
+                AND r.empenho_label IS NOT NULL AND r.empenho_label <> ''
+              ORDER BY r.ano DESC
+              LIMIT 1
+            ), ne.numero) AS empenho,
+            rm.material, rm.prazo_entrega, rm.situacao
      FROM orcamento.recebimento_material AS rm
      INNER JOIN orcamento.nota_empenho AS ne ON ne.id = rm.nota_empenho_id
      WHERE COALESCE(rm.ano_referencia, ne.ano) = $<ano>
