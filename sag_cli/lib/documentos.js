@@ -82,8 +82,34 @@ const DOCUMENTOS = {
   ns: {
     pagina: 'docNsuq1',
     nome: 'Nota de Lancamento de Sistema (liquidacao)',
-    medido: null,
-    padrao: null,
+    medido: '2026-08-31',
+    // A PAGINA OFERECE 42 COLUNAS, E A LINHA E UM EVENTO, nao um documento. Uma
+    // NS aparece uma vez por evento contabil, e a mesma NS pode tocar mais de um
+    // empenho: a 2026NS000320 de 07 MAI 26 estornou 1.668,84 da 2025NE000266 e
+    // repartiu o valor entre ela (406,97) e a 2025NE000239 (1.261,87). Somar as
+    // linhas sem separar por INSCRICAO01 e por EVENTO multiplica.
+    //
+    // O EMPENHO LIQUIDADO ESTA EM INSCRICAO01, no numero do SIAFI
+    // ('2025NE000266'), e VALOR_TRANSACAO e o valor DAQUELE evento.
+    //
+    // A LIQUIDACAO SE LE POR 401005 MENOS 406005, e nao pela uniao de 511005,
+    // 551001 e 551004. Medido em 2026-08-31 sobre os 15 RPNP de 2026: as 37
+    // linhas de 401005 sao exatamente as 37 dessas tres, porque 401005 e a
+    // contrapartida orcamentaria de todas elas, e o par de ESTORNO
+    // (4xx005 -> 406005, 55x001 -> 556001) so aparece do lado do 4. Ler so as
+    // tres deixa passar o estorno em silencio, que foi como R$ 1.668,84
+    // ficaram contados duas vezes no SAP por quase quatro meses. A regra do
+    // estorno no SIAFI e o terceiro digito virando 6.
+    padrao: [
+      'UG', 'NR', 'DATA_EMISSAO', 'EVENTO', 'INSCRICAO01', 'INSCRICAO02',
+      'VALOR_TRANSACAO', 'TITULO_CREDITO', 'FAV', 'OBS'
+    ],
+    // SEM `paraSca` E SEM `chave`, DE PROPOSITO. A liquidacao do SCA aponta uma
+    // `nota_empenho_id`, e o que o SAG entrega e o numero do SIAFI. As NEs de
+    // 2025 no SCA guardam o codigo interno do RPCA Tecnico ('RPCA-404530') em
+    // `numero`, entao nao ha casamento por numero: quem sabe os dois lados e
+    // `orcamento.rpnp.empenho_label`. Enquanto isso for verdade, `sag conferir`
+    // nao aceita `ns`, e a conferencia se faz a mao.
     paraSca: null,
     chave: null
   },
