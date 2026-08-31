@@ -9,6 +9,7 @@ const { verifyAdmin, verifyPerfil } = require('../login')
 const acervoCtrl = require('./acervo_ctrl')
 const acervoSchema = require('./acervo_schema')
 const miniaturaVarredura = require('../utils/miniatura_varredura')
+const uploadMiniatura = require('./miniatura_upload')
 
 const router = express.Router()
 
@@ -58,6 +59,49 @@ router.get(
  * tem imagem. A tela evita a viagem lendo `tem_miniatura` na ficha detalhada; o
  * 404 é a rede de segurança para quem chama a rota direto.
  */
+/**
+ * ENVIAR a miniatura de uma versao, quando nao ha o que renderizar.
+ *
+ * A miniatura do acervo e GERADA (POST /miniaturas/varrer), renderizando um
+ * `pdf`, `tif`, `tiff`, `img` ou `ecw` da versao. Modelo 3D e Panoramica 360 nao
+ * tem nenhum desses -- os arquivos deles sao `.3dtiles`, `.db` e `.zip` -- e por
+ * isso as 140 versoes desses dois tipos tinham ZERO miniatura em 2026-08-31,
+ * contra 4.905 no resto do acervo. A imagem deles so pode vir de captura feita
+ * por gente, e faltava por onde entrar.
+ *
+ * OPERADOR, e nao administrador: e o mesmo perfil que cataloga produto e edita
+ * arquivo. Trocar a imagem de uma ficha nao e ato de administracao do sistema.
+ *
+ * `multipart/form-data`, um arquivo no campo `arquivo`. Substituir e reenviar: o
+ * `ON CONFLICT (versao_id)` do gravador ja atualiza, e a etiqueta de cache do
+ * GET ao lado sai da data de geracao, entao a troca invalida sozinha o que o
+ * navegador guardou.
+ */
+router.post(
+  '/versao/:versao_id/miniatura',
+  verifyPerfil('operador'),
+  schemaValidation({
+    params: acervoSchema.miniaturaVersaoParams
+  }),
+  uploadMiniatura,
+  asyncHandler(async (req, res, next) => {
+    if (!req.file) {
+      throw new AppError(
+        'Envie a imagem no campo "arquivo"',
+        httpCode.BadRequest
+      );
+    }
+
+    const dados = await acervoCtrl.enviarMiniatura(
+      req.params.versao_id, req.file, req.usuarioUuid, req.contexto
+    );
+
+    return res.sendJsonAndLog(
+      true, 'Miniatura enviada com sucesso', httpCode.OK, dados
+    );
+  })
+);
+
 router.get(
   '/versao/:versao_id/miniatura',
   verifyPerfil('consulta'),

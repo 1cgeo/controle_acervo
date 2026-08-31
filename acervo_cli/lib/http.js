@@ -1,5 +1,7 @@
 'use strict'
 
+const path = require('path')
+
 const http = require('http')
 const https = require('https')
 const fs = require('fs')
@@ -282,8 +284,37 @@ function query (params) {
   return partes.length ? '?' + partes.join('&') : ''
 }
 
+/**
+ * Corpo multipart/form-data de um arquivo unico.
+ *
+ * Irmao do que o `orcamento_cli` usa para anexar PDF. Existe aqui desde
+ * 2026-08-31, quando a miniatura FORNECIDA entrou: e a unica rota do acervo que
+ * recebe bytes por `multipart/form-data` em vez de JSON.
+ *
+ * SEPARADOR E CRLF, e nao LF. O multipart define a fronteira com \r\n, e o
+ * busboy do servidor responde 500 "Unexpected end of form" quando ela chega so
+ * com \n -- ele nao acha o terminador e trata o corpo como truncado. Aconteceu
+ * na primeira execucao real, e o erro nao aponta o separador.
+ */
+function multipart (campo, nomeArquivo, conteudo, mime) {
+  const CRLF = '\r\n'
+  const fronteira = '----acervo' + require('crypto').randomBytes(16).toString('hex')
+  const cabecalho = Buffer.from(
+    `--${fronteira}${CRLF}` +
+    `Content-Disposition: form-data; name="${campo}"; filename="${path.basename(nomeArquivo)}"${CRLF}` +
+    `Content-Type: ${mime}${CRLF}${CRLF}`,
+    'utf8'
+  )
+  const rodape = Buffer.from(`${CRLF}--${fronteira}--${CRLF}`, 'utf8')
+  return {
+    bytes: Buffer.concat([cabecalho, conteudo, rodape]),
+    contentType: `multipart/form-data; boundary=${fronteira}`
+  }
+}
+
 module.exports = {
   ErroHttp,
+  multipart,
   requisitar,
   autenticada,
   autenticar,

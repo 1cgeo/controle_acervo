@@ -26,6 +26,7 @@
 //    de um cliente so, a interface serve todos.
 
 const fs = require('fs')
+const path = require('path')
 
 const { obter, obterOperacao, montarCaminho } = require('../lib/recursos')
 const esquema = require('../lib/schema')
@@ -36,8 +37,40 @@ const argsLib = require('../lib/args')
 // Flags do proprio CLI, que nunca viram filtro de query.
 const FLAGS_CLI = new Set([
   'campos', 'formato', 'json', 'server', 'user', 'senha', 'token', 'cliente',
-  'insecure', 'sem-cache', 'dry-run', 'data', 'data-file', 'confirmar'
+  'insecure', 'sem-cache', 'dry-run', 'data', 'data-file', 'confirmar', 'file'
 ])
+
+// Extensao -> mimetype, para a operacao que sobe BYTES em vez de JSON. A lista e
+// a mesma que o `miniatura_upload.js` do server aceita: o CLI recusa aqui o que
+// o servidor recusaria la, e o agente descobre em milissegundos, sem round-trip.
+const MIME_POR_EXTENSAO = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif'
+}
+
+/** Le o --file de uma operacao multipart e devolve os bytes com o mimetype. */
+function lerArquivo (flags) {
+  const caminho = flags.file
+  if (!caminho || caminho === true) {
+    throw new Error(
+      'Esta operacao envia um arquivo: informe --file <imagem>. ' +
+      `Aceitos: ${Object.keys(MIME_POR_EXTENSAO).join(', ')}.`
+    )
+  }
+  const ext = path.extname(caminho).toLowerCase()
+  const mime = MIME_POR_EXTENSAO[ext]
+  if (!mime) {
+    throw new Error(
+      `Extensao nao aceita (${ext || 'sem extensao'}). ` +
+      `Aceitos: ${Object.keys(MIME_POR_EXTENSAO).join(', ')}.`
+    )
+  }
+  const conteudo = fs.readFileSync(caminho)
+  return { conteudo, mime, caminho, bytes: conteudo.length }
+}
 
 function lerCorpo (flags) {
   if (flags.data && flags['data-file']) {
@@ -177,6 +210,17 @@ async function executar (args, cfg) {
   // identificadores atingidos, e a rota de limpeza nao os tem para oferecer.
   if (operacao.destrutivo) avisos.push(`Operacao destrutiva: ${operacao.destrutivo}.`)
 
+  // ---- arquivo (multipart) ----------------------------------------------
+  // Antes do corpo JSON, e as duas coisas se excluem. Esta operacao nao tem
+  // schema Joi de corpo para validar offline; o que da para conferir sem rede e
+  // a extensao e a existencia do arquivo, e e o que `lerArquivo` faz.
+  let envio = null
+  if (operacao.arquivo) {
+    const img = lerArquivo(flags)
+    const parte = http.multipart(operacao.arquivo, img.caminho, img.conteudo, img.mime)
+    envio = { bytes: parte.bytes, contentType: parte.contentType, resumo: img }
+  }
+
   // ---- corpo -------------------------------------------------------------
   let corpo = null
   if (operacao.corpo) {
@@ -244,11 +288,19 @@ async function executar (args, cfg) {
       linhas.push('  corpo (ja validado contra o schema vivo do server/):')
       linhas.push(JSON.stringify(corpo, null, 2))
     }
+    if (envio !== null) {
+      linhas.push(
+        `  multipart campo "${operacao.arquivo}": ${envio.resumo.caminho} ` +
+        `(${envio.resumo.mime}, ${(envio.resumo.bytes / 1024).toFixed(1)} KB)`
+      )
+    }
     return { texto: linhas.join('\n'), avisos }
   }
 
   // ---- envio -------------------------------------------------------------
-  const opcoes = corpo !== null ? { corpo } : {}
+  const opcoes = envio !== null
+    ? { bytes: envio.bytes, contentType: envio.contentType }
+    : (corpo !== null ? { corpo } : {})
   const r = operacao.acesso === 'publico'
     ? await http.requisitar(cfg, operacao.metodo, caminho, opcoes)
     : await http.autenticada(cfg, operacao.metodo, caminho, opcoes)

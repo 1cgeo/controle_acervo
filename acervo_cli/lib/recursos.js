@@ -142,6 +142,27 @@ const RECURSOS = {
           'quantas cabem numa passada de `varrer-miniaturas`. Numero grande e ' +
           'parado significa que ninguem esta rodando a varredura'
       },
+      // A MINIATURA FORNECIDA, para quem nao tem o que renderizar.
+      //
+      // A varredura acima so alcanca versao com `pdf`, `tif`, `tiff`, `img` ou
+      // `ecw`. Modelo 3D e Panoramica 360 nao tem nenhum desses, e por isso as
+      // 140 versoes desses dois tipos tinham ZERO miniatura em 2026-08-31,
+      // contra 4.905 no resto do acervo. Aqui a imagem entra pronta, de uma
+      // captura feita por gente.
+      'enviar-miniatura': {
+        metodo: 'POST',
+        caminho: '/acervo/versao/:versao_id/miniatura',
+        acesso: 'operador',
+        // Multipart, e nao JSON: o corpo sao os bytes da imagem. O `--file`
+        // alimenta o campo `arquivo`, como o `anexar` do orcamento_cli.
+        arquivo: 'arquivo',
+        envelope: 'registro',
+        nota: 'exige --versao_id e --file imagem.webp (png, jpg, gif ou webp, ate ' +
+          '8 MB). A imagem passa pela MESMA reducao da miniatura renderizada, ' +
+          'entao o que fica gravado e um JPEG no lado maximo do acervo, e nao o ' +
+          'byte enviado. Reenviar substitui. Se a versao um dia ganhar um arquivo ' +
+          'renderizavel, a varredura passa a gerar por cima'
+      },
       'varrer-miniaturas': {
         metodo: 'POST',
         caminho: '/acervo/miniaturas/varrer',

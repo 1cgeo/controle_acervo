@@ -1,5 +1,6 @@
 "use strict";
 const archiver = require('archiver');
+const crypto = require('crypto');
 const { caminhoNoVolume } = require('../utils/caminho_volume');
 // A normalização de MI/INOM era uma cópia de três linhas aqui e outra igual em
 // `integracao/integracao_ctrl.js`, e as duas só tiravam caixa e espaço: quem
@@ -8,6 +9,8 @@ const { caminhoNoVolume } = require('../utils/caminho_volume');
 // do `mapoteca_cli`.
 const { normalizarIdentificador } = require('../utils/mi');
 const miniaturaVarredura = require('../utils/miniatura_varredura');
+const { normalizarImagem } = require('../utils/miniatura');
+const { SQL_GRAVAR } = require('../utils/miniatura_fila');
 const { temValor } = require('../utils/lista_schema');
 const { Readable } = require('stream');
 const { db } = require("../database");
@@ -174,6 +177,120 @@ controller.getMiniaturaConteudo = async versaoId => {
     [versaoId]
   );
   return linha ? linha.conteudo : null;
+};
+
+/**
+ * Assinatura REAL dos primeiros bytes.
+ *
+ * A extensao e o mimetype declarado vem os dois do cliente e nao provam nada: o
+ * multer ja os conferiu, e essa conferencia so barra o engano, nunca a mentira.
+ * O que decide e o byte.
+ */
+const ASSINATURAS_IMAGEM = [
+  { mime: 'image/png', bytes: [0x89, 0x50, 0x4e, 0x47] },
+  { mime: 'image/jpeg', bytes: [0xff, 0xd8, 0xff] },
+  { mime: 'image/gif', bytes: [0x47, 0x49, 0x46, 0x38] }
+];
+
+const ehImagem = buffer => {
+  if (!buffer || buffer.length < 12) return false;
+  if (ASSINATURAS_IMAGEM.some(a => a.bytes.every((b, i) => buffer[i] === b))) {
+    return true;
+  }
+  // WEBP e RIFF....WEBP: a marca esta no byte 8, e nao no comeco.
+  return (
+    buffer.slice(0, 4).toString('ascii') === 'RIFF' &&
+    buffer.slice(8, 12).toString('ascii') === 'WEBP'
+  );
+};
+
+/**
+ * Grava a miniatura FORNECIDA de uma versao.
+ *
+ * O caminho normal da miniatura e a GERACAO, renderizando um arquivo da versao
+ * (`utils/miniatura_varredura`). Ele nao alcanca Modelo 3D nem Panoramica 360,
+ * cujos arquivos sao `.3dtiles`, `.db` e `.zip`: nenhum se renderiza, e por isso
+ * esses produtos ficavam sem imagem na ficha. Aqui a imagem vem de fora.
+ *
+ * PASSA PELO MESMO `normalizarImagem` DA RENDERIZADA, que e o `finalizar` do
+ * `utils/miniatura`. Guardar o byte enviado como veio deixaria a tabela com dois
+ * padroes de imagem, um por caminho de entrada, e a ficha mostraria tamanhos e
+ * formatos diferentes sem que nada acusasse.
+ *
+ * `arquivo_id` FICA NULO e o `checksum_origem` e o sha256 da IMAGEM ENVIADA, e
+ * nao de um arquivo do acervo. E a diferenca que distingue a linha fornecida da
+ * gerada, e ela tem consequencia: a varredura so escolhe versao que TEM arquivo
+ * renderizavel, entao ela nunca disputa esta linha. Se um dia a versao ganhar um
+ * PDF, a varredura passa a gerar por cima, e e o desfecho certo -- o dado do
+ * proprio produto vence a captura de tela.
+ *
+ * O `erro` sai NULO de proposito: gravar imagem apaga a linha de erro que uma
+ * tentativa de geracao anterior tenha deixado.
+ */
+controller.enviarMiniatura = async (versaoId, arquivo, usuarioUuid, contexto) => {
+  if (!ehImagem(arquivo.buffer)) {
+    throw new AppError(
+      'O arquivo enviado nao e uma imagem PNG, JPEG, GIF ou WEBP',
+      httpCode.BadRequest
+    );
+  }
+
+  const versao = await db.conn.oneOrNone(
+    `SELECT v.id, v.versao, p.nome AS produto
+     FROM acervo.versao v
+     JOIN acervo.produto p ON p.id = v.produto_id
+     WHERE v.id = $1`,
+    [versaoId]
+  );
+
+  if (!versao) {
+    throw new AppError('Versao nao encontrada', httpCode.NotFound);
+  }
+
+  let imagem;
+  try {
+    imagem = await normalizarImagem(arquivo.buffer);
+  } catch (erro) {
+    throw new AppError(
+      `Nao foi possivel processar a imagem: ${erro.message}`,
+      httpCode.BadRequest,
+      erro
+    );
+  }
+
+  const checksum = crypto
+    .createHash('sha256')
+    .update(arquivo.buffer)
+    .digest('hex');
+
+  await db.conn.none(SQL_GRAVAR, [
+    versaoId,
+    null,
+    checksum,
+    imagem.formato,
+    imagem.largura,
+    imagem.altura,
+    imagem.conteudo,
+    null
+  ]);
+
+  // SEM AUDITORIA, e a ausencia e deliberada. `auditoria.evento` cobre as
+  // tabelas do mapa, que sao as que tem ficha e historico; `miniatura_versao` e
+  // CACHE DERIVADO, e a varredura ja regrava linha ali sem registrar nada. Uma
+  // entrada aqui e nenhuma na varredura daria um historico que mente por
+  // omissao. Quem quiser saber de onde veio a imagem le o `arquivo_id`: nulo e
+  // fornecida, preenchido e gerada daquele arquivo.
+
+  return {
+    versao_id: Number(versaoId),
+    produto: versao.produto,
+    versao: versao.versao,
+    formato: imagem.formato,
+    largura: imagem.largura,
+    altura: imagem.altura,
+    bytes: imagem.conteudo.length,
+    checksum_origem: checksum
+  };
 };
 
 controller.getProdutoDetailedById = async produtoId => {

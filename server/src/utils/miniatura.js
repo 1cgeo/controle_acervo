@@ -293,6 +293,13 @@ const gerarMiniatura = async (caminho, extensao) => {
 module.exports = {
   gerarMiniatura,
   podeGerar,
+  // A imagem FORNECIDA passa pelo mesmo `finalizar` da renderizada, e nao por um
+  // caminho paralelo. Ele e o unico ponto que produz os bytes gravados, entao
+  // toda miniatura da tabela sai no mesmo formato, no mesmo lado maximo e com a
+  // mesma qualidade, venha de um PDF ou de uma captura de tela do EBGeo. Um
+  // segundo codificador faria a ficha mostrar imagens de padroes diferentes sem
+  // que nada acusasse.
+  normalizarImagem: finalizar,
   // Exportados para teste: sao a decisao que produzia miniatura em branco.
   argumentosDeCor,
   precisaEsticar,
