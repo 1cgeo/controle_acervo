@@ -49,6 +49,10 @@ function repintarChip(no, novo) {
  * de envio. Antes elas moravam em lugares diferentes (a etiqueta no detalhe do
  * pedido, o registro de impressão só no plugin do QGIS, a carta em nenhum).
  *
+ * O registro de impressão aceita VÁRIOS itens de uma vez, com a mesma seleção
+ * que o detalhe do pedido já tinha: um a um, o pedido grande custa uma abertura
+ * de diálogo por folha.
+ *
  * AS TABELAS SE MONTAM UMA VEZ. Aqui alguém trabalha o turno
  * inteiro, item após item, e era a tela que mais sofria com o remonte: cada
  * registro de impressão chamava `carregar()` e `pintar()`, e as duas jogavam
@@ -161,6 +165,49 @@ export async function renderAtendimento(container) {
     const contagem = el('span', { className: 'detail-card__label' });
     const chipSemArquivo = chip('', 'error');
 
+    // -------------------------------------------------------------------------
+    // Impressao em LOTE
+    // -------------------------------------------------------------------------
+    //
+    // O MESMO recorte que o detalhe do pedido ganhou em 2026-08-13, e que esta
+    // tela nao tinha. A medida que o justificou la (43 dos 132 pedidos com item
+    // passam de 20 itens, mediana 10, maior 132) vale COM MAIS FORCA aqui: e
+    // nesta tela que a pessoa passa o turno, item apos item.
+    //
+    // Nada de novo abaixo desta tela: `openRegistrarImpressaoDialog` ja aceita
+    // uma LISTA (ela serve as duas telas), e `POST /mapoteca/impressao` sempre
+    // recebeu `registros: [...]` numa transacao. O que faltava era a selecao.
+    //
+    // SEM GATE DE PERFIL, ao contrario do detalhe do pedido: a rota
+    // '/atendimento' e de EXECUCAO (operador e gerente, ver modules/mapoteca/
+    // index.js), entao quem so consulta nao chega aqui.
+    function registrarSelecionados() {
+      const selecionados = tabela.getSelected();
+      if (!selecionados.length) return;
+      openRegistrarImpressaoDialog(selecionados, async () => {
+        const novo = await getImpressaoDoPedido(pedido.id);
+        if (disposed) return;
+        tabela.clearSelection();
+        pintar(novo);
+        recarregar();
+      });
+    }
+
+    const registrarLoteBtn = el('button', {
+      className: 'btn btn--primary btn--sm hidden',
+      type: 'button',
+      onClick: registrarSelecionados,
+    }, [svgIcon(ICONS.print, 14), 'Registrar impressão']);
+
+    // "Selecionar todos os N" existe porque a caixa do cabecalho marca a
+    // PAGINA, e com pageSize 10 um pedido de 132 itens exigiria 14 viradas de
+    // pagina -- justamente o pedido que mais precisa do lote.
+    const selecionarTodosBtn = el('button', {
+      className: 'btn btn--text btn--sm hidden',
+      type: 'button',
+      onClick: () => tabela.selectAll(),
+    }, ['Selecionar todos']);
+
     const tabela = createDataTable({
       columns: [
         {
@@ -199,6 +246,18 @@ export async function renderAtendimento(container) {
       // cairia na referência do objeto. Cada carga traz objetos novos, e nenhuma
       // linha se reaproveitaria: a tabela sobreviveria, e o corpo dela não.
       rowKey: (r) => r.produto_pedido_id,
+      // A SELECAO VIVE NA CHAVE ACIMA, e nao na linha visivel: o data-table
+      // guarda `produto_pedido_id` num Set, entao ela atravessa a paginacao e a
+      // repintura que o registro de impressao dispara.
+      selectable: true,
+      onSelectionChange: (selecionados) => {
+        registrarLoteBtn.classList.toggle('hidden', selecionados.length === 0);
+        registrarLoteBtn.textContent = '';
+        registrarLoteBtn.appendChild(svgIcon(ICONS.print, 14));
+        registrarLoteBtn.appendChild(
+          document.createTextNode(`Registrar impressão (${selecionados.length})`)
+        );
+      },
       actions: [
         {
           icon: ICONS.download,
@@ -243,6 +302,14 @@ export async function renderAtendimento(container) {
         chipSituacao,
         contagem,
         chipSemArquivo,
+        // Os dois de LOTE nascem escondidos, encostados na direita da mesma
+        // barra do resumo: o "selecionar todos" aparece quando ha mais itens do
+        // que cabe numa pagina, e o "registrar" quando ha selecao. Barra propria
+        // para eles empurraria a tabela para baixo nos pedidos de um item.
+        el('div', { className: 'flex gap-sm', style: { marginLeft: 'auto' } }, [
+          selecionarTodosBtn,
+          registrarLoteBtn,
+        ]),
       ]),
       tabela.element,
     ]);
@@ -263,7 +330,15 @@ export async function renderAtendimento(container) {
       repintarChip(chipSemArquivo, chip(`${imp.itens_sem_arquivo} sem PDF`, 'error'));
       chipSemArquivo.hidden = !imp.itens_sem_arquivo;
 
-      tabela.update({ rows: payload.itens || [] });
+      const itens = payload.itens || [];
+      tabela.update({ rows: itens });
+
+      // "Selecionar todos os N" so paga o espaco quando ha mais itens do que
+      // cabe numa pagina: com 10 ou menos, a caixa do cabecalho ja marca a
+      // tabela inteira e um segundo botao seria ruido. O numero vai no rotulo
+      // porque "todos" sem quantidade nao diz o tamanho do que se vai registrar.
+      selecionarTodosBtn.classList.toggle('hidden', itens.length <= 10);
+      selecionarTodosBtn.textContent = `Selecionar todos (${itens.length})`;
     }
 
     pintar(dados);
