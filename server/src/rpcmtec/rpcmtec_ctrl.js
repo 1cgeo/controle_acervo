@@ -1151,8 +1151,8 @@ const montarAtividadesDeCampo = ({ campos }) =>
 //                           de hoje, e derivá-lo de "atual mais consumo"
 //                           ignoraria as ENTRADAS (compra, transferência) e
 //                           erraria calado todo mês com reposição.
-//   "Previsão de falta"     vem do ritmo dos DOZE MESES anteriores, atravessando
-//                           a virada do ano.
+//   "Previsão de falta"     vem do ritmo dos DOZE MESES que TERMINAM no mês da
+//                           edição, atravessando a virada do ano.
 //
 // As duas continuam saindo '-' quando não há base. Traço é a resposta honesta;
 // número inventado a partir do saldo de hoje pareceria apurado e não seria.
@@ -1207,9 +1207,20 @@ const buscarEstoqueDoMesAnterior = async ({ ano, mes }) => {
   return mapa
 }
 
-// Quantos meses COM CONSUMO bastam para projetar. Abaixo disso a média diz mais
-// sobre o acaso do que sobre o ritmo, e a coluna sai '-'.
-const MESES_MINIMOS_PARA_PROJETAR = 3
+// Quantos meses COM CONSUMO bastam para projetar. UM, por decisão do chefe em
+// 2026-09-01.
+//
+// Eram TRÊS, e o três dizia uma coisa certa sobre estatística e uma coisa falsa
+// sobre esta Divisão: `mapoteca.movimento_material` começou em julho/2026, e a
+// série inteira cabia em um mês. Com o mínimo em três, a coluna ficava em traço
+// até a edição de novembro/2026, esperando um histórico que ninguém tinha,
+// enquanto o cartucho acabava na prateleira.
+//
+// O QUE SE PERDE, e é deliberado: um mês de acaso agora vira data com cara de
+// apurada. A defesa deixou de ser a régua e passou a ser a própria tabela, que
+// imprime a previsão na MESMA LINHA do consumo que a gerou. Reveja este número
+// quando houver um ano de livro.
+const MESES_MINIMOS_PARA_PROJETAR = 1
 
 // O tamanho da JANELA, em meses. Doze, e não "o ano civil até aqui".
 //
@@ -1233,19 +1244,28 @@ const indiceDoMes = (ano, mes) => Number(ano) * 12 + (Number(mes) - 1)
  * falta para longe.
  *
  * Devolve o mês no formato do documento ('NOV 26'), 'Sem estoque' quando já
- * zerou com consumo acontecendo, e '-' quando não há série que sustente a
- * conta.
+ * zerou com consumo acontecendo, e '-' quando NENHUM mês da janela teve
+ * consumo, que desde 2026-09-01 é o único caso de traço.
  */
 const projetarFalta = ({ estoque, consumoPorMes, ano, mes }) => {
-  // Só os meses JÁ FECHADOS antes do corte: o mês corrente ainda está andando, e
-  // entrar com ele pela metade puxa a média para baixo.
+  // O MÊS DA EDIÇÃO ENTRA na janela, e ela são os doze que TERMINAM nele.
+  //
+  // Ele ficava de fora até 2026-09-01, sob o argumento de que o mês corrente
+  // ainda está andando e entraria pela metade. O argumento não vale aqui: o
+  // RPCMTec de agosto se escreve em setembro, com agosto fechado, e o mês da
+  // edição é sempre um mês inteiro. O efeito era a tabela imprimir o "Consumo no
+  // mês" numa coluna e a projeção da coluna seguinte ignorar justamente esse
+  // número.
+  //
+  // O `+ 1` mantém a janela em DOZE. Sem ele, incluir o mês da edição faria
+  // treze, e a média passaria a olhar um mês a mais do que a documentação diz.
   const fim = indiceDoMes(ano, mes)
-  const inicio = fim - MESES_DA_JANELA
+  const inicio = fim - MESES_DA_JANELA + 1
 
   const meses = consumoPorMes
     .filter(l => {
       const idx = indiceDoMes(l.ano, l.mes)
-      return idx >= inicio && idx < fim && Number(l.quantidade) > 0
+      return idx >= inicio && idx <= fim && Number(l.quantidade) > 0
     })
     .map(l => Number(l.quantidade))
 
@@ -1638,5 +1658,15 @@ controller.calcular = async ({ ano, mes }) => {
     '7.2': montarInsumos({ tiposMaterial, consumoJanela, mes, ano, estoqueAnterior })
   }
 }
+
+// A `projetarFalta` sai daqui para o TESTE, e por isso mesmo: ela é uma RÉGUA,
+// e régua se prova contra o pior caso que ela existe para pegar. Ela é pura
+// (não toca banco nem relógio), então o teste a exercita direto, em vez de
+// encenar as dezoito consultas que `montarLinhasCalculadas` dispara até ela.
+//
+// Foi assim que se descobriu, em 2026-09-01, que a coluna inteira saía em
+// traço: não havia teste nenhum sobre ela, e o único arquivo do repo que a
+// nomeava era este. Ver `__tests__/unit/rpcmtec_previsao_falta.test.js`.
+controller.projetarFalta = projetarFalta
 
 module.exports = controller
