@@ -1901,6 +1901,25 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
 
 ## Dependências e ambiente de teste
 
+- **O caso que fala de calendário CONGELA o relógio no arquivo inteiro, e nunca dentro de um
+  `describe`.** Em 04/09/2026 três casos caíram sem uma linha de código ter mudado. No `execucao-pit`
+  o congelamento existia, no `beforeEach` do PRIMEIRO `describe`, e os outros dois rodavam no relógio
+  de parede: o caso "o mês futuro não abre" escrevia no próprio comentário que o relógio estava em
+  02/08/2026, e não estava, então em setembro a célula de SET passou a abrir. Congelar uma vez, num
+  lugar, não vira regra do arquivo sozinho.
+- **A fixture que escreve um número do calendário à mão congela junto, em vez de derivá-lo.** No
+  `efetivo-tab` a fixture dizia `dias_do_mes: 31` e o arquivo derivava `DIAS_DO_MES` do relógio:
+  batiam por sorte enquanto o mês tinha 31 dias. Derivar a fixture do relógio foi a alternativa
+  RECUSADA, porque o `64,6%` calculado à mão no comentário viraria a fórmula do componente escrita de
+  novo no teste, e passaria a aprovar a fórmula errada junto com a certa. Congelar num mês de 31 dias
+  mantém a expectativa independente do código que ela mede.
+- **`npm run test:relogio` (em `client/`) é quem cobra isso, e ela foi vista REPROVAR.** Roda a suíte
+  inteira num dia escolhido por `SONDA_DATA`. Contra os casos de antes do conserto reprova em
+  fevereiro (7), em abril (5) e em setembro (3), e passa só num agosto. Ela troca **só o construtor de
+  `Date`** e não chama `vi.useFakeTimers`: a primeira versão instalava o relógio falso do vitest por
+  cima e derrubava 40 casos que não têm nada com data, porque o debounce da busca e o auto-refresh dos
+  dashboards ficavam sem `setInterval`. A régua acusava o defeito dela mesma, e o número que ela deu
+  antes disso não valia nada.
 - **O `create_config.js` lê os `er/*.sql` SEM `minify`.** O `er/limites.sql` traz o WKT da área de
   suprimento quebrado em literais adjacentes de 72 caracteres, e o PostgreSQL só os concatena quando
   há QUEBRA DE LINHA entre eles. O `pg-minify` troca a quebra por espaço, os literais deixam de se

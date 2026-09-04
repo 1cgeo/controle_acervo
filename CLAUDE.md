@@ -134,6 +134,10 @@ dominio.modulo        -- 1 acervo, 2 mapoteca, 3 orcamento, 4 pit, 5 efetivo, 6 
 - `npm run test:rapido` no dia a dia e `npm run test:banco` antes de commitar, os dois em `server/`.
   Teste de schema prova o MOTIVO da recusa (`recusaPor`, de `__tests__/helpers/joi.js`), nunca só
   que houve recusa. O cliente é vitest, não jest.
+- **Caso que fala de mês, prazo ou "hoje" CONGELA o relógio no arquivo inteiro**, nunca dentro de um
+  `describe`. `npm run test:relogio` em `client/` roda a suite num dia escolhido (`SONDA_DATA`) e é
+  quem acha o caso que só passa porque hoje é hoje: três caíram em 04/09/2026 sem uma linha de código
+  ter mudado, um deles com um comentário afirmando um congelamento que não existia.
 - **`npm audit fix --force` quebra o boot:** `archiver` fica na 7, e os `overrides` do
   `server/package.json` são o que zera a auditoria.
 

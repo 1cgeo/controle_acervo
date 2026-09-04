@@ -95,20 +95,30 @@ const GRADE_MISTA = () => [
   },
 ];
 
+// O RELOGIO E FIXO NO ARQUIVO INTEIRO, e nao e capricho: a cor so vale para o
+// mes que ja FECHOU e a celula so abre ate o mes corrente, entao com a data real
+// estes casos mudam de resposta conforme o dia em que rodam.
+//
+// ELE VIVIA DENTRO DO PRIMEIRO `describe`, e os outros dois rodavam no relogio
+// de parede. O caso "no modo Executar, o mes futuro nao abre" escrevia no
+// proprio comentario que o relogio estava em 02/08/2026, e nao estava: em
+// 04/09/2026 setembro deixou de ser futuro, a celula passou a abrir e o caso
+// caiu. Congelar uma vez, num `describe`, nao vira regra do arquivo sozinho.
+//
+// `shouldAdvanceTime` mantem o `setTimeout` do `flush` andando.
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date('2026-08-02T12:00:00'));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('renderExecucaoPit', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
-    // O RELOGIO E FIXO aqui, e nao e capricho: a cor so vale para o mes que ja
-    // FECHOU, entao com a data real estes casos passariam de fevereiro a
-    // dezembro e falhariam em janeiro. `shouldAdvanceTime` mantem o `setTimeout`
-    // do `flush` andando.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date('2026-08-02T12:00:00'));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   test('a meta subdividida vira linha de GRUPO, sem células de mês', async () => {

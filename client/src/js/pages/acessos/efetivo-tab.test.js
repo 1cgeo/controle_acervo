@@ -56,8 +56,38 @@ import {
   getDivergenciasEfetivo,
 } from '@services/plataforma-service.js';
 
+// O RELOGIO E FIXO, e nao pode não ser.
+//
+// A fixture escreve `dias_do_mes: 31` a mao, e a tela le esse numero do PAYLOAD
+// (`efetivo[0].dias_do_mes`), nunca do calendario. Enquanto o mes de HOJE tinha
+// 31 dias os dois batiam por sorte; em setembro de 2026, que tem 30, o
+// `DIAS_DO_MES` derivado do relogio passou a discordar da fixture, e dois casos
+// caíram: o aviso de mes parcial dizia "7 de 31" contra "7 de 30" esperado, e o
+// mes que a fixture diz FECHADO virou "em curso" porque 30 < 31.
+//
+// Congelar num mes de 31 dias faz os dois voltarem a ser a mesma coisa, e -- o
+// que importa mais -- preserva o 64,6% calculado A MAO no comentario da fixture
+// como expectativa INDEPENDENTE. A alternativa era derivar tudo de
+// `DIAS_DO_MES`, e ela foi recusada: o caso passaria a repetir a formula do
+// componente, e aprovaria a formula errada junto com a certa.
+//
+// Agosto de 2026 e o mes do exemplo que a propria fixture narra, e o dia 31
+// fecha o mes, que e o que ela declara.
+const RELOGIO = new Date('2026-08-31T12:00:00');
+vi.useFakeTimers({ toFake: ['Date'] });
+vi.setSystemTime(RELOGIO);
+
+// SO o Date entra no `toFake`. O `flush()` deste repositorio e um `setTimeout`,
+// e congelar o cronometro junto travaria a espera da tela em todo caso do
+// arquivo.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(RELOGIO);
+});
+
 // O mes de referencia e o de HOJE, e os fixtures se montam em cima dele. Datas
-// fixas no arquivo fariam o teste passar em agosto e falhar em setembro.
+// fixas ESPALHADAS pelo arquivo fariam o teste passar em agosto e falhar em
+// setembro; a data fixa fica num lugar so, aqui em cima, e o resto deriva dela.
 const HOJE = new Date();
 const ANO = HOJE.getFullYear();
 const MES = HOJE.getMonth() + 1;
@@ -261,7 +291,13 @@ describe('a casca de duas abas', () => {
   // ANTERIOR, que e de onde sai o delta em pontos percentuais. Medir aqui pela
   // divergencia, que e uma por carga, deixa o caso imune a essa aritmetica.
   test('a aba ativa se recarrega sozinha', async () => {
+    // ESTE caso precisa do cronometro falso, e nao so do Date que o `beforeEach`
+    // do arquivo instala: ele mede o `setInterval` da recarga. A reinstalacao sai
+    // do zero (`useRealTimers` antes), porque pedir o fake por cima do fake
+    // deixava o `setInterval` sem substituto e a recarga nunca disparava.
+    vi.useRealTimers();
     vi.useFakeTimers();
+    vi.setSystemTime(RELOGIO);
     try {
       const cleanup = await renderAcessos(container, {});
       await vi.advanceTimersByTimeAsync(0);

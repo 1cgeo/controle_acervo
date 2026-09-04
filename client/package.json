@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:relogio": "vitest run --config vitest.relogio.config.js"
   },
   "dependencies": {
     "chart.js": "^4.4.7",
