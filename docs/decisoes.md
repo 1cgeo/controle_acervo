@@ -1851,6 +1851,38 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
 - **A busca do acervo lista PRODUTOS, e a ficha ordena as versões no SERVIDOR**
   (`data_edicao DESC NULLS LAST, id DESC`), porque quem lê essa rota inclui o plugin. `NULLS LAST`
   porque versão sem data de edição é registro incompleto, e não a mais nova.
+- **O estado da lista de pedidos mora na URL, e não num store.** Ano, palavra-chave, filtro, busca da
+  tabela, ordem, página e itens por página são escritos por `sincronizarUrl` em
+  `mapoteca/pages/pedidos/list.js` com `history.replaceState`, e lidos de volta em `ctx.query`. É o
+  mesmo desenho de `#/acervo/busca`, e pela mesma razão: mexer no hash faria o roteador remontar a
+  tela a cada tecla digitada. O que vale o padrão NÃO entra na query, senão a tela pelada abriria com
+  sete parâmetros que ninguém lê. `localStorage` foi recusado pelo motivo do
+  `@components/filtro-ano.js`: escolha guardada além da sessão reabre a lista num recorte antigo sem
+  avisar.
+- **O `<- Pedidos` do detalhe volta pela ÚLTIMA lista, guardada em
+  `mapoteca/pages/pedidos/ultima-lista.js`**, e não por `history.back()`. A rota pelada que estava lá
+  devolvia quem tinha filtrado e chegado à página 7 para a primeira página de "Todos". `history.back()`
+  seria uma linha e foi recusado: quem entra no pedido pela fila de atendimento, pelo dashboard, pela
+  ficha do cliente ou pela rastreabilidade voltaria para lá, com o botão escrito "Pedidos". O memo é
+  uma variável de módulo, morre no F5, e a rota pelada é o que sobra para quem nunca passou pela lista.
+- **No wizard os dois caminhos de volta são ASSIMÉTRICOS, e isso não é esquecimento.** Desistir devolve
+  o recorte guardado, como o detalhe faz. GRAVAR chama `esquecerListaDePedidos()`: data, tipo de
+  cliente e situação do pedido novo são escolhidos dentro do wizard, então o filtro, a palavra-chave,
+  o ano e a página de antes quase nunca o contêm. Voltar restaurado mostraria uma lista SEM o pedido
+  recém-criado, e quem olha conclui que a gravação falhou. Esquecer resolve os dois botões de uma vez,
+  porque o `<- Pedidos` do detalhe alcançado por "Ver pedido" cai na mesma lista limpa.
+- **`createDataTable` ABRE o estado por `estadoInicial` e `onEstadoChange`, e continua sem guardá-lo.**
+  Quem decide o que sobrevive é a TELA, e a tabela só empresta e devolve. As duas opções são
+  opcionais, então as demais tabelas do sistema seguem idênticas. A SELEÇÃO fica de fora de propósito:
+  ela é do lote que se está montando agora, e ressuscitá-la marcaria linhas que ninguém escolheu para
+  uma operação em massa. Valor inválido é ignorado CAMPO A CAMPO, porque o estado chega de uma URL que
+  qualquer um edita, e ordem por coluna que não existe ou não é ordenável poria a seta num cabeçalho
+  que não responde ao clique.
+- **`update()` só chama `clampPage()` quando NÃO está carregando.** Toda recarga abre com
+  `update({loading:true})` e a lista ainda vazia, e clampar contra ela devolvia a tabela para a página
+  1 antes de existir linha para contar: a página restaurada por `estadoInicial` morria no primeiro
+  update, e o defeito era invisível porque a tela pisca de qualquer jeito. A queda para a última
+  página válida continua acontecendo, na chegada das linhas.
 
 ## Estrutura e convenções
 

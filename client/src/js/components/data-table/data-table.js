@@ -58,7 +58,19 @@ function normalizeText(value) {
  * @param {(selected:Array<Object>)=>void} [options.onSelectionChange]
  * @param {string} [options.emptyMessage]
  * @param {boolean} [options.loading]
- * @returns {{element:HTMLElement, update:(rowsOrState:Array|{rows?:Array, loading?:boolean})=>void, getSelected:()=>Array<Object>, selectAll:()=>void, clearSelection:()=>void, _cleanup:()=>void}}
+ * @param {{busca?:string, pagina?:number, porPagina?:number, ordem?:{key:string, dir:'asc'|'desc'}}} [options.estadoInicial]
+ *        - o estado com que a tabela NASCE, no formato que `getEstado()` devolve.
+ *          Existe porque busca, página, itens por página e ordenação são privados
+ *          daqui e morrem quando a tela é desmontada: quem entra num registro e
+ *          volta para a lista voltava para a página 1, sem filtro. A tela que
+ *          quiser sobreviver a isso guarda `getEstado()` (na URL, por
+ *          `onEstadoChange`) e o devolve por aqui. Valor inválido é IGNORADO em
+ *          silêncio, campo a campo: o estado chega de uma URL que qualquer um
+ *          edita, e o pior caso é a lista abrir como abria antes.
+ * @param {(estado:Object)=>void} [options.onEstadoChange] - chamado a cada mudança
+ *        de busca, ordem, página ou itens por página, com o mesmo objeto de
+ *        `getEstado()`. NÃO é chamado no render inicial.
+ * @returns {{element:HTMLElement, update:(rowsOrState:Array|{rows?:Array, loading?:boolean})=>void, getSelected:()=>Array<Object>, selectAll:()=>void, clearSelection:()=>void, getEstado:()=>Object, _cleanup:()=>void}}
  *        - selectAll() marca todas as linhas do FILTRO atual, e não só as da
  *          página. A caixa do cabeçalho continua sendo a da página.
  */
@@ -76,14 +88,43 @@ export function createDataTable({
   defaultSort = null,
   rowClassName = null,
   rowKey = null,
+  estadoInicial = null,
+  onEstadoChange = null,
 }) {
   let allRows = rows;
   let isLoading = loading;
   let searchTerm = '';
+  // O texto CRU da busca, do jeito que foi digitado. `searchTerm` é o mesmo
+  // texto normalizado (minúscula, sem acento), e devolvê-lo ao campo mostraria
+  // 'sao gabriel' onde a pessoa escreveu 'São Gabriel'.
+  let searchRaw = '';
   let sortKey = defaultSort ? defaultSort.key : null;
   let sortDir = defaultSort && defaultSort.dir === 'desc' ? -1 : 1; // 1 asc, -1 desc
   let currentPage = 0;
   let currentPageSize = PAGE_SIZE_OPTIONS.includes(pageSize) ? pageSize : 10;
+
+  if (estadoInicial) {
+    if (typeof estadoInicial.busca === 'string' && estadoInicial.busca !== '') {
+      searchRaw = estadoInicial.busca;
+      searchTerm = normalizeText(searchRaw.trim());
+    }
+    // A coluna tem de EXISTIR e ser ordenável. Sem a checagem, uma chave
+    // inventada na URL ordenaria por um critério que nenhum cabeçalho mostra, e
+    // a seta ficaria em coluna nenhuma.
+    const ordem = estadoInicial.ordem;
+    if (ordem && ordem.key && columns.some(c => c.key === ordem.key && c.sortable)) {
+      sortKey = ordem.key;
+      sortDir = ordem.dir === 'desc' ? -1 : 1;
+    }
+    if (PAGE_SIZE_OPTIONS.includes(Number(estadoInicial.porPagina))) {
+      currentPageSize = Number(estadoInicial.porPagina);
+    }
+    // A página que não existe mais (a lista encolheu enquanto se estava fora)
+    // cai para a última válida em clampPage(), no primeiro update().
+    if (Number.isInteger(estadoInicial.pagina) && estadoInicial.pagina > 0) {
+      currentPage = estadoInicial.pagina;
+    }
+  }
   // As CHAVES das colunas `revelarNaBusca` que a busca corrente revelou. Guarda
   // chave, e nunca a coluna, porque o cabeçalho se remonta a cada render.
   let colunasReveladas = new Set();
@@ -138,10 +179,13 @@ export function createDataTable({
       type: 'search',
       placeholder: 'Buscar...',
       'aria-label': 'Buscar na tabela',
+      value: searchRaw,
       onInput: (e) => {
-        searchTerm = normalizeText(e.target.value.trim());
+        searchRaw = e.target.value;
+        searchTerm = normalizeText(searchRaw.trim());
         currentPage = 0;
         render();
+        notificarEstado();
       },
     });
     toolbar = el('div', { className: 'data-table-toolbar' }, [
@@ -222,6 +266,26 @@ export function createDataTable({
     if (onSelectionChange) onSelectionChange(getSelected());
   }
 
+  /**
+   * O estado que a tela pode guardar e devolver depois, em `estadoInicial`.
+   *
+   * A SELEÇÃO fica de fora de propósito: ela é do lote que se está montando
+   * agora, e ressuscitá-la numa outra visita marcaria linhas que ninguém
+   * escolheu, para uma operação em massa.
+   */
+  function getEstado() {
+    return {
+      busca: searchRaw,
+      pagina: currentPage,
+      porPagina: currentPageSize,
+      ordem: sortKey ? { key: sortKey, dir: sortDir === 1 ? 'asc' : 'desc' } : null,
+    };
+  }
+
+  function notificarEstado() {
+    if (onEstadoChange) onEstadoChange(getEstado());
+  }
+
   function getSelected() {
     return allRows.filter(isSelected);
   }
@@ -299,6 +363,7 @@ export function createDataTable({
           }
           currentPage = 0;
           render();
+          notificarEstado();
         };
 
         cells.push(el('th', {
@@ -521,6 +586,7 @@ export function createDataTable({
         currentPageSize = parseInt(e.target.value, 10);
         currentPage = 0;
         render();
+        notificarEstado();
       },
     }, PAGE_SIZE_OPTIONS.map(size =>
       el('option', { value: String(size), textContent: `${size} por página` })
@@ -539,6 +605,7 @@ export function createDataTable({
         if (currentPage > 0) {
           currentPage--;
           render();
+          notificarEstado();
         }
       },
     }, [svgIcon(ICONS.chevronLeft, 18)]);
@@ -551,6 +618,7 @@ export function createDataTable({
         if (currentPage < totalPages - 1) {
           currentPage++;
           render();
+          notificarEstado();
         }
       },
     }, [svgIcon(ICONS.chevronRight, 18)]);
@@ -682,7 +750,11 @@ export function createDataTable({
       if (rowsOrState.loading !== undefined) isLoading = rowsOrState.loading;
     }
     pruneSelection();
-    clampPage();
+    // CARREGANDO NÃO SE ENCAIXOTA. `update({loading:true})` abre toda recarga
+    // com a lista que ainda não chegou, e clampar contra ela devolvia a tela
+    // para a página 1: a tabela que nasceu na página 3 por `estadoInicial`
+    // perdia a página no primeiro update, antes de existir linha para contar.
+    if (!isLoading) clampPage();
     notifySelection();
     render();
   }
@@ -705,5 +777,7 @@ export function createDataTable({
 
   render();
 
-  return { element: wrapper, update, getSelected, selectAll, clearSelection, _cleanup };
+  return {
+    element: wrapper, update, getSelected, selectAll, clearSelection, getEstado, _cleanup,
+  };
 }

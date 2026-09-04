@@ -25,6 +25,12 @@ const OUTRO_ANO = '__outro__';
  *   vazio seria oferecer uma tela em branco.
  * @param {(ano:number) => void} opts.onChange - chamado a cada troca
  * @param {string} [opts.label='Ano']
+ * @param {number} [opts.anoInicial] - o ano com que o filtro NASCE, no lugar do
+ *   ano atual. Não fere a regra acima: o ano continua sendo da tela e continua
+ *   sem guardar nada, e quem o carrega é a URL daquela navegação, que a pessoa
+ *   vê na barra de endereço. Serve à lista que precisa voltar ao ano em que
+ *   estava depois de se entrar num registro. Ano fora de 2000-2100, ou ausente,
+ *   cai no ano atual. NÃO dispara `onChange`, senão a tela carregaria duas vezes.
  * @returns {{element:HTMLElement, getAno:Function, setAno:Function}}
  */
 export function criarFiltroAno({
@@ -32,8 +38,11 @@ export function criarFiltroAno({
   permitirOutroAno = false,
   onChange,
   label = 'Ano',
+  anoInicial = null,
 } = {}) {
-  let ano = new Date().getFullYear();
+  let ano = Number.isInteger(anoInicial) && anoInicial >= 2000 && anoInicial <= 2100
+    ? anoInicial
+    : new Date().getFullYear();
   let anosCache = [ano];
 
   const campo = createSelectField({

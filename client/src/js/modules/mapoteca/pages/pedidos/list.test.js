@@ -677,3 +677,148 @@ describe('renderPedidosList: busca por CEP da etiqueta', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 });
+
+// ENTRAR NUM PEDIDO E VOLTAR NAO PODE APAGAR A ESCOLHA.
+//
+// Ate 2026-09-04 apagava: ano, palavra-chave e filtro eram variaveis locais de
+// renderPedidosList, busca, ordem, pagina e itens por pagina eram privados do
+// createDataTable, e o `<- Pedidos` do detalhe ia para '/mapoteca/pedidos'
+// pelado. Quem filtrava, achava a linha na pagina 3 e abria o pedido voltava
+// para a primeira pagina de "Todos", em 10 por pagina, sem busca.
+//
+// O ciclo se prova em DUAS montagens da mesma tela, que e o que o roteador faz:
+// a primeira escreve na URL, a segunda nasce do que ficou escrito.
+describe('renderPedidosList: o estado da tela sobrevive a ida ao pedido', () => {
+  beforeEach(() => {
+    logarComo({ mapoteca: GERENTE });
+    svc.getPedidos.mockResolvedValue(PEDIDOS);
+    svc.getAnosMapoteca.mockResolvedValue([ANO_ATUAL, ANO_ANTERIOR]);
+    location.hash = '#/mapoteca/pedidos';
+  });
+
+  /** A query que a tela escreveu na barra de endereco. */
+  const queryDaUrl = () => new URLSearchParams(location.hash.split('?')[1] || '');
+
+  /** Monta a tela com o que a URL diz agora, como o roteador faria. */
+  const remontar = async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderPedidosList(
+      container, { params: {}, query: queryDaUrl() }
+    );
+    await flush();
+    return { container, cleanup };
+  };
+
+  test('a tela pelada nao suja a URL', async () => {
+    const { cleanup } = await remontar();
+
+    expect(location.hash).toBe('#/mapoteca/pedidos');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('filtro, ano e palavra-chave entram na URL e voltam na remontagem', async () => {
+    const primeira = await remontar();
+
+    clicarFiltro(primeira.container, 'Militar');
+    buscarEtiqueta(primeira.container, 'Extra-PIT');
+    await flush();
+    filtroAno(primeira.container).value = String(ANO_ANTERIOR);
+    filtroAno(primeira.container).dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+
+    expect(queryDaUrl().get('filtro')).toBe('militar');
+    expect(queryDaUrl().get('palavra_chave')).toBe('Extra-PIT');
+    expect(queryDaUrl().get('ano')).toBe(String(ANO_ANTERIOR));
+    if (typeof primeira.cleanup === 'function') primeira.cleanup();
+
+    // A ida ao pedido e a volta pelo '<- Pedidos', que le esta mesma URL.
+    const segunda = await remontar();
+
+    expect(filtroAno(segunda.container).value).toBe(String(ANO_ANTERIOR));
+    expect(campoEtiqueta(segunda.container).value).toBe('Extra-PIT');
+    expect(svc.getPedidos).toHaveBeenLastCalledWith(ANO_ANTERIOR, 'Extra-PIT');
+    // O filtro Militar continua aplicado: 2 dos 3 pedidos do lote.
+    expect(corpo(segunda.container)).toHaveLength(2);
+    expect(corpo(segunda.container).join(' ')).not.toContain('Prefeitura');
+
+    if (typeof segunda.cleanup === 'function') segunda.cleanup();
+  });
+
+  test('busca da tabela, ordem, pagina e itens por pagina voltam junto', async () => {
+    const primeira = await remontar();
+
+    // Ordena por Cliente crescente (a tabela abre por Data decrescente).
+    const cabecalhoCliente = [...primeira.container.querySelectorAll('thead th')]
+      .find(th => th.textContent.trim().startsWith('Cliente'));
+    cabecalhoCliente.click();
+    digitarNaTabela(primeira.container, 'Santa Maria');
+
+    expect(queryDaUrl().get('ordem')).toBe('cliente_nome');
+    expect(queryDaUrl().get('dir')).toBe('asc');
+    expect(queryDaUrl().get('busca')).toBe('Santa Maria');
+    if (typeof primeira.cleanup === 'function') primeira.cleanup();
+
+    const segunda = await remontar();
+
+    expect(buscaDaTabela(segunda.container).value).toBe('Santa Maria');
+    // A busca casa os dois de Santa Maria, e a ordem crescente por cliente poe
+    // a Base Aerea na frente da Prefeitura.
+    const linhas = corpo(segunda.container);
+    expect(linhas).toHaveLength(2);
+    expect(linhas[0]).toContain('Base Aérea');
+    expect(segunda.container.querySelector('thead th[aria-sort="ascending"]').textContent)
+      .toContain('Cliente');
+
+    if (typeof segunda.cleanup === 'function') segunda.cleanup();
+  });
+
+  test('a pagina e o "por pagina" sobrevivem, e a pagina e 1-based na URL', async () => {
+    // 12 pedidos para haver o que paginar de 5 em 5.
+    svc.getPedidos.mockResolvedValue(
+      Array.from({ length: 12 }, (_, i) => ({
+        ...PEDIDOS[0],
+        id: 100 + i,
+        data_pedido: `2026-06-${String(i + 1).padStart(2, '0')}`,
+        cliente_nome: `Cliente ${String(i + 1).padStart(2, '0')}`,
+        localizador_pedido: `LOC-${i}`,
+      }))
+    );
+    const primeira = await remontar();
+
+    const seletor = primeira.container.querySelector('.pagination__select');
+    seletor.value = '5';
+    seletor.dispatchEvent(new Event('change', { bubbles: true }));
+    primeira.container.querySelector('[aria-label="Próxima página"]').click();
+
+    expect(queryDaUrl().get('por_pagina')).toBe('5');
+    // Pagina 1 aqui dentro, 2 na barra de endereco: quem le a URL conta como o
+    // rodape da tabela conta.
+    expect(queryDaUrl().get('pagina')).toBe('2');
+    if (typeof primeira.cleanup === 'function') primeira.cleanup();
+
+    const segunda = await remontar();
+
+    expect(segunda.container.querySelector('.pagination__info span').textContent)
+      .toBe('6-10 de 12');
+    expect(segunda.container.querySelector('.pagination__select').value).toBe('5');
+
+    if (typeof segunda.cleanup === 'function') segunda.cleanup();
+  });
+
+  // O PIOR CASO: a URL e editada a mao, ou envelhece porque o pedido sumiu. A
+  // tela tem de abrir, e nao explodir nem mostrar lista em branco.
+  test('URL adulterada abre a tela no padrao, sem quebrar', async () => {
+    location.hash = '#/mapoteca/pedidos?ano=abacaxi&filtro=inventado&pagina=99'
+      + '&por_pagina=7&ordem=coluna_que_nao_existe&dir=lateral';
+
+    const { container, cleanup } = await remontar();
+
+    expect(filtroAno(container).value).toBe(String(ANO_ATUAL));
+    expect(corpo(container)).toHaveLength(3);
+    // Volta a ordem de partida, data decrescente: o pedido 57 e o mais novo.
+    expect(corpo(container)[0]).toContain('Base Aérea');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});

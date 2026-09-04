@@ -41,6 +41,7 @@ import { openProdutoPedidoDialog } from './dialog-produto.js';
 import { openEtiquetaEnvioDialog } from './etiqueta-envio.js';
 import { openRegistrarImpressaoDialog } from './dialog-impressao.js';
 import { getMetasPit } from '@services/plataforma-service.js';
+import { listaDePedidos } from './ultima-lista.js';
 
 // Acima deste tamanho, o valor nao cabe na mesma linha do rotulo dentro de um
 // card de meia largura, e passa a ser empilhado.
@@ -317,7 +318,10 @@ export async function renderPedidoDetails(container, { params }) {
     try {
       await deletePedidos([pedido.id]);
       showSuccess('Pedido excluído com sucesso');
-      location.hash = '/mapoteca/pedidos';
+      // Volta para a lista como ela estava, e nao para a primeira página de
+      // "Todos". A página onde o pedido excluído estava pode ter deixado de
+      // existir, e a tabela cai sozinha para a última válida.
+      location.hash = listaDePedidos();
     } catch (err) {
       showError(err.message || 'Erro ao excluir o pedido');
     }
@@ -745,7 +749,7 @@ export async function renderPedidoDetails(container, { params }) {
   const avisoVoltar = el('button', {
     className: 'btn btn--secondary',
     type: 'button',
-    onClick: () => { location.hash = '/mapoteca/pedidos'; },
+    onClick: () => { location.hash = listaDePedidos(); },
   }, [svgIcon(ICONS.arrowBack, 16), 'Voltar para pedidos']);
   const avisoEl = el('div');
 
@@ -767,10 +771,14 @@ export async function renderPedidoDetails(container, { params }) {
   // e quem embala o pacote e quem precisa imprimi-la.
   const headerEl = el('div', { className: 'page__header' }, [
     el('div', {}, [
+      // VOLTA PARA A LISTA COMO ELA ESTAVA: ano, palavra-chave, filtro, busca,
+      // ordem, página e itens por página. A rota pelada que estava aqui até
+      // 2026-09-04 devolvia quem tinha filtrado e chegado à página 7 para a
+      // primeira página de "Todos", em 10 por página. Ver ./ultima-lista.js.
       el('button', {
         className: 'btn btn--text btn--sm',
         type: 'button',
-        onClick: () => { location.hash = '/mapoteca/pedidos'; },
+        onClick: () => { location.hash = listaDePedidos(); },
       }, [svgIcon(ICONS.arrowBack, 16), 'Pedidos']),
       el('div', { className: 'flex gap-sm' }, [tituloEl, chipSituacao, chipLocalizador]),
     ]),

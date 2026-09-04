@@ -13,6 +13,7 @@ import { permissoes } from '@store/auth-store.js';
 import { SITUACAO_PEDIDO } from '@modules/mapoteca/situacao-pedido.js';
 import { openSituacaoPedidoDialog } from './dialog-situacao.js';
 import { criarAvisoDeErro } from '../aviso-carga.js';
+import { guardarListaDePedidos } from './ultima-lista.js';
 
 /**
  * Pedidos list page (#/pedidos): table with search, status chips, printing
@@ -29,6 +30,17 @@ import { criarAvisoDeErro } from '../aviso-carga.js';
  * Aceita tambem `?palavra_chave=<etiqueta>`, que abre a tela ja com a busca do
  * servidor feita. E o que permite mandar a alguem o link de um recorte
  * ("os pedidos de excedente") em vez de instrucoes de como chegar nele.
+ *
+ * A TELA INTEIRA VIVE NA URL, e nao so esses dois. Ano, busca da tabela, ordem,
+ * pagina e itens por pagina entram junto, escritos por `sincronizarUrl` com
+ * `history.replaceState` -- o mesmo desenho de `#/acervo/busca`, e pelo mesmo
+ * motivo: mexer no hash faria o roteador remontar a tela a cada tecla digitada.
+ *
+ * SEM ISSO, ENTRAR NUM PEDIDO E VOLTAR APAGAVA A ESCOLHA TODA. O estado morava
+ * em variaveis locais desta funcao e em variaveis privadas do `createDataTable`,
+ * e o `<- Pedidos` do detalhe ia para '/mapoteca/pedidos' pelado: quem tinha
+ * filtrado, achado a linha na pagina 7 de 50 em 50 e aberto o pedido voltava
+ * para a pagina 1 de "Todos", em 10 por pagina, com a busca em branco.
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} ctx
  * @returns {Function} cleanup
@@ -84,22 +96,32 @@ const FILTROS = [
 export async function renderPedidosList(container, ctx) {
   let disposed = false;
   let todosPedidos = [];
-  const filtroPedido = ctx && ctx.query ? ctx.query.get('filtro') : null;
+  const query = (ctx && ctx.query) || new URLSearchParams();
+  const numeroDaUrl = (campo) => {
+    const n = parseInt(query.get(campo), 10);
+    return Number.isFinite(n) ? n : null;
+  };
+  const filtroPedido = query.get('filtro');
   let filtroAtual = FILTROS.some(f => f.id === filtroPedido) ? filtroPedido : 'todos';
   // O ano da ultima carga, para o contador dizer de que ano e a contagem.
   let ano = null;
   // A etiqueta da ultima carga. Nulo e "o ano inteiro"; e o VALOR JA BUSCADO, e
   // nao o que esta digitado no campo, para o contador nunca falar de uma busca
   // que ainda nao aconteceu.
-  let palavraChave = ctx && ctx.query ? (ctx.query.get('palavra_chave') || null) : null;
+  let palavraChave = query.get('palavra_chave') || null;
   const pode = permissoes('mapoteca');
 
   // O ano e DESTA tela, comeca no ano atual e nao guarda nada. Sem "+ Outro
   // ano": aqui o ano so filtra o pedido que ja
   // existe, e um ano sem pedido nenhum seria uma lista em branco.
+  //
+  // `anoInicial` nao contradiz isso: o ano continua sem sobreviver a sessao, e
+  // quem o carrega e a URL desta navegacao. Sem ele, voltar de um pedido de 2025
+  // cairia em 2026 e a lista viria vazia.
   const filtroAno = criarFiltroAno({
     carregarAnos: getAnosMapoteca,
     permitirOutroAno: false,
+    anoInicial: numeroDaUrl('ano'),
     onChange: () => load(),
   });
 
@@ -150,6 +172,44 @@ export async function renderPedidosList(container, ctx) {
     load();
   }
 
+  /**
+   * Espelha a tela na URL, e guarda a rota resultante para o detalhe voltar
+   * nela.
+   *
+   * `history.replaceState`, nunca o hash: trocar o hash dispara o roteador, que
+   * remontaria a tela a cada tecla digitada na busca da tabela.
+   *
+   * O que vale o PADRAO nao entra na query. Uma URL com sete parametros iguais
+   * aos de sempre nao se le, e a tela pelada continua sendo '#/mapoteca/pedidos'.
+   */
+  function sincronizarUrl() {
+    const params = new URLSearchParams();
+    const anoAtual = filtroAno.getAno();
+    if (anoAtual !== new Date().getFullYear()) params.set('ano', String(anoAtual));
+    if (palavraChave) params.set('palavra_chave', palavraChave);
+    if (filtroAtual !== 'todos') params.set('filtro', filtroAtual);
+
+    // `table` ja existe em toda chamada: sincronizarUrl sai do load(), que roda
+    // no fim da montagem, do clique num filtro e do onEstadoChange da tabela.
+    const estado = table.getEstado();
+    if (estado.busca) params.set('busca', estado.busca);
+    // A pagina e 1 na URL e 0 aqui dentro. Quem le a barra de endereco conta
+    // como o rodape da tabela conta.
+    if (estado.pagina > 0) params.set('pagina', String(estado.pagina + 1));
+    if (estado.porPagina !== 10) params.set('por_pagina', String(estado.porPagina));
+    // A ordem de partida ja e data_pedido desc (defaultSort), e repeti-la na URL
+    // nao diria nada.
+    if (estado.ordem && !(estado.ordem.key === 'data_pedido' && estado.ordem.dir === 'desc')) {
+      params.set('ordem', estado.ordem.key);
+      params.set('dir', estado.ordem.dir);
+    }
+
+    const consulta = params.toString();
+    const rota = `/mapoteca/pedidos${consulta ? `?${consulta}` : ''}`;
+    history.replaceState(null, '', `#${rota}`);
+    guardarListaDePedidos(rota);
+  }
+
   function aplicarFiltro() {
     const filtro = FILTROS.find(f => f.id === filtroAtual) || FILTROS[0];
     const linhas = todosPedidos.filter(filtro.casa);
@@ -165,6 +225,9 @@ export async function renderPedidosList(container, ctx) {
 
   async function load() {
     ano = filtroAno.getAno();
+    // ANTES da chamada, e nao depois: o ano e a etiqueta ja mudaram, e a URL tem
+    // de dizer o que a tela esta pedindo mesmo que a resposta nao venha.
+    sincronizarUrl();
     table.update({ loading: true });
     try {
       const pedidos = await getPedidos(ano, palavraChave);
@@ -217,9 +280,14 @@ export async function renderPedidosList(container, ctx) {
         b.classList.toggle('btn--secondary', !ativo);
       }
       aplicarFiltro();
+      sincronizarUrl();
     },
   }));
   botoesFiltro.forEach((b, i) => { b.dataset.filtro = FILTROS[i].id; });
+
+  // A pagina e 1 na URL e 0 dentro da tabela. Valor ausente ou ilegivel cai em
+  // zero, que e a primeira pagina.
+  const paginaDaUrl = numeroDaUrl('pagina');
 
   const table = createDataTable({
     columns: [
@@ -366,6 +434,18 @@ export async function renderPedidosList(container, ctx) {
     defaultSort: { key: 'data_pedido', dir: 'desc' },
     searchable: true,
     loading: true,
+    // O que a URL trouxe, e o que ela passa a receber de volta. Sem estes dois,
+    // busca, ordem, pagina e itens por pagina ficariam presos dentro da tabela e
+    // morreriam ao se entrar num pedido.
+    estadoInicial: {
+      busca: query.get('busca') || '',
+      pagina: paginaDaUrl > 1 ? paginaDaUrl - 1 : 0,
+      porPagina: numeroDaUrl('por_pagina'),
+      ordem: query.get('ordem')
+        ? { key: query.get('ordem'), dir: query.get('dir') === 'asc' ? 'asc' : 'desc' }
+        : null,
+    },
+    onEstadoChange: () => sincronizarUrl(),
     // Sem o ano no texto, de proposito: a mensagem e montada uma vez e o ano
     // muda no filtro. Quem diz de que ano e a lista e o contador ao lado dos
     // filtros, que se repinta a cada carga.

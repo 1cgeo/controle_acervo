@@ -271,3 +271,135 @@ describe('data-table: o corpo se reconcilia, e o foco fica', () => {
     expect(nomesVisiveis(element)).toEqual(['Item 01', 'Item 02']);
   });
 });
+
+// O estado que a TELA guarda e devolve: busca, ordem, pagina e itens por
+// pagina. Ate 2026-09-04 os quatro eram privados daqui e morriam com a tela,
+// entao entrar num registro e voltar caia sempre na primeira pagina de tudo.
+//
+// O pior caso que estes testes existem para pegar e a URL adulterada: o estado
+// chega de um lugar que qualquer um edita, e valor invalido tem de ser ignorado
+// campo a campo, sem derrubar a tabela e sem ordenar por coluna que ninguem ve.
+describe('data-table: estadoInicial e onEstadoChange', () => {
+  test('a tabela NASCE na pagina, no tamanho, na busca e na ordem pedidos', () => {
+    const { element } = montar({
+      columns,
+      rows: gerarLinhas(30),
+      searchable: true,
+      estadoInicial: {
+        busca: 'Item 1', pagina: 1, porPagina: 5, ordem: { key: 'valor', dir: 'desc' },
+      },
+    });
+
+    // 'Item 1' casa 10 linhas, de Item 10 a Item 19. Item 01 fica de fora
+    // porque o texto gerado e 'Item 01', com o zero na frente.
+    expect(element.querySelector('.data-table-toolbar__search-input').value).toBe('Item 1');
+    expect(info(element)).toBe('6-10 de 10');
+    // Ordem decrescente por valor: a segunda pagina de 5 comeca no 6o maior.
+    expect(nomesVisiveis(element)[0]).toBe('Item 14');
+    expect(element.querySelector('.pagination__select').value).toBe('5');
+  });
+
+  test('getEstado devolve a busca CRUA, e nao a normalizada', () => {
+    const { element, getEstado } = montar({
+      columns, rows: gerarLinhas(3), searchable: true, pageSize: 25,
+    });
+
+    const campo = element.querySelector('.data-table-toolbar__search-input');
+    campo.value = 'São Gabriel';
+    campo.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // Devolver 'sao gabriel' encheria a barra de endereco com o texto que a
+    // pessoa NAO digitou, e o campo reabriria sem acento.
+    expect(getEstado().busca).toBe('São Gabriel');
+  });
+
+  test('onEstadoChange avisa a cada mudanca, e NUNCA no render inicial', () => {
+    const avisos = [];
+    const { element } = montar({
+      columns,
+      rows: gerarLinhas(30),
+      searchable: true,
+      pageSize: 5,
+      onEstadoChange: (estado) => avisos.push(estado),
+    });
+
+    expect(avisos).toHaveLength(0);
+
+    element.querySelector('[aria-label="Próxima página"]').click();
+    expect(avisos.at(-1).pagina).toBe(1);
+
+    const seletor = element.querySelector('.pagination__select');
+    seletor.value = '25';
+    seletor.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(avisos.at(-1)).toMatchObject({ porPagina: 25, pagina: 0 });
+
+    element.querySelectorAll('thead th')[1].click();
+    expect(avisos.at(-1).ordem).toEqual({ key: 'valor', dir: 'asc' });
+
+    const campo = element.querySelector('.data-table-toolbar__search-input');
+    campo.value = 'Item 07';
+    campo.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(avisos.at(-1).busca).toBe('Item 07');
+
+    expect(avisos).toHaveLength(4);
+  });
+
+  test('a pagina anterior no fim da lista NAO avisa, porque nao mudou nada', () => {
+    const avisos = [];
+    const { element } = montar({
+      columns, rows: gerarLinhas(12), pageSize: 5, onEstadoChange: () => avisos.push(1),
+    });
+
+    // Ja esta na primeira pagina: o botao esta desabilitado e o clique nao anda.
+    element.querySelector('[aria-label="Página anterior"]').click();
+
+    expect(avisos).toHaveLength(0);
+  });
+
+  // O PIOR CASO. Uma URL editada a mao pede ordem por uma coluna que nao existe,
+  // por uma que existe e nao ordena, um tamanho de pagina fora da lista e uma
+  // pagina depois do fim. Nada disso pode derrubar a tabela nem ordenar por um
+  // criterio que o cabecalho nao mostra.
+  test('estadoInicial invalido e ignorado campo a campo, sem derrubar a tabela', () => {
+    const colunasComFixa = [
+      { key: 'nome', label: 'Nome', sortable: true },
+      { key: 'valor', label: 'Valor' }, // NAO ordenavel de proposito
+    ];
+    const { element, getEstado } = montar({
+      columns: colunasComFixa,
+      rows: gerarLinhas(12),
+      searchable: true,
+      pageSize: 5,
+      defaultSort: { key: 'nome', dir: 'asc' },
+      estadoInicial: {
+        busca: 42, pagina: 'tres', porPagina: 7, ordem: { key: 'inventada', dir: 'desc' },
+      },
+    });
+
+    expect(nomesVisiveis(element)).toEqual(['Item 01', 'Item 02', 'Item 03', 'Item 04', 'Item 05']);
+    expect(getEstado()).toEqual({
+      busca: '', pagina: 0, porPagina: 5, ordem: { key: 'nome', dir: 'asc' },
+    });
+
+    // Coluna que EXISTE e nao ordena tambem e recusada: aceita-la poria a seta
+    // num cabecalho que nao responde ao clique.
+    const outra = montar({
+      columns: colunasComFixa,
+      rows: gerarLinhas(3),
+      pageSize: 25,
+      defaultSort: { key: 'nome', dir: 'asc' },
+      estadoInicial: { ordem: { key: 'valor', dir: 'desc' } },
+    });
+    expect(outra.getEstado().ordem).toEqual({ key: 'nome', dir: 'asc' });
+  });
+
+  test('a pagina que nao existe mais cai para a ultima valida no primeiro update', () => {
+    const { element, update } = montar({
+      columns, rows: [], pageSize: 5, loading: true, estadoInicial: { pagina: 9 },
+    });
+
+    update({ rows: gerarLinhas(12) });
+
+    expect(info(element)).toBe('11-12 de 12');
+  });
+});

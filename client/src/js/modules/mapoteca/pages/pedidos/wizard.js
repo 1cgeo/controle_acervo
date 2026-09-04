@@ -23,6 +23,7 @@ import {
 import { openProdutoPedidoDialog } from './dialog-produto.js';
 import { openClienteDialog } from '../clientes/dialog-cliente.js';
 import { getMetasPit, rotuloMetaPit } from '@services/plataforma-service.js';
+import { listaDePedidos, esquecerListaDePedidos } from './ultima-lista.js';
 
 const STEPS = ['Básico', 'Adicional', 'Produtos', 'Confirmação'];
 
@@ -97,10 +98,13 @@ export async function renderPedidoWizard(container, _ctx) {
 
   root.appendChild(el('div', { className: 'page__header' }, [
     el('div', {}, [
+      // DESISTIR devolve a lista como ela estava, igual ao detalhe: quem clicou
+      // "Novo pedido" veio de um recorte, e sair sem criar nada não é razão para
+      // perdê-lo. Depois de CRIAR é outra história, e está em `confirmar`.
       el('button', {
         className: 'btn btn--text btn--sm',
         type: 'button',
-        onClick: () => { location.hash = '/mapoteca/pedidos'; },
+        onClick: () => { location.hash = listaDePedidos(); },
       }, [svgIcon(ICONS.arrowBack, 16), 'Pedidos']),
       el('h1', { className: 'page__title', textContent: 'Novo pedido' }),
     ]),
@@ -590,10 +594,13 @@ export async function renderPedidoWizard(container, _ctx) {
           type: 'button',
           onClick: () => { location.hash = `/mapoteca/pedidos/${criado.id}`; },
         }, [svgIcon(ICONS.visibility, 16), 'Ver pedido']),
+        // `listaDePedidos()` aqui devolve a rota pelada, porque `confirmar` já
+        // esqueceu o recorte ao gravar. Chamá-la em vez de escrever a rota na
+        // mão mantém UM caminho de volta para a lista em toda a pasta.
         el('button', {
           className: 'btn btn--secondary',
           type: 'button',
-          onClick: () => { location.hash = '/mapoteca/pedidos'; },
+          onClick: () => { location.hash = listaDePedidos(); },
         }, 'Voltar para pedidos'),
       ]),
     ]));
@@ -620,6 +627,19 @@ export async function renderPedidoWizard(container, _ctx) {
     let criado;
     try {
       criado = await createPedido(form.getValues());
+      // O RECORTE GUARDADO MORRE AQUI, e é deliberado.
+      //
+      // O pedido novo escolhe data, tipo de cliente e situação neste formulário,
+      // e o recorte de onde a pessoa saiu quase nunca o contém: o filtro Civil
+      // esconde o pedido militar que ela acabou de abrir, a palavra-chave
+      // esconde o que nasceu sem etiqueta, o ano de 2025 esconde o de hoje, e a
+      // página 7 não é onde ele cai. Voltar restaurado mostraria uma lista SEM o
+      // pedido recém-criado, e quem olha conclui que a gravação falhou.
+      //
+      // Esquecer resolve os dois botões de uma vez: "Voltar para pedidos" e o
+      // `<- Pedidos` do detalhe alcançado por "Ver pedido" caem os dois na lista
+      // limpa, que é onde o pedido novo aparece.
+      esquecerListaDePedidos();
     } catch (err) {
       showError(err.message || 'Erro ao criar o pedido');
       submitting = false;

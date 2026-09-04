@@ -19,6 +19,9 @@ vi.mock('@modules/mapoteca/services/acervo-service.js', async () => {
 
 import { renderPedidoWizard } from '@modules/mapoteca/pages/pedidos/wizard.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
+import {
+  guardarListaDePedidos, listaDePedidos, esquecerListaDePedidos,
+} from '@modules/mapoteca/pages/pedidos/ultima-lista.js';
 
 const CLIENTES = [
   { id: 1, nome: '1º CGEO', tipo_cliente_id: 1 },
@@ -178,6 +181,70 @@ describe('renderPedidoWizard', () => {
     const { container, cleanup } = await montar();
 
     container.querySelector('.btn--text').click();
+    expect(location.hash).toBe('#/mapoteca/pedidos');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// OS DOIS CAMINHOS DE VOLTA DO WIZARD NAO SAO O MESMO CASO.
+//
+// Desistir devolve o recorte de onde a pessoa saiu, como o detalhe faz. GRAVAR
+// esquece esse recorte, e nao e esquecimento: data, tipo de cliente e situacao
+// do pedido novo sao escolhidos AQUI, entao o filtro, a palavra-chave, o ano e a
+// pagina de antes quase nunca o contem. Voltar restaurado depois de criar
+// mostraria uma lista SEM o pedido recem-criado, e quem olha conclui que a
+// gravacao falhou. Tratar os dois botoes igual seria um defeito pior que a rota
+// pelada que estava aqui ate 2026-09-04.
+describe('wizard: a volta para a lista, antes e depois de gravar', () => {
+  beforeEach(() => {
+    svc.getClientes.mockResolvedValue(CLIENTES);
+    svc.getDominioSituacaoPedido.mockResolvedValue(SITUACOES);
+    svc.getDominioCanalRecebimento.mockResolvedValue(CANAIS);
+    esquecerListaDePedidos();
+    location.hash = '#/mapoteca/pedidos';
+  });
+
+  const RECORTE = '/mapoteca/pedidos?filtro=civil&pagina=3&por_pagina=50';
+
+  test('DESISTIR devolve o recorte de onde a pessoa saiu', async () => {
+    guardarListaDePedidos(RECORTE);
+    const { container, cleanup } = await montar();
+
+    container.querySelector('.btn--text').click();
+
+    expect(location.hash).toBe(`#${RECORTE}`);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('GRAVAR esquece o recorte, e a volta cai na lista limpa', async () => {
+    guardarListaDePedidos(RECORTE);
+    svc.createPedido.mockResolvedValue({ id: 99, localizador_pedido: 'AB12-CD34-EF56' });
+    const { container, cleanup } = await montar();
+
+    escolherNoCombo(combos(container)[0], 'CGEO');
+    const selects = [...container.querySelectorAll('select')];
+    selects[0].value = '3';
+    selects[0].dispatchEvent(new Event('change'));
+
+    const avancar = [...container.querySelectorAll('button')].find(b => b.textContent === 'Avançar');
+    avancar.click(); await flush();
+    avancar.click(); await flush();
+    avancar.click(); await flush();
+
+    [...container.querySelectorAll('button')]
+      .find(b => b.textContent.includes('Confirmar pedido')).click();
+    await flush();
+
+    expect(svc.createPedido).toHaveBeenCalled();
+    // O memo morreu na gravacao: o detalhe alcancado por "Ver pedido" volta pela
+    // lista limpa tambem, e nao so este botao.
+    expect(listaDePedidos()).toBe('/mapoteca/pedidos');
+
+    [...container.querySelectorAll('button')]
+      .find(b => b.textContent === 'Voltar para pedidos').click();
+
     expect(location.hash).toBe('#/mapoteca/pedidos');
 
     if (typeof cleanup === 'function') cleanup();
