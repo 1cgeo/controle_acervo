@@ -4,13 +4,44 @@ const Joi = require('joi')
 
 const models = {}
 
+// UUID NA FORMA CANONICA, e nao `Joi.string().guid()`.
+//
+// O `guid()` aceita QUATRO grafias do mesmo identificador -- minuscula,
+// MAIUSCULA, entre chaves `{...}` e sem hifen -- e nao normaliza nenhuma. O tipo
+// `uuid` do PostgreSQL tambem aceita as quatro, e devolve SEMPRE a canonica em
+// minuscula com hifen. Quem casa em JAVASCRIPT o que o cliente mandou com o que
+// o banco devolveu erra, e os dois desfechos ja aconteciam aqui:
+//
+//   - `atualizaUsuarioLista` indexa o mapa de `dados_antes` pelo uuid do BANCO.
+//     Com a grafia maiuscula o `SELECT ... IN (...)` acha a linha, o UPDATE em
+//     massa GRAVA, e so entao o `Map` devolve `undefined` para a auditoria: a
+//     rota estoura 500 e desfaz a transacao inteira, sem dizer o porque.
+//   - `resetaSenhas` compara as duas strings e responde
+//     "Usuários não encontrados" para um uuid que existe. A mensagem mente
+//     sobre a causa, e quem administra procura o defeito no lugar errado.
+//
+// Recusar na PORTA resolve os dois de uma vez, e a mensagem custom nao ecoa o
+// valor recebido -- ela vai parar no `combined.log`, que `/logs` publica. As
+// duas mensagens sao proprias porque a do `pattern` padrao do Joi ecoa o valor e
+// a do `guid` sai em ingles.
+//
+// O `.guid()` FICA, ao lado do `pattern`, e nao e redundancia inutil: ele separa
+// "isto nem parece um uuid" de "e um uuid, na grafia errada", e e por ele que o
+// `efetivo_cli` (que le o Joi VIVO, e nunca uma copia) continua anunciando o
+// campo como `uuid` em vez de despejar a expressao regular na ajuda.
+const uuidCanonico = Joi.string()
+  .guid()
+  .message('{{#label}} deve ser um UUID')
+  .pattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+  .message('{{#label}} deve ser um UUID em minúsculas, com hífen e sem chaves')
+
 models.uuidParams = Joi.object().keys({
-  uuid: Joi.string().guid().required()
+  uuid: uuidCanonico.required()
 })
 
 models.listaUsuario = Joi.object().keys({
   usuarios: Joi.array()
-    .items(Joi.string().guid().required())
+    .items(uuidCanonico.required())
     .unique()
     .required()
     .min(1)
@@ -63,7 +94,7 @@ models.updateUsuarioLista = Joi.object().keys({
   usuarios: Joi.array()
     .items(
       Joi.object().keys({
-        uuid: Joi.string().guid().required(),
+        uuid: uuidCanonico.required(),
         administrador: Joi.boolean().strict().required(),
         ativo: Joi.boolean().strict().required(),
         perfis: perfisPorModulo

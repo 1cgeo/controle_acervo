@@ -313,7 +313,13 @@ export function openRegistrarImpressaoDialog(itens, onDone) {
               // HOJE não vai no corpo: sem o campo o servidor grava o instante
               // exato, e duas impressões do mesmo dia mantêm a ordem entre si.
               // Mandar '2026-08-05' as jogaria as duas para a meia-noite.
-              data_impressao: data === hoje ? undefined : data,
+              // A COLUNA E TIMESTAMP, e o campo e um DIA: mandar '2026-08-01' pelado
+              // fazia o Joi do servidor (`Joi.date().iso()`, sem `.raw()`) gravar
+              // meia-noite UTC, que em UTC-3 e 31/07 as 21:00. Meio-dia local nao vira
+              // vespera nem manha seguinte em nenhum fuso do Brasil, e o dia que a
+              // pessoa escolheu e o dia que fica. Hoje continua omitido: o banco
+              // carimba o instante e a ordem entre duas sessoes do dia sobrevive.
+              data_impressao: data === hoje ? undefined : `${data}T12:00:00`,
             })));
             showSuccess(ativas.length > 1
               ? `Impressão registrada em ${ativas.length} itens`

@@ -142,6 +142,68 @@ describe('createFileAttachment', () => {
     expect(svc.deleteArquivo).not.toHaveBeenCalled();
     expect(names(w.element)).toEqual(['extrato.pdf']);
   });
+
+  // SUBSTITUIR TAMBEM DESTROI. No modo single o POST apaga a linha anterior
+  // dentro da mesma transacao: o PDF do SIAFI daquela NC saia do servidor sem
+  // pergunta nenhuma, pelo botao ao lado do lixo que a tela esconde de quem nao
+  // e gerente.
+  test('single edicao: substituir CONFIRMA antes, nomeando o arquivo que sai', async () => {
+    svc.getArquivos.mockResolvedValueOnce([{ id: 9, nome_original: 'extrato.pdf' }]);
+
+    const w = createFileAttachment({ mode: 'single', vinculo: { nota_credito_id: 3 } });
+    document.body.appendChild(w.element);
+    await flush();
+
+    setFile(fileInputOf(w.element), new File(['x'], 'novo.pdf'));
+    await flush();
+
+    expect(svc.uploadArquivo).not.toHaveBeenCalled();
+    const mensagem = document.querySelector('.modal__body').textContent;
+    expect(mensagem).toContain('extrato.pdf');
+    expect(mensagem).toContain('novo.pdf');
+
+    botaoDoDialogo('Substituir').click();
+    await flush();
+
+    expect(svc.uploadArquivo).toHaveBeenCalledTimes(1);
+  });
+
+  test('single edicao: cancelar a substituição não envia arquivo nenhum', async () => {
+    svc.getArquivos.mockResolvedValueOnce([{ id: 9, nome_original: 'extrato.pdf' }]);
+
+    const w = createFileAttachment({ mode: 'single', vinculo: { nota_credito_id: 3 } });
+    document.body.appendChild(w.element);
+    await flush();
+
+    setFile(fileInputOf(w.element), new File(['x'], 'novo.pdf'));
+    await flush();
+
+    cancelarNoDialogo();
+    await flush();
+
+    expect(svc.uploadArquivo).not.toHaveBeenCalled();
+    expect(names(w.element)).toEqual(['extrato.pdf']);
+  });
+
+  // O modo multi ACRESCENTA, e nao substitui: perguntar ali seria uma pergunta
+  // sobre uma destruicao que nao acontece.
+  test('multi (PDR): anexar mais um NÃO pergunta nada', async () => {
+    svc.getArquivos.mockResolvedValueOnce([{ id: 9, nome_original: 'planilha.xlsx' }]);
+    svc.uploadArquivo.mockResolvedValueOnce([
+      { id: 9, nome_original: 'planilha.xlsx' },
+      { id: 10, nome_original: 'outra.xlsx' },
+    ]);
+
+    const w = createFileAttachment({ mode: 'multi', vinculo: { pdr_ano: 2026 } });
+    document.body.appendChild(w.element);
+    await flush();
+
+    setFile(fileInputOf(w.element), new File(['x'], 'outra.xlsx'));
+    await flush();
+
+    expect(document.querySelector('.modal__footer')).toBeNull();
+    expect(svc.uploadArquivo).toHaveBeenCalledTimes(1);
+  });
 });
 
 // O widget e usado em NC, DFD e PDR, entao o gate mora nele e vale nos tres de

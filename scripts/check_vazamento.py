@@ -55,9 +55,33 @@ IP_INTERNO_RE = re.compile(
     r"|\b172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}\b"
 )
 # Nome de segredo seguido de valor.
+#
+# O `[A-Za-z0-9_]*?` ANTES do nome nao e enfeite: sem ele o `\b` sozinho nao casa
+# nada que leve prefixo, e prefixo e justamente a convencao deste repositorio.
+# `DB_PASSWORD=<valor>`, `AUTH_DB_PASSWORD=`, `SCA_SENHA=`, `JWT_SECRET=`,
+# `PGPASSWORD=` e o `dbPassword = "..."` em camelCase passavam TODOS, porque
+# entre `_` (ou entre `b` e `P`) e a palavra nao ha fronteira de palavra. Eram as
+# cinco chaves reais do `config.env` e a forma que o codigo do servidor usa: o
+# guard barrava `password=x` e deixava passar `DB_PASSWORD=x`.
+#
+# O que impede o casamento solto e o SUFIXO exigido (`:` ou `=` logo depois, com
+# aspas opcionais): "tokenizer", "secretaria" e "desenhado" nao sao seguidos de
+# atribuicao, entao nao entram.
 SEGREDO_NOME_RE = re.compile(
-    r"(?i)\b(senha|password|passwd|pwd|token|secret|api[_-]?key|client[_-]?secret"
-    r"|credential|access[_-]?key)[\"'`]?\s*[:=]\s*[\"'`]?([^\s\"'`,;)*]+)"
+    r"(?i)\b[A-Za-z0-9_]*?(senha|password|passwd|pwd|token|secret|api[_-]?key"
+    r"|client[_-]?secret|credential|access[_-]?key)[\"'`]?\s*[:=]\s*[\"'`]?([^\s\"'`,;)*]+)"
+)
+# As grafias REAIS das chaves deste repositorio (`.env.example`), como SEGUNDA
+# regra e nao como remendo da primeira. A generica acima recusa o nome precedido
+# de minuscula, que e o que a faz nao acusar `nao o desenha:`; o preco disso e
+# que `dbpassword=<valor>` e `"dbpassword": "<valor>"` tambem passam, porque
+# casing sozinho nao distingue `dbpassword` de `desenha`. Aqui o nome INTEIRO e
+# casado, prefixo junto, entao nao ha o que confundir com prosa: nenhuma palavra
+# em portugues termina em `db_password`. O valor continua passando pelo mesmo
+# `_valor_e_literal`, para que `SCA_SENHA=<sua senha>` do `.env.example` siga
+# sendo um catalogo e nao um achado.
+SEGREDO_CHAVE_REAL_RE = re.compile(
+    r"(?i)\b((?:DB|AUTH_DB|SCA|JWT|PG)_?(?:PASSWORD|SENHA|SECRET))[\"'`]?\s*[:=]\s*[\"'`]?([^\s\"'`,;)*]+)"
 )
 # Prefixo de alta entropia, independente do nome da variavel. Pega o segredo
 # colado num comentario ou num exemplo de curl, onde nao ha variavel nenhuma.
@@ -76,16 +100,32 @@ SEGREDO_PREFIXO_RE = re.compile(
 CRED_URL_RE = re.compile(r"\b[a-z][a-z0-9+.-]*://(?![^\s@]*(?:\$\{|%s|<))[^/\s:@]+:[^/\s@]+@")
 
 # Valores que sao placeholder de documentacao ou referencia de codigo, nao segredo.
+# `valor` e `teste` NAO entram aqui, e a ausencia e deliberada: como SUBSTRING
+# eles engoliam `SCA_SENHA=meuvalorsecreto` e `senha: testeReal9f8a`, que sao
+# segredo de verdade. A fixture deste repositorio (`valor-de-teste`) sai pela
+# porta certa, que e a igualdade de STOPWORDS logo abaixo.
 PLACEHOLDER_SUBSTR = ("<", ">", "$", "%", "...", "xxx", "***", "senha", "password",
                       "env", "exemplo", "sua", "seu", "minha", "changeme", "trocar")
 CODE_SUBSTR = ("[", "(", "{", ".", "_env", "env[", "getenv", "environ")
 STOPWORDS = {"a", "o", "e", "de", "do", "da", "em", "no", "na", "que", "ver", "com",
              "sem", "ok", "id", "login", "usuario", "await", "none", "null", "true",
              "false", "valor", "bearer", "jwt", "csrf", "reset", "refresh",
+             # palavra de CODIGO no lugar do valor: `const trocarSenha = async (`
+             "async", "function", "new", "const", "let", "var", "return", "require",
              # fixture de teste e tipo de documentacao, nao credencial
-             "pass", "string", "test", "teste", "fake", "dummy", "1234", "abc"}
+             "pass", "string", "test", "teste", "fake", "dummy", "1234", "abc",
+             # a fixture literal do repositorio, por IGUALDADE e nunca por substring
+             "valor-de-teste"}
 ENVKEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{2,}$")
 CODE_PREFIX = ("self.", "this.", "os.", "process.", "config", "args.", "opts.", "req.", "res.")
+# Operador de codigo no lugar do valor: `const meuToken = ++requisicao`.
+OPERADOR_CODIGO_RE = re.compile(r"^[+\-*/=<>!&|^~]+[A-Za-z_$][A-Za-z0-9_$.]*$")
+# Identificador nu no lugar do valor: `download_token: downloadToken`.
+IDENTIFICADOR_RE = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
+# UUID canonico. Neste sistema o uuid e IDENTIFICADOR (uuid_versao, usuario_uuid,
+# download_token), e ele viaja em resposta de API e em fixture de schema. Tratar
+# a forma dele como segredo bloquearia o commit de toda fixture.
+UUID_RE = re.compile(r"^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$")
 
 ALLOW_MARK = "path-ok"
 UNC_HOST_PLACEHOLDER = ("host", "servidor")
@@ -109,13 +149,52 @@ def _valor_e_literal(nome, valor):
     vlow = valor.lower()
     if len(valor) < 3 or vlow in STOPWORDS:
         return False
-    if vlow == nome.lower().replace("_", "").replace("-", ""):
+    # `++requisicao` do `const meuToken = ++requisicao` nao e valor nenhum. O
+    # teste era "comeca em alfanumerico", e ele custava caro: senha forte comeca
+    # em caractere especial com frequencia, e `senha = "!Str0ngP@ssWord"` passava
+    # batido por causa do `!`. O que separa os dois nao e o primeiro caractere, e
+    # sim o RESTO: depois do operador, codigo traz um identificador puro
+    # (`++requisicao`, `!!valido`) e segredo traz pontuacao no meio. O `$` do
+    # hash bcrypt continua caindo no PLACEHOLDER.
+    if OPERADOR_CODIGO_RE.match(valor):
+        return False
+    nlow = nome.lower().replace("_", "").replace("-", "")
+    vident = vlow.replace("_", "").replace("-", "")
+    if vident == nlow:
         return False  # `token=token`: repasse de variavel
+    # `download_token: downloadToken`: identificador nu batizado com o proprio
+    # nome do segredo. E a variavel, nunca o valor dela.
+    #
+    # O `not any(digito)` e o limite da regra, e ele custou uma medicao: sem ele
+    # `token = "tokenABC123XYZ456"` e `api_key = "apikeyLive9f8a7b6c5d"` saiam
+    # como "variavel", e sao exatamente a forma de um segredo gerado que carrega
+    # o proprio nome no prefixo. Nome de variavel de codigo neste repositorio nao
+    # leva digito no meio.
+    if nlow in vident and IDENTIFICADOR_RE.match(valor) and not any(c.isdigit() for c in valor):
+        return False
+    if UUID_RE.match(valor):
+        return False
     if any(p in vlow for p in PLACEHOLDER_SUBSTR):
         return False
     if any(p in vlow for p in CODE_SUBSTR):
         return False
     if ENVKEY_RE.match(valor) or vlow.startswith(CODE_PREFIX):
+        return False
+    return True
+
+
+def _nome_e_identificador(linha, inicio, nome):
+    """False quando o nome casado e o FIM de uma palavra em prosa.
+
+    `nao o desenha:` e `o mapa desenha:` casavam `senha` com um `e` minusculo
+    grudado antes, e viravam achado numa linha de comentario em portugues. Um
+    nome de verdade se separa por `_`, por caixa (`dbPassword`, `PGPASSWORD`) ou
+    por inicio de palavra; nunca por duas minusculas seguidas.
+    """
+    if inicio == 0:
+        return True
+    anterior = linha[inicio - 1]
+    if anterior.islower() and anterior.isalpha() and nome[0].islower():
         return False
     return True
 
@@ -139,8 +218,21 @@ def varrer_linha(linha):
             achados.append(m.group(0))
     for m in IP_INTERNO_RE.finditer(linha):
         achados.append(m.group(0))
+    # As duas regras de nome escrevem no mesmo balde, e a posicao do VALOR e a
+    # chave: uma linha `DB_PASSWORD=x` casa nas duas, e sem isso ela sairia
+    # duas vezes no relatorio.
+    vistos = set()
+    for m in SEGREDO_CHAVE_REAL_RE.finditer(linha):
+        nome, valor = m.group(1), m.group(2)
+        if len(valor) >= 3 and _valor_e_literal(nome, valor):
+            vistos.add(m.start(2))
+            achados.append(nome + "=<valor literal>")
     for m in SEGREDO_NOME_RE.finditer(linha):
         nome, valor = m.group(1), m.group(2)
+        if m.start(2) in vistos:
+            continue
+        if not _nome_e_identificador(linha, m.start(1), nome):
+            continue
         # Segredo real tem comprimento. "token: das" e a palavra no sentido de
         # pedaco de texto. Senha curta continua coberta pelo piso de 3.
         piso = 3 if nome.lower() in ("senha", "password", "passwd", "pwd") else 12

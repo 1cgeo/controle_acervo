@@ -246,3 +246,32 @@ describe('mapa da busca: folha pequena por cima da grande', () => {
     expect(dadosPorFonte['produtos'].features[0].properties.area).toBe(0);
   });
 });
+
+/**
+ * A CAIXA DA AREA VISIVEL SAI RECORTADA AO MUNDO.
+ *
+ * O MapLibre repete o globo na horizontal, e o mapa da busca nasce sem `minZoom`
+ * e sem `maxBounds`. Afastado o bastante numa tela larga, `getBounds()` devolve
+ * oeste menor que -180 e leste maior que 180; o `bboxSchema` do servidor recusa
+ * a caixa com 400 e a busca INTEIRA virava estado de erro, com uma frase que nao
+ * dizia a pessoa que bastava aproximar o zoom.
+ */
+describe('mapa da busca: a caixa da area visivel', () => {
+  const limites = (o, s, l, n) => ({
+    getWest: () => o, getSouth: () => s, getEast: () => l, getNorth: () => n,
+  });
+
+  test('recorta a caixa que passa de -180/180 e de -90/90', async () => {
+    const { mapa } = await montar();
+    mapaFalso.getBounds.mockReturnValue(limites(-241.03, -95.4, 190.7, 92.1));
+
+    expect(mapa.areaVisivel()).toEqual([-180, -90, 180, 90]);
+  });
+
+  test('a caixa que ja cabe no mundo passa intacta', async () => {
+    const { mapa } = await montar();
+    mapaFalso.getBounds.mockReturnValue(limites(-53.2, -31.4, -50.1, -29.6));
+
+    expect(mapa.areaVisivel()).toEqual([-53.2, -31.4, -50.1, -29.6]);
+  });
+});

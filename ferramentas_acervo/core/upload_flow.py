@@ -28,6 +28,41 @@ from qgis.PyQt.QtWidgets import QMessageBox
 from .file_transfer import FileTransferThread
 from .dominios import eh_tileserver
 
+# Quanto o fechamento da janela espera cada thread de transferência terminar.
+FECHAR_ESPERA_MS = 10000
+
+# Threads que sobreviveram ao fechamento da janela (a espera de FECHAR_ESPERA_MS
+# estourou e elas continuam vivas). Ficam retidas aqui porque o diálogo dono é
+# WA_DeleteOnClose: destruído ele, morre `self.transfer_threads`, que é a única
+# referência Python à QThread, e o GC destrói uma QThread EM EXECUÇÃO, o que
+# aborta o QGIS inteiro (crash nativo, sem traceback). Mesma rede de segurança do
+# `_orphaned_managers` do DownloadManager.
+_uploads_orfaos = set()
+
+
+def _reter_uploads_orfaos(threads):
+    """Retém as threads ainda vivas e solta as de fechamentos anteriores.
+
+    A limpeza roda SEMPRE na thread principal, e nunca no slot de `finished`:
+    soltar a última referência de dentro da própria thread de trabalho seria
+    destruir a QThread de dentro dela mesma, que é o crash que esta rede evita.
+    """
+    for thread in list(_uploads_orfaos):
+        if thread.isFinished():
+            _uploads_orfaos.discard(thread)
+            thread.deleteLater()
+
+    for thread in threads:
+        if thread.isRunning():
+            _uploads_orfaos.add(thread)
+
+    if _uploads_orfaos:
+        logging.warning(
+            f"{len(_uploads_orfaos)} thread(s) de transferência continuam vivas "
+            "depois do fechamento da janela; retidas até terminarem para evitar "
+            "crash do QGIS"
+        )
+
 
 def calcular_checksum(caminho, bloco=1024 * 1024):
     """SHA-256 de um arquivo.
@@ -114,7 +149,15 @@ class UploadFlowMixin:
     # --- estado -------------------------------------------------------------
 
     def _upload_zerar(self):
-        self.transfer_threads = []
+        # As threads NÃO são descartadas em bloco. Entre o `file_transferred`
+        # (última linha do `run`) e o `finished`, a thread ainda está em
+        # execução: soltar aqui a única referência Python a ela deixaria o GC
+        # destruir uma QThread viva, e o QGIS cai por crash nativo. É o caminho
+        # do `_retentar`, que chama este método logo depois do último arquivo.
+        # Sai da lista só quem já terminou de fato.
+        self.transfer_threads = [
+            t for t in getattr(self, 'transfer_threads', []) if not t.isFinished()
+        ]
         self.failed_transfers = []
         self.arquivos_transferidos = 0
         self.arquivos_com_falha = 0
@@ -322,8 +365,15 @@ class UploadFlowMixin:
 
     # --- fase 3 -------------------------------------------------------------
 
-    def _confirmar(self):
+    def _confirmar(self, _renovada=False):
         """Fecha a sessão no servidor. Devolve True quando o acervo gravou.
+
+        SESSÃO VENCIDA SE RENOVA UMA VEZ. O prazo da sessão é de 24 horas contadas
+        do prepare, e uma cópia de centenas de GB por SMB atravessa isso com
+        facilidade; desde 2026-09-05 o servidor recusa o confirm da sessão vencida
+        com 400 e cita `POST /api/arquivo/renovar-upload`. Os bytes já copiados
+        continuam valendo, então renovar e confirmar de novo é o caminho certo, e
+        é o que se faz aqui, uma vez só (`_renovada`), para não girar em círculo.
 
         O corpo da resposta traz os ids REAIS do que entrou: em `add_version`,
         `dados.versoes[].versao_id` e `.produto_id`; em `add_product`,
@@ -356,8 +406,23 @@ class UploadFlowMixin:
 
         # O confirm é onde os gatilhos do banco falam: sequência de versão,
         # subtipo incompatível, nome físico repetido. A mensagem do servidor vale
-        # muito mais que um "falhou" nosso, e ela vem no envelope.
-        motivo = (resposta or {}).get('message') or "O servidor recusou a confirmação."
+        # muito mais que um "falhou" nosso, e ela vem no envelope. Em erro HTTP o
+        # `post` devolve None, e a frase fica em `ultima_mensagem_do_servidor`.
+        motivo = ((resposta or {}).get('message')
+                  or getattr(self.api_client, 'ultima_mensagem_do_servidor', None)
+                  or "O servidor recusou a confirmação.")
+        if not _renovada and 'renovar-upload' in motivo:
+            self._status("A sessão venceu. Renovando por mais 24 horas e confirmando de novo...")
+            renovacao = self.api_client.post(
+                'arquivo/renovar-upload', {'session_uuid': self.current_session_uuid}
+            )
+            if renovacao and renovacao.get('success'):
+                self._ocupado(True)
+                return self._confirmar(_renovada=True)
+            motivo = ("A sessão venceu e não pôde ser renovada. "
+                      + ((renovacao or {}).get('message')
+                         or getattr(self.api_client, 'ultima_mensagem_do_servidor', None)
+                         or ""))
         self._status(f"Erro: {motivo}")
         QMessageBox.critical(self, "Falha na confirmação", motivo)
         return False
@@ -395,8 +460,28 @@ class UploadFlowMixin:
 
         Sem isto, fechar era a forma mais fácil de deixar sessão pendurada, e a
         mais comum: é o que se faz quando a transferência empaca.
+
+        ESPERAR A THREAD TERMINAR NÃO É ZELO: o diálogo é destruído logo depois
+        (os diálogos do painel são WA_DeleteOnClose), e com ele a única
+        referência Python à QThread. Destruir uma QThread em execução aborta o
+        processo do QGIS inteiro, por crash nativo e sem traceback. É a mesma
+        razão do `shutdown()` do DownloadManager.
         """
-        for thread in getattr(self, 'transfer_threads', []):
+        threads = list(getattr(self, 'transfer_threads', []))
+        for thread in threads:
             thread.cancel()
+        for thread in threads:
+            if thread.isRunning():
+                # O cancelamento é conferido a cada bloco de 1 MB e a cada 0,1 s
+                # do backoff, então a espera normal é curta. O teto existe para
+                # não travar o QGIS se a leitura do compartilhamento de rede
+                # empacar de vez.
+                thread.wait(FECHAR_ESPERA_MS)
+
+        # A espera pode ESTOURAR (leitura de rede pendurada num read que não
+        # volta). Quem sobreviveu vai para o conjunto de módulo: esperar não
+        # basta, porque logo abaixo o diálogo é destruído com a lista dentro.
+        _reter_uploads_orfaos(threads)
+
         self.cancelar_sessao()
         super().closeEvent(event)

@@ -303,6 +303,23 @@ export function openCampoDialog({
 
   let saving = false;
 
+  /**
+   * VOLTA PARA A ABA DOS DADOS antes de pintar qualquer recusa.
+   *
+   * Na EDIÇÃO o conteúdo do modal são três abas, e o rodapé com "Salvar" é do
+   * modal: ele fica visível nas três. Quem apaga o nome na primeira aba, passa
+   * para "Fotos e vídeos" para juntar uma foto e clica em "Salvar" fazia
+   * `setError` numa árvore que a troca de aba já desanexou (`clearChildren` em
+   * `tabs.js`) -- nada acontecia na tela. Sem toast, sem foco, sem fechamento: o
+   * botão parecia morto, e a pessoa clicava de novo.
+   *
+   * O nó `formulario` é o MESMO em toda montagem da aba, então voltar não perde
+   * o que estava digitado.
+   */
+  const mostrarDados = async () => {
+    if (isEdit && content.getActive() !== 'dados') await content.setActive('dados');
+  };
+
   openModal({
     title: isEdit ? `Editar campo: ${campo.nome}` : 'Novo campo',
     content: content.element,
@@ -337,26 +354,43 @@ export function openCampoDialog({
           const fim = fimField.getValue();
           const escolhidas = caixasCategoria.filter(c => c.input.checked).map(c => c.code);
 
-          if (!nome) return nomeField.setError('Informe o nome do campo');
+          // TODA RECUSA PASSA PELA VOLTA À ABA DOS DADOS. Ver `mostrarDados`.
+          if (!nome) {
+            await mostrarDados();
+            return nomeField.setError('Informe o nome do campo');
+          }
           if (ano === null) {
+            await mostrarDados();
             return anoField.setError(
               'Escolha o ano. Se ele não está na lista, cadastre o exercício em "PIT do ano"'
             );
           }
-          if (situacao === null) return situacaoField.setError('Escolha a situação');
-          if (!inicio) return inicioField.setError('Informe a data de início');
-          if (!fim) return fimField.setError('Informe a data de término');
+          if (situacao === null) {
+            await mostrarDados();
+            return situacaoField.setError('Escolha a situação');
+          }
+          if (!inicio) {
+            await mostrarDados();
+            return inicioField.setError('Informe a data de início');
+          }
+          if (!fim) {
+            await mostrarDados();
+            return fimField.setError('Informe a data de término');
+          }
           // O banco tem o mesmo CHECK (`campo_fim_apos_inicio`). Cobrar aqui
           // evita o 500 cru, que cita o nome da restrição e não o campo.
           if (fim < inicio) {
+            await mostrarDados();
             return fimField.setError('O término não pode ser antes do início');
           }
           if (!escolhidas.length) {
+            await mostrarDados();
             erroCategoria.textContent = 'Marque ao menos uma finalidade';
             erroCategoria.classList.remove('hidden');
             return;
           }
           if (!area) {
+            await mostrarDados();
             erroArea.textContent = 'Importe o GeoJSON da área do campo. Ela é obrigatória.';
             erroArea.classList.remove('hidden');
             return;

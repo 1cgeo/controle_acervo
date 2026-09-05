@@ -109,6 +109,13 @@ test('lista vazia diz que esta vazia, em vez de sair em branco', () => {
   assert.strictEqual(saida.lista([], {}).texto, '(nenhum registro)')
 })
 
+test('lista vazia com --json sai como [], e nao como prosa', () => {
+  // Quem encadeia faz JSON.parse da saida, e o caso mais comum e justamente a
+  // consulta que nao achou nada: '(nenhum registro)' quebrava o parse ali.
+  assert.strictEqual(saida.lista([], { formato: 'json' }).texto, '[]')
+  assert.deepStrictEqual(JSON.parse(saida.lista([], { formato: 'json' }).texto), [])
+})
+
 test('o rodape conta registros e quantas colunas foram omitidas', () => {
   const { texto } = saida.lista(USUARIOS, { formato: 'tsv', campos: ['login'] })
   assert.ok(texto.includes('2 registros'))
@@ -133,4 +140,38 @@ test('registro unico sai como pares chave e valor', () => {
 test('contagem de acesso sai com separador de milhar', () => {
   assert.strictEqual(saida.celula('logins', 1234), '1.234')
   assert.strictEqual(saida.celula('usuarios_ativos', 12), '12')
+})
+
+// ---------------------------------------------------------------------------
+// `--json` puro: quem encadeia faz JSON.parse do stdout INTEIRO
+// ---------------------------------------------------------------------------
+//
+// Ate 2026-09-05 `usuario dominios --json` imprimia TRES arrays JSON separados
+// por rotulos em prosa, e a saida inteira nao era JSON nenhum. Agora os tres
+// saem num objeto so, com a chave de cada um sendo o nome da tabela de dominio.
+
+const http = require('../lib/http')
+const usuario = require('../comandos/usuario')
+
+test('usuario dominios --json sai como um objeto so, com os tres dominios', async () => {
+  const antes = http.autenticada
+  http.autenticada = async (cfg, metodo, caminho) => {
+    if (caminho.endsWith('tipo_posto_grad')) return { dados: [{ code: 1, nome_abrev: 'Cel', nome: 'Coronel' }] }
+    if (caminho.endsWith('modulo')) return { dados: [{ code: 1, nome_abrev: 'acervo', nome: 'Acervo' }] }
+    return { dados: [{ code: 2, nome: 'Operador' }] }
+  }
+  try {
+    const r = await usuario.executar({ _: ['usuario', 'dominios'], flags: { json: true } }, {})
+    const voltou = JSON.parse(r.texto)
+    assert.strictEqual(voltou.tipo_posto_grad[0].nome_abrev, 'Cel')
+    assert.strictEqual(voltou.modulo[0].nome_abrev, 'acervo')
+    assert.strictEqual(voltou.tipo_perfil[0].code, 2)
+  } finally {
+    http.autenticada = antes
+  }
+})
+
+test('registro ausente com --json sai como null, e nao como (vazio)', () => {
+  assert.strictEqual(JSON.parse(saida.registro(null, { formato: 'json' })), null)
+  assert.strictEqual(saida.registro(null, {}), '(vazio)')
 })

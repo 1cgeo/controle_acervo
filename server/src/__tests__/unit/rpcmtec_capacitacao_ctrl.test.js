@@ -16,6 +16,14 @@
 //  2. A CAPACITAÇÃO CANCELADA. A listagem do mês filtrava tipo e datas, e não
 //     situação: o que a Divisão cancelou entrava nas subseções 2.6 e 6.2 do
 //     RPCMTec como atividade do mês.
+//
+//  3. A LISTA DE MILITARES, pela MESMA distinção do item 1. `militares` tinha
+//     `.default([])` no schema, e o default injetava a chave: "ausente" nunca
+//     chegava ao controlador, e `gravarMilitares` (DELETE mais INSERT) apagava a
+//     lista inteira. Quem corrigisse pelo CLI o nome de uma capacitação, mandando
+//     o corpo sem `militares`, perdia os oito instrutores dela -- com um evento
+//     de auditoria dizendo que a lista mudou. A tela web sempre manda a lista, e
+//     por isso nunca caiu nisso.
 
 const { createMockDb } = require('../helpers/orcamento/mockDb')
 
@@ -111,6 +119,53 @@ describe('rpcmtec_capacitacao_ctrl: o vínculo com a meta do PIT', () => {
       ([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO rpcmtec.capacitacao')
     )
     expect(chamada[1]).toEqual(expect.objectContaining({ metaPitId: null }))
+  })
+})
+
+describe('rpcmtec_capacitacao_ctrl: a lista de militares', () => {
+  beforeEach(() => mockDb.reset())
+
+  /** O DELETE que abre o `gravarMilitares`: se ele não veio, a lista foi preservada. */
+  const apagouOsMilitares = () =>
+    mockDb.conn.none.mock.calls.some(
+      ([sql]) => typeof sql === 'string' &&
+        sql.includes('DELETE FROM rpcmtec.capacitacao_militar')
+    )
+
+  test('atualizar SEM a chave militares preserva a lista', async () => {
+    // O caso do CLI: corrigir o nome do curso não pode desfazer o cadastro de
+    // quem o ministrou. Antes de 2026-09-05 este caso apagava a lista.
+    prepararAtualizar()
+
+    await ctrl.atualizar(5, MINISTRADA, corpoDaTela({ militares: undefined }), 'uuid-1')
+
+    expect(apagouOsMilitares()).toBe(false)
+  })
+
+  test('atualizar com a lista VAZIA apaga: é "tirei todo mundo"', async () => {
+    // A outra metade da distinção. Sem este caso, a correção acima poderia ter
+    // fechado a única porta que existe para esvaziar a lista.
+    prepararAtualizar()
+
+    await ctrl.atualizar(5, MINISTRADA, corpoDaTela({ militares: [] }), 'uuid-1')
+
+    expect(apagouOsMilitares()).toBe(true)
+  })
+
+  test('atualizar com lista NOVA regrava', async () => {
+    prepararAtualizar()
+    const uuid = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'
+
+    await ctrl.atualizar(5, MINISTRADA, corpoDaTela({ militares: [uuid] }), 'uuid-1')
+
+    expect(apagouOsMilitares()).toBe(true)
+    // O INSERT em lote sai por `db.pgp.helpers.insert`, que monta a string
+    // inteira: o uuid viaja NO SQL, e não em parâmetro nomeado. E o helper
+    // escreve `insert into` em minúsculas, ao contrário do SQL desta casa.
+    const inserido = mockDb.conn.none.mock.calls
+      .map(([sql]) => String(sql))
+      .find(sql => sql.includes('"rpcmtec"."capacitacao_militar"'))
+    expect(inserido).toContain(uuid)
   })
 })
 

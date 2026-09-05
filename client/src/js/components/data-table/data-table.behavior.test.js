@@ -133,6 +133,87 @@ describe('data-table: ordenacao', () => {
     // numeric:true => "Item 1" < "Item 2" < "Item 10"
     expect(nomesVisiveis(element)).toEqual(['Item 1', 'Item 2', 'Item 10']);
   });
+
+  // OS DOIS NULOS EMPATAM.
+  //
+  // O comparador mandava nulo para o fim devolvendo 1, e com os DOIS nulos
+  // devolvia 1 nas duas direcoes (`cmp(a,b) === cmp(b,a) === 1`), o que quebra a
+  // antissimetria que o `Array.prototype.sort` exige: com comparador
+  // inconsistente, quem escolhe a ordem e a implementacao, e nao o codigo.
+  //
+  // HONESTIDADE SOBRE O QUE ESTE CASO PROVA: ele passa com o comparador VELHO
+  // tambem. O TimSort do V8 hoje deixa os nulos na ordem de entrada assim
+  // mesmo, e foi sondado de 4 a 60 linhas, com os nulos no fim e intercalados,
+  // sem uma divergencia. O empate nao conserta um sintoma visivel: ele troca um
+  // acerto de sorte por uma GARANTIA, e este caso e quem guarda a garantia se o
+  // motor mudar ou se alguem reescrever o comparador.
+  test('as linhas sem valor vao para o fim NA ORDEM DE ENTRADA, nas duas direcoes', () => {
+    const linhas = [
+      { nome: 'Sem valor A', valor: null },
+      { nome: 'Com valor', valor: 5 },
+      { nome: 'Sem valor B', valor: undefined },
+      { nome: 'Sem valor C', valor: null },
+    ];
+
+    const { element } = createDataTable({ columns, rows: linhas });
+    const headerValor = () => element.querySelectorAll('.data-table__th--sortable')[1];
+
+    headerValor().click();
+    expect(nomesVisiveis(element)).toEqual([
+      'Com valor', 'Sem valor A', 'Sem valor B', 'Sem valor C',
+    ]);
+
+    // A DIRECAO INVERTE o que tem valor, e nao a ordem entre os nulos: eles nao
+    // respondem ao criterio, entao nao ha o que inverter entre eles.
+    headerValor().click();
+    expect(nomesVisiveis(element)).toEqual([
+      'Com valor', 'Sem valor A', 'Sem valor B', 'Sem valor C',
+    ]);
+  });
+
+  // A REGUA DO `sortValue`, e nao um defeito a consertar aqui.
+  //
+  // O ramo de texto usa `localeCompare(..., { numeric: true })`, que le "1.5" e
+  // "1.25" como o par de numeros (1, 5) e (1, 25) e conclui que 1.5 < 1.25.
+  // Para INTEIRO, texto e data ISO -- que e o que a casa tem -- `numeric: true`
+  // e justamente o certo, e por isso o comparador nao muda.
+  //
+  // A convencao que cobre o decimal e OUTRA: toda coluna de valor decimal
+  // declara `sortValue` devolvendo NUMERO (com `toNumber` de `utils/format.js`),
+  // e o ramo `typeof va === 'number'` a pega antes do `localeCompare`. Hoje as
+  // 25 colunas de dinheiro do orcamento e do equipamento cumprem isso, uma a
+  // uma. Este caso existe para que a proxima coluna de dinheiro que nascer sem
+  // `sortValue` seja descoberta aqui, e nao numa lista de empenhos.
+  test('decimal como TEXTO sai na ordem errada: coluna decimal declara sortValue', () => {
+    const semSortValue = [{ key: 'preco', label: 'Preço', sortable: true }];
+    const { element } = createDataTable({
+      columns: semSortValue,
+      // Como o driver entrega `NUMERIC`: texto, e nao numero.
+      rows: [{ preco: '1.5' }, { preco: '1.25' }],
+    });
+
+    element.querySelector('.data-table__th--sortable').click();
+
+    const precos = Array.from(element.querySelectorAll('tbody tr td:first-child'))
+      .map(td => td.textContent);
+    // ERRADO, e documentado: 1,25 e menor que 1,5.
+    expect(precos).toEqual(['1.5', '1.25']);
+
+    // COM `sortValue` devolvendo numero, a mesma coluna ordena certo.
+    const comSortValue = [{
+      key: 'preco', label: 'Preço', sortable: true, sortValue: (r) => Number(r.preco),
+    }];
+    const outra = createDataTable({
+      columns: comSortValue,
+      rows: [{ preco: '1.5' }, { preco: '1.25' }],
+    });
+    outra.element.querySelector('.data-table__th--sortable').click();
+
+    expect(
+      Array.from(outra.element.querySelectorAll('tbody tr td:first-child'))
+        .map(td => td.textContent)
+    ).toEqual(['1.25', '1.5']);
+  });
 });
 
 describe('data-table: acoes', () => {

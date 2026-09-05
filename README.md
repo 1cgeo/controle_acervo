@@ -105,12 +105,12 @@ Todos sob `/api`. Swagger em `GET /api/api_docs` com o servidor no ar. **Para co
 | `/api/rpcmtec` | plataforma | A edição mensal do RPCMTec, o documento e o PDF assinado, o Anuário Estatístico e o RTM/META4 (ODS), mais a capacitação ministrada (módulo `pit`, subseção 2.6) e a recebida (módulo `efetivo`, 6.2) |
 | `/api/efetivo` | plataforma | Passagem de cada pessoa pela DGEO, impedimentos e o aproveitamento agregado por semana, mês e ano. O PRÓPRIO aproveitamento tem porta separada (`/meu_aproveitamento`, `/meu_periodo`, `/meu_impedimento`), com o dono saindo do token |
 | `/api/acervo` | acervo | Operações do acervo, downloads, visões materializadas |
-| `/api/arquivo` | acervo | Upload (do plugin e do navegador), download e catalogação de arquivos |
+| `/api/arquivo` | acervo | Upload (do plugin e do navegador), download e catalogação de arquivos. A sessão de upload vencida se renova por `POST /renovar-upload` (dono, mais 24 h), e `GET /upload-web/teto` publica o `UPLOAD_WEB_MAX_GB` para o assistente marcar o arquivo grande antes do primeiro byte |
 | `/api/produtos` | acervo | CRUD de produtos e versões, e o quadro da folha do SCN (`/folha`) |
 | `/api/projetos` | acervo | Projetos e lotes |
 | `/api/volumes` | acervo | Volumes de armazenamento |
 | `/api/ponto_controle` | acervo | Pontos de controle geodésico |
-| `/api/gerencia` | acervo | Domínios, arquivos excluídos, inconsistências |
+| `/api/gerencia` | acervo | Domínios, arquivos excluídos, inconsistências. As três leituras são de `consulta`, pela régua; só `verificar_inconsistencias` é de gerente |
 | `/api/dashboard` | acervo | Analytics do acervo |
 | `/api/limites` | acervo | Contorno de estado ou município (schema `limites`), para a tela destacar o lugar filtrado |
 | `/api/mapoteca` | mapoteca | Clientes, pedidos, relatórios CSV e impressão. O material tem o `movimento_material` (o LIVRO) como única porta de escrita, e o `estoque_material` é só leitura |
@@ -159,7 +159,8 @@ Três coisas do SAP 2.3.5 não têm rota aqui, e a ausência é decidida. Detalh
   ele é um projeto do QGIS inteiro, com as camadas da produção desenhadas.
 - **`DELETE /perigo/produtos_sem_unidade_trabalho` e `DELETE /perigo/lote_sem_produto`**, removidas em
   2026-08-09: aqui o produto e o lote são `acervo.versao` e `acervo.lote`, e o critério selecionaria
-  o acervo INTEIRO. `/ut_sem_atividade` fica.
+  o acervo INTEIRO. `/ut_sem_atividade` fica, e desde 2026-09-05 aceita `lote_id` no corpo para
+  limpar SÓ um lote; sem ele a varredura continua global e a resposta conta o que apagou por lote.
 
 **Formato padrão de resposta:**
 

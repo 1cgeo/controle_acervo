@@ -2,6 +2,7 @@
 
 const { gerarMiniatura } = require('./miniatura')
 const { caminhoNoVolume } = require('./caminho_volume')
+const { STATUS_ARQUIVO } = require('./domain_constants')
 
 /**
  * A fila de miniaturas: quem falta, e o que fazer com cada um.
@@ -58,7 +59,11 @@ WITH candidato AS (
   JOIN acervo.arquivo a ON a.versao_id = v.id
   JOIN acervo.volume_armazenamento vol ON vol.id = a.volume_armazenamento_id
   WHERE lower(a.extensao) IN ('pdf', 'tif', 'tiff', 'img', 'ecw')
-    AND a.tipo_status_id = 1
+    -- O code sai de utils/domain_constants.js, e nao escrito a mao: um "1"
+    -- solto aqui se le como qualquer um dos quatro status de arquivo, e este
+    -- SQL e texto para os DOIS drivers (o lote em pg cru e o servidor em
+    -- pg-promise), entao ninguem o confere.
+    AND a.tipo_status_id = ${STATUS_ARQUIVO.CARREGADO}
   ORDER BY
     v.id,
     CASE lower(a.extensao)

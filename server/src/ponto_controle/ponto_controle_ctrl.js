@@ -367,6 +367,14 @@ controller.getCsv = async (filtros = {}) => {
               p.orgao_executante, p.engenheiro_responsavel,
               p.crea_engenheiro_responsavel,
               p.data_visita, p.valor_gravidade, p.observacao,
+              -- O TEXTO da "Outra referencia". Os codigos 99 de
+              -- sistema_geodesico e referencial_altim existem justamente para
+              -- dizer "e outra", e QUAL e mora nestas duas colunas. Sem elas o
+              -- CSV mostrava so o rotulo generico "Outra referencia", e quem
+              -- exporta a planilha perdia exatamente a informacao que o codigo
+              -- 99 registra, sem ter como saber que perdeu. A ficha nunca teve
+              -- o problema porque le a linha inteira.
+              p.outra_ref_plan, p.outro_ref_alt,
               ${rotulos},
               (SELECT COUNT(*)::int FROM ponto_controle.arquivo AS a
                 WHERE a.ponto_id = p.id) AS total_arquivos

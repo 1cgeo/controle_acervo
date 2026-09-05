@@ -252,7 +252,7 @@ router.get(
 // (imprimir, etiquetar, registrar). Quem só consulta usa a lista de pedidos.
 //
 // DUAS FILAS, e `?incluir_remetidos=true` escolhe a segunda. Sem a query a rota
-// devolve a fila de IMPRESSÃO (1, 2 e 3), que é o contrato que o plugin do QGIS
+// devolve a fila de IMPRESSÃO (2 e 3), que é o contrato que o plugin do QGIS
 // já instalado espera. Com ela devolve a fila de ATENDIMENTO, que traz também o
 // pedido Remetido (4), ainda à espera da marca de Concluído. Ver
 // `query_fragments.js` para a razão de as duas listas serem diferentes.
@@ -454,7 +454,15 @@ router.post(
   verifyPerfil('operador', 'mapoteca'),
   schemaValidation({ body: acervoSchema.downloadConfirmations }),
   asyncHandler(async (req, res, next) => {
-    const dados = await acervoCtrl.confirmDownload(req.body.confirmations)
+    // `req.usuarioUuid` VAI JUNTO, e sem ele esta rota parava de funcionar: o
+    // `confirmDownload` passou a casar tambem por `d.usuario_uuid` (o dono do
+    // token fecha o proprio download), e a chamada sem o uuid nunca casava. Quem
+    // prepara aqui e o mesmo que confirma: o par
+    // `/pedido/:id/download_impressao` grava o download com `req.usuarioUuid`.
+    const dados = await acervoCtrl.confirmDownload(
+      req.body.confirmations,
+      req.usuarioUuid
+    )
     const msg = 'Status de download atualizado com sucesso'
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados)
   })

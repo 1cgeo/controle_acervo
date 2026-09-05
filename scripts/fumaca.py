@@ -15,11 +15,18 @@ alguma checagem falha, para servir de portao num script de deploy.
 Os limites minimos abaixo sao do acervo da DGEO em 2026-07. Instalacao nova ou
 outro acervo devolve menos: ajuste os minimos ou rode so as checagens de rota.
 """
+import datetime
 import json
 import os
 import sys
 import urllib.error
 import urllib.request
+
+# O ano NAO se crava. Ate 2026-09-05 o bloco do RPCMTec pedia `?ano=2026` em
+# texto, e em 2027-01-02 as duas checagens dele reprovariam sem que nada tivesse
+# quebrado. Portao que falha sempre ensina a ignorar portao, que e o contrario do
+# que ele existe para fazer.
+ANO_CORRENTE = datetime.date.today().year
 
 # Host interno da DGEO sai por proxy Squid, que responde 503. Sempre direto.
 for _chave in ('http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY'):
@@ -210,26 +217,45 @@ secao('RPCMTec (plataforma, fora dos modulos)')
 # /api/rpcmtec?ano= lista as edicoes e /api/rpcmtec/<id>/documento monta o
 # documento. A fumaca pega a edicao MAIS RECENTE do ano, porque e a que o chefe
 # esta fechando.
-c, b = chamar('/api/rpcmtec?ano=2026', token=tok)
-edicoes = b.get('dados') or []
-edicao = max(edicoes, key=lambda e: e.get('mes') or 0) if edicoes else None
+# A queda para o ano ANTERIOR cobre o comeco de exercicio, quando a primeira
+# edicao do ano ainda nao foi cadastrada: ali a ausencia e o estado normal, e nao
+# uma regressao. E a mesma ideia do bloco do orcamento acima, que pega o
+# max(anos) da rota em vez de cravar.
+edicao = None
+ano_rpcmtec = None
+for _candidato in (ANO_CORRENTE, ANO_CORRENTE - 1):
+    c, b = chamar(f'/api/rpcmtec?ano={_candidato}', token=tok)
+    _edicoes = b.get('dados') or []
+    if _edicoes:
+        edicao = max(_edicoes, key=lambda e: e.get('mes') or 0)
+        ano_rpcmtec = _candidato
+        break
+
 if edicao is None:
     checa('RPCMTec inteiro, na numeracao do documento da Divisao', False,
-          f'HTTP {c}, nenhuma edicao de 2026 cadastrada')
+          f'HTTP {c}, nenhuma edicao de {ANO_CORRENTE} nem de {ANO_CORRENTE - 1} cadastrada')
 else:
     c, b = chamar(f"/api/rpcmtec/{edicao['id']}/documento", token=tok)
     secoes = (b.get('dados') or {}).get('secoes') or []
     subsecoes = [x for s_ in secoes for x in (s_.get('subsecoes') or [])]
     checa('RPCMTec inteiro, na numeracao do documento da Divisao',
           c == 200 and len(subsecoes) >= 18,
-          f"HTTP {c}, edicao {edicao.get('mes')}/2026, "
+          f"HTTP {c}, edicao {edicao.get('mes')}/{ano_rpcmtec}, "
           f'{len(secoes)} secoes / {len(subsecoes)} subsecoes (piso 18)')
 
-c, b = chamar('/api/rpcmtec/anuario?ano=2026&mes=6', token=tok)
-d = b.get('dados') or {}
-checa('Anuario Estatistico (Tabela 5.4.9, sobe para a DSG)',
-      c == 200 and len(d.get('convencional') or []) == 18 and len(d.get('digital') or []) == 16,
-      f"HTTP {c}, {len(d.get('convencional') or [])} convencional / {len(d.get('digital') or [])} digital")
+# O Anuario sai do MESMO mes da edicao achada acima, e nao de um mes 6 cravado:
+# ele e o anexo que sobe junto com aquele RPCMTec, entao perguntar por outro mes
+# seria conferir um documento que ninguem esta fechando.
+if edicao is None:
+    checa('Anuario Estatistico (Tabela 5.4.9, sobe para a DSG)', False,
+          'sem edicao de RPCMTec cadastrada para dizer de que mes')
+else:
+    c, b = chamar(f"/api/rpcmtec/anuario?ano={ano_rpcmtec}&mes={edicao.get('mes')}", token=tok)
+    d = b.get('dados') or {}
+    checa('Anuario Estatistico (Tabela 5.4.9, sobe para a DSG)',
+          c == 200 and len(d.get('convencional') or []) == 18 and len(d.get('digital') or []) == 16,
+          f"HTTP {c}, {edicao.get('mes')}/{ano_rpcmtec}, "
+          f"{len(d.get('convencional') or [])} convencional / {len(d.get('digital') or [])} digital")
 
 secao('COLISOES DE NOME RESOLVIDAS PELO PREFIXO')
 # /arquivo existe nos DOIS modulos. Antes da fusao colidia; o prefixo

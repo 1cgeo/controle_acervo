@@ -301,9 +301,20 @@ export async function renderAuditoria(container) {
       pintar();
     } catch (err) {
       if (disposed || meu !== requisicao) return;
-      resultados = [];
-      tabela.update({ rows: [], loading: false });
-      resumoEl.textContent = 'Não foi possível rodar a auditoria.';
+      // A MEDICAO ANTERIOR FICA NA TELA, e nao uma tabela vazia.
+      //
+      // Zerar `resultados` custava duas coisas. A tabela passava a dizer
+      // "Nenhum invariante nesta severidade", que nesta tela se le como acervo
+      // limpo -- exatamente o oposto do que aconteceu. E o resumo, repintado no
+      // primeiro toque no filtro de severidade, afirmava "Medido às 10:52. 0
+      // invariante(s) rodados. 0 com ocorrência.": a hora da medicao que deu
+      // certo, com as contagens da que falhou.
+      resultados = ultimaAuditoria ? ultimaAuditoria.resultados : [];
+      pintar();
+      resumoEl.textContent = ultimaAuditoria
+        ? `Não foi possível rodar a auditoria agora. Na tela, a medição das `
+          + `${horaDe(ultimaAuditoria.quando)}.`
+        : 'Não foi possível rodar a auditoria.';
       showError(err.message || 'Não foi possível rodar a auditoria.');
     } finally {
       if (!disposed && meu === requisicao) {

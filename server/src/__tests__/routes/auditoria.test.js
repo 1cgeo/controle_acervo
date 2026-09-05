@@ -10,8 +10,8 @@
 
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
-const { cleanTestData } = require('../helpers/db')
-const { generateAdminToken, generateUserToken } = require('../helpers/auth')
+const { conn, cleanTestData } = require('../helpers/db')
+const { generateAdminToken, generateUserToken, ADMIN_UUID } = require('../helpers/auth')
 const { createProduto, createVersao, createArquivo, createVolume } = require('../helpers/fixtures')
 const { INVARIANTES } = require('../../acervo/invariantes')
 
@@ -506,6 +506,146 @@ describe('GET /api/acervo/auditoria', () => {
 
       expect((await auditar('?codigos=4h&amostra=0')).body.dados[0].total).toBe(antes + 1)
     })
+  })
+
+  // ---- 5g e 5h: o Insumo, e a ORDEM DAS PONTAS -----------------------------
+  //
+  // A ordem de `versao_id_1`/`versao_id_2` NAO e canonica: o POST de
+  // `versao_relacionamento` grava a ordem que veio no corpo, e a leitura da
+  // ficha ja trata o par como nao direcionado. Todo invariante que fala de
+  // Insumo tem de tratar as duas pontas igual, e nenhum dos dois tratava.
+  describe('a ordem das pontas do Insumo (5g, 5h)', () => {
+    const INSUMO = 1
+
+    const ligar = (v1, v2) => conn.none(
+      `INSERT INTO acervo.versao_relacionamento
+         (versao_id_1, versao_id_2, tipo_relacionamento_id, usuario_relacionamento_uuid)
+       VALUES ($1, $2, $3, $4)`,
+      [v1, v2, INSUMO, ADMIN_UUID]
+    )
+
+    // 5g e DEFECT: tem de dar zero. Agrupando as pontas em separado, a versao
+    // ligada a uma como ponta esquerda e a outra como ponta direita aparecia uma
+    // vez em cada grupo e nenhum count(*)>1 disparava.
+    it('should catch a version linked to two others with the sides swapped (5g)', async () => {
+      const antes = (await auditar('?codigos=5g&amostra=0')).body.dados[0].total
+
+      const pa = await createProduto({ mi: '5g50-1', inom: 'INSUMO-A' })
+      const pb = await createProduto({ mi: '5g50-2', inom: 'INSUMO-B' })
+      const pc = await createProduto({ mi: '5g50-3', inom: 'INSUMO-C' })
+      const meio = await createVersao(pa.id)
+      const outra = await createVersao(pb.id)
+      const terceira = await createVersao(pc.id)
+
+      // A versao do meio e ponta ESQUERDA numa ligacao e DIREITA na outra.
+      await ligar(meio.id, outra.id)
+      await ligar(terceira.id, meio.id)
+
+      const res = await auditar('?codigos=5g')
+      expect(res.body.dados[0].total).toBe(antes + 1)
+      expect(res.body.dados[0].amostra.map(r => Number(r.versao_id)))
+        .toContain(Number(meio.id))
+    })
+
+    // CONTROLE POSITIVO: o par 1:1, que e o caso normal, continua nao acusando.
+    it('should not flag a plain 1:1 Insumo pair (5g)', async () => {
+      const antes = (await auditar('?codigos=5g&amostra=0')).body.dados[0].total
+
+      const pa = await createProduto({ mi: '5g51-1', inom: 'INSUMO-D' })
+      const pb = await createProduto({ mi: '5g51-2', inom: 'INSUMO-E' })
+      await ligar((await createVersao(pa.id)).id, (await createVersao(pb.id)).id)
+
+      expect((await auditar('?codigos=5g&amostra=0')).body.dados[0].total).toBe(antes)
+    })
+
+    // 5h e REVISAR e mede a LACUNA. Casando so (carta, cdgv), o par cadastrado
+    // ao contrario aparecia como "sem relacionamento" mesmo ja tendo um.
+    it('should not report a linked pair as missing when the sides are swapped (5h)', async () => {
+      const antes = (await auditar('?codigos=5h&amostra=0')).body.dados[0].total
+
+      const projeto = await conn.one(
+        `INSERT INTO acervo.projeto (nome, descricao, data_inicio, status_execucao_id,
+           usuario_cadastramento_uuid)
+         VALUES ('Projeto 5h', '', '2026-01-01', 1, $1) RETURNING id`, [ADMIN_UUID])
+      const lote = await conn.one(
+        `INSERT INTO acervo.lote (projeto_id, pit, nome, descricao, data_inicio,
+           status_execucao_id, usuario_cadastramento_uuid)
+         VALUES ($1, 'PIT-5H', 'Lote 5h', '', '2026-01-01', 1, $2) RETURNING id`,
+        [projeto.id, ADMIN_UUID])
+
+      // Mesmo INOM, mesma escala, mesmo lote: o par que o 5h procura.
+      const carta = await createProduto({
+        mi: '5h50-1', inom: 'PAR-5H', tipo_produto_id: 2, tipo_escala_id: 1
+      })
+      const cdgv = await createProduto({
+        mi: '5h50-2', inom: 'PAR-5H', tipo_produto_id: 1, tipo_escala_id: 1
+      })
+      const vCarta = await createVersao(carta.id, { subtipo_produto_id: 2, lote_id: lote.id })
+      const vCdgv = await createVersao(cdgv.id, { subtipo_produto_id: 1, lote_id: lote.id })
+
+      // Cadastrado AO CONTRARIO: o CDGV como ponta esquerda.
+      await ligar(vCdgv.id, vCarta.id)
+
+      expect((await auditar('?codigos=5h&amostra=0')).body.dados[0].total).toBe(antes)
+    })
+  })
+
+  // ---- 3h: a regra vem do dominio, e nao de uma lista copiada ---------------
+  describe('subtipo fora do tipo de produto (3h)', () => {
+    // A lista fixa cobria CINCO tipos de produto. O tipo 9 (Modelo 3D) nao
+    // aparecia em clausula nenhuma, entao esta combinacao errada passava.
+    it('should catch a wrong subtipo on a tipo the old fixed list ignored', async () => {
+      const antes = (await auditar('?codigos=3h&amostra=0')).body.dados[0].total
+      const p = await createProduto({ mi: '3h50-1', inom: 'TIPO-9', tipo_produto_id: 9 })
+      // subtipo 5 = Modelo Digital de Superficie, cujo tipo_id e 5, nao 9.
+      await createVersao(p.id, { subtipo_produto_id: 5 })
+
+      expect((await auditar('?codigos=3h&amostra=0')).body.dados[0].total).toBe(antes + 1)
+    })
+
+    it('should not flag a subtipo that belongs to the tipo', async () => {
+      const antes = (await auditar('?codigos=3h&amostra=0')).body.dados[0].total
+      const p = await createProduto({ mi: '3h50-2', inom: 'TIPO-9-OK', tipo_produto_id: 9 })
+      // subtipo 26 = Modelo 3D, tipo_id 9.
+      await createVersao(p.id, { subtipo_produto_id: 26 })
+
+      expect((await auditar('?codigos=3h&amostra=0')).body.dados[0].total).toBe(antes)
+    })
+
+    // As tres tolerancias legadas continuam FORA da conta, e agora estao
+    // escritas como excecao nomeada em vez de escondidas na lista de aceitos.
+    it('should keep tolerating the three legacy pairs', async () => {
+      const antes = (await auditar('?codigos=3h&amostra=0')).body.dados[0].total
+      const p = await createProduto({ mi: '3h50-3', inom: 'LEGADO-1-22', tipo_produto_id: 1 })
+      // subtipo 22 = CDGV para Ortoimagem, tipo_id 11, num produto de tipo 1.
+      await createVersao(p.id, { subtipo_produto_id: 22 })
+
+      expect((await auditar('?codigos=3h&amostra=0')).body.dados[0].total).toBe(antes)
+    })
+  })
+
+  // ---- 3e: a rede nao pode ter malha maior que o gatilho --------------------
+  //
+  // O gatilho `acervo.validate_version` ancora dos dois lados; o invariante nao
+  // ancorava, e `1-dsg2026x` passava por ele. Como o gatilho recusa na escrita,
+  // o rotulo entra aqui por UPDATE direto com o gatilho desabilitado -- que e a
+  // porta que este invariante existe para vigiar (COPY, carga, migracao).
+  it('should catch an off-pattern label that only the trigger was refusing (3e)', async () => {
+    const antes = (await auditar('?codigos=3e&amostra=0')).body.dados[0].total
+    const p = await createProduto({ mi: '3e50-1', inom: 'ROTULO-FRACO' })
+    const v = await createVersao(p.id)
+
+    await conn.none('ALTER TABLE acervo.versao DISABLE TRIGGER USER')
+    try {
+      await conn.none('UPDATE acervo.versao SET versao = $1 WHERE id = $2',
+        ['1-dsg2026x', v.id])
+    } finally {
+      await conn.none('ALTER TABLE acervo.versao ENABLE TRIGGER USER')
+    }
+
+    const res = await auditar('?codigos=3e')
+    expect(res.body.dados[0].total).toBe(antes + 1)
+    expect(res.body.dados[0].amostra.map(r => Number(r.id))).toContain(Number(v.id))
   })
 
   // ---- 2e: a rede do define_produto ----------------------------------------

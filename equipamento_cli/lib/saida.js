@@ -129,9 +129,15 @@ function lista (dados, opcoes = {}) {
 
 /** Renderiza um registro unico como pares chave: valor. */
 function registro (dado, opcoes = {}) {
+  // O FORMATO decide antes de tudo, pela mesma razao que em lista(): com
+  // `--json`, registro ausente sai como `null` e escalar sai como escalar JSON,
+  // e nunca como `(vazio)`, que quebraria o `JSON.parse` de quem encadeia
+  // justamente no caso mais comum, a consulta que nao achou nada.
+  if ((opcoes.formato || 'tsv') === 'json') {
+    return JSON.stringify(dado === undefined ? null : dado, null, 2)
+  }
   if (dado === null || dado === undefined) return '(vazio)'
   if (typeof dado !== 'object') return String(dado)
-  if ((opcoes.formato || 'tsv') === 'json') return JSON.stringify(dado, null, 2)
 
   const chaves = opcoes.campos && opcoes.campos.length
     ? opcoes.campos.filter(c => c in dado)

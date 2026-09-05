@@ -269,17 +269,36 @@ describe('renderDashboard: o painel de pendencias', () => {
     cleanup();
   });
 
-  // O link leva a lista onde o conserto se faz. A liquidacao nao tem lista
-  // propria (vive na ficha da NE), e por isso e a unica linha sem link.
+  // O link leva a lista onde o conserto se faz, NO ANO DO PAINEL. A liquidacao
+  // nao tem lista propria (vive na ficha da NE), e por isso e a unica linha sem
+  // link.
   test('cada pendencia com lista propria leva o link para ela', async () => {
     const { container, cleanup } = await montar();
 
     const destinos = Array.from(container.querySelectorAll('.pendencias__lista a'))
       .map(a => a.getAttribute('href'));
 
-    expect(destinos).toContain('#/orcamento/notas_empenho');
-    expect(destinos).toContain('#/orcamento/notas_credito');
-    expect(destinos).toContain('#/orcamento/rpnp');
+    expect(destinos).toContain(`#/orcamento/notas_empenho?ano=${ANO_ATUAL}`);
+    expect(destinos).toContain(`#/orcamento/notas_credito?ano=${ANO_ATUAL}`);
+    expect(destinos).toContain(`#/orcamento/rpnp?ano=${ANO_ATUAL}`);
+
+    cleanup();
+  });
+
+  // O ANO VIAJA NO LINK. Sem ele, a pendencia de 2025 ("Notas de credito sem
+  // data de emissao: 51 de 51") apontava para uma lista aberta em 2026, onde
+  // aquelas 51 nem existem: o painel apontava um defeito e o link levava a uma
+  // tela que o negava.
+  test('o link da pendencia de 2025 leva o ano de 2025', async () => {
+    const { container, cleanup } = await montar();
+
+    await trocarAno(container, 2025);
+
+    const destinos = Array.from(container.querySelectorAll('.pendencias__lista a'))
+      .map(a => a.getAttribute('href'));
+
+    expect(destinos.length).toBeGreaterThan(0);
+    for (const href of destinos) expect(href).toContain('?ano=2025');
 
     cleanup();
   });

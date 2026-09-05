@@ -45,3 +45,39 @@ describe('clearAuth: a sessao inteira sai junto', () => {
     expect(localStorage.getItem('@sca-perfis')).toBeNull();
   });
 });
+
+// A OUTRA METADE, e ela e a que faltava: SESSAO NOVA COMECA COM CACHE VAZIO.
+//
+// `clearAuth` cobre as portas de SAIDA (o botao Sair, o 401, a tela de acesso
+// negado). Havia um caminho que nao passa por nenhuma delas: quando o token
+// vence pelo RELOGIO, quem barra e o `authLoader` do router, que devolve
+// '/login?from=...' sem limpar nada. A aba nao recarrega, entao o Map em memoria
+// de `services/cache.js` atravessa a troca inteira -- e as tabelas de dominio
+// duram 30 minutos ali. A pessoa seguinte na mesma maquina recebia o que a
+// anterior tinha carregado, sem uma chamada ao servidor e sem nada na tela
+// dizendo isso.
+describe('saveAuth: sessao nova nao herda o cache da anterior', () => {
+  test('o dado da pessoa A nao chega a pessoa B quando ninguem chamou clearAuth', async () => {
+    const buscarA = vi.fn(() => Promise.resolve(['pedido da pessoa A']));
+
+    saveAuth({ token: 't', administrador: false, uuid: 'a', perfis: { mapoteca: 1 } }, 'pessoa-a');
+    expect(await cachedFetch('pedidos:list', buscarA)).toEqual(['pedido da pessoa A']);
+
+    // A sessao de A vence pelo relogio: nada e chamado, so o proximo login.
+    const buscarB = vi.fn(() => Promise.resolve(['pedido da pessoa B']));
+    saveAuth({ token: 't2', administrador: false, uuid: 'b', perfis: { mapoteca: 1 } }, 'pessoa-b');
+
+    expect(await cachedFetch('pedidos:list', buscarB)).toEqual(['pedido da pessoa B']);
+    expect(buscarB).toHaveBeenCalledTimes(1);
+  });
+
+  test('dentro da MESMA sessao o cache continua valendo', async () => {
+    const buscar = vi.fn(() => Promise.resolve(['dominio']));
+    saveAuth({ token: 't', administrador: false, uuid: 'a', perfis: { acervo: 1 } }, 'pessoa-a');
+
+    await cachedFetch('dominio:tipo_produto', buscar);
+    await cachedFetch('dominio:tipo_produto', buscar);
+
+    expect(buscar).toHaveBeenCalledTimes(1);
+  });
+});

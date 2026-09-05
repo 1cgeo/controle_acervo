@@ -30,19 +30,26 @@ let container;
 beforeEach(() => {
   container = document.createElement('div');
   document.body.replaceChildren(container);
+  // O FILTRO VIVE NA URL, e a barra de endereço é estado compartilhado entre os
+  // casos deste arquivo: sem zerar, a query que um caso escreveu chegaria ao
+  // seguinte como se fosse a rota por onde a pessoa entrou.
+  history.replaceState(null, '', '#/producao/atividade_subfase');
   servico.resposta = [];
   servico.falha = null;
   servico.chamadas = 0;
 });
 
-const abrir = async () => {
-  const cleanup = await renderAtividadeSubfase(container);
+const abrir = async (busca = '') => {
+  const cleanup = await renderAtividadeSubfase(container, { query: new URLSearchParams(busca) });
   await flush();
   return cleanup;
 };
 
-const quadros = () => [...container.querySelectorAll('.linha-tempo__quadro')];
-const barras = () => [...container.querySelectorAll('.linha-tempo__barra')];
+const seletorDeLote = () => container.querySelector('.page__filters select');
+const urlDaTela = () => window.location.hash.replace(/^#/, '');
+
+const quadros = () => [...container.querySelectorAll('.tempo-subfase__quadro')];
+const barras = () => [...container.querySelectorAll('.tempo-subfase__barra')];
 
 describe('diaLocal: o dia do banco é o dia daqui', () => {
   test("'2026-01-01' é 1º de janeiro no fuso local, e não 31 de dezembro", async () => {
@@ -186,9 +193,9 @@ describe('atividade por subfase: o agrupamento e os filtros', () => {
     servico.resposta = duasLinhas();
     await abrir();
 
-    const titulos = quadros().map(q => q.querySelector('.linha-tempo__lote').textContent);
+    const titulos = quadros().map(q => q.querySelector('.tempo-subfase__lote').textContent);
     expect(titulos).toEqual(['Lote 1', 'Lote 2']);
-    expect(quadros()[0].querySelectorAll('.linha-tempo__linha')).toHaveLength(2);
+    expect(quadros()[0].querySelectorAll('.tempo-subfase__linha')).toHaveLength(2);
   });
 
   // A QUEBRA É PELO `lote_id`. Dois projetos podem batizar o lote com o mesmo
@@ -208,7 +215,7 @@ describe('atividade por subfase: o agrupamento e os filtros', () => {
     await abrir();
 
     expect(quadros()).toHaveLength(2);
-    expect(quadros().map(q => q.querySelector('.linha-tempo__lote').textContent))
+    expect(quadros().map(q => q.querySelector('.tempo-subfase__lote').textContent))
       .toEqual(['Lote A', 'Lote A']);
   });
 
@@ -227,7 +234,7 @@ describe('atividade por subfase: o agrupamento e os filtros', () => {
     await flush();
 
     expect(quadros()).toHaveLength(1);
-    expect(quadros()[0].querySelector('.linha-tempo__lote').textContent).toBe('Lote 2');
+    expect(quadros()[0].querySelector('.tempo-subfase__lote').textContent).toBe('Lote 2');
   });
 
   test('a busca por subfase ignora acento e caixa', async () => {
@@ -239,7 +246,7 @@ describe('atividade por subfase: o agrupamento e os filtros', () => {
     input.dispatchEvent(new Event('input'));
     await new Promise(r => setTimeout(r, 300));
 
-    expect(container.querySelectorAll('.linha-tempo__linha')).toHaveLength(1);
+    expect(container.querySelectorAll('.tempo-subfase__linha')).toHaveLength(1);
     expect(container.textContent).toContain('Validação');
   });
 
@@ -288,11 +295,11 @@ describe('duas subfases de mesmo nome em linhas de produção diferentes', () =>
     await abrir();
 
     expect(quadros()).toHaveLength(1);
-    expect(quadros()[0].querySelectorAll('.linha-tempo__linha')).toHaveLength(2);
+    expect(quadros()[0].querySelectorAll('.tempo-subfase__linha')).toHaveLength(2);
     // Uma barra em cada linha, e não duas na mesma.
     expect(barras()).toHaveLength(2);
-    const porLinha = [...quadros()[0].querySelectorAll('.linha-tempo__linha')]
-      .map(l => l.querySelectorAll('.linha-tempo__barra').length);
+    const porLinha = [...quadros()[0].querySelectorAll('.tempo-subfase__linha')]
+      .map(l => l.querySelectorAll('.tempo-subfase__barra').length);
     expect(porLinha).toEqual([1, 1]);
   });
 
@@ -300,7 +307,7 @@ describe('duas subfases de mesmo nome em linhas de produção diferentes', () =>
     servico.resposta = duasEdicoes();
     await abrir();
 
-    const rotulos = [...container.querySelectorAll('.linha-tempo__rotulo')]
+    const rotulos = [...container.querySelectorAll('.tempo-subfase__rotulo')]
       .map(r => r.textContent)
       .filter(Boolean);
     expect(rotulos).toEqual(['Edição (CTM25)', 'Edição (CDGV)']);
@@ -319,9 +326,63 @@ describe('duas subfases de mesmo nome em linhas de produção diferentes', () =>
     ];
     await abrir();
 
-    const rotulos = [...container.querySelectorAll('.linha-tempo__rotulo')]
+    const rotulos = [...container.querySelectorAll('.tempo-subfase__rotulo')]
       .map(r => r.textContent)
       .filter(Boolean);
     expect(rotulos).toEqual(['Edição', 'Validação']);
+  });
+});
+
+// OS DOIS FILTROS VIVEM NA URL, no molde da lista de pedidos da mapoteca
+// (commit `a8212b9`): sair da tela e voltar devolvia "Todos" com a busca em
+// branco, e não havia como mandar o recorte filtrado para outra pessoa.
+describe('atividade por subfase: os filtros vivem na URL', () => {
+  const duasLinhas = () => [
+    {
+      lote_id: 1, subfase_id: 10, lote: 'Lote 1', subfase: 'Edição',
+      linha_producao: 'CTM25', data: [['2026-01-01', '1', '2026-01-10']],
+    },
+    {
+      lote_id: 2, subfase_id: 10, lote: 'Lote 2', subfase: 'Edição',
+      linha_producao: 'CTM25', data: [['2026-02-01', '1', '2026-02-10']],
+    },
+  ];
+
+  test('abre já no lote da query, e o seletor nasce marcado', async () => {
+    servico.resposta = duasLinhas();
+    await abrir('lote=2');
+
+    expect(quadros()).toHaveLength(1);
+    expect(quadros()[0].querySelector('.tempo-subfase__lote').textContent).toBe('Lote 2');
+    // O seletor que age sem aparecer é pior do que filtro nenhum.
+    expect(seletorDeLote().value).toBe('2');
+  });
+
+  test('trocar o lote escreve a URL, e voltar para Todos a limpa', async () => {
+    servico.resposta = duasLinhas();
+    await abrir();
+    expect(urlDaTela()).toBe('/producao/atividade_subfase');
+
+    const seletor = seletorDeLote();
+    seletor.value = '2';
+    seletor.dispatchEvent(new Event('change'));
+    await flush();
+    expect(urlDaTela()).toBe('/producao/atividade_subfase?lote=2');
+
+    seletor.value = '';
+    seletor.dispatchEvent(new Event('change'));
+    await flush();
+    expect(urlDaTela()).toBe('/producao/atividade_subfase');
+  });
+
+  // O RECORTE QUE ACABOU: sem isto, a tela abriria vazia com o seletor dizendo
+  // "Todos" -- duas afirmações ao mesmo tempo, e nenhuma verdadeira.
+  test('lote da URL que não existe nos dados é descartado', async () => {
+    servico.resposta = duasLinhas();
+    await abrir('lote=99');
+
+    expect(quadros()).toHaveLength(2);
+    expect(seletorDeLote().value).toBe('');
+    expect(urlDaTela()).toBe('/producao/atividade_subfase');
   });
 });

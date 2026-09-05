@@ -178,6 +178,22 @@ export function createFileAttachment({
     if (!file) return;
 
     if (hasVinculo) {
+      // SUBSTITUIR TAMBEM DESTROI, e por isso tambem pergunta. No modo `single`
+      // (NC e DFD, um PDF cada) o `POST /orcamento/arquivo` apaga a linha
+      // anterior dentro da mesma transacao: o PDF do SIAFI daquela NC saia do
+      // servidor sem pergunta nenhuma, pelo botao ao lado do lixo que a tela
+      // esconde de quem nao e gerente. A remocao EXPLICITA ja confirmava; o
+      // caminho que destroi o mesmo dado, nao.
+      if (!isMulti && arquivos.length) {
+        const ok = await confirmDialog({
+          title: 'Substituir anexo',
+          message: `Anexar "${file.name}" REMOVE "${arquivos[0].nome_original}" do servidor. `
+            + 'Esta ação não pode ser desfeita.',
+          confirmLabel: 'Substituir',
+          danger: true,
+        });
+        if (!ok) return;
+      }
       busy = true;
       render();
       try {

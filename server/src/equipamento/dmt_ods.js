@@ -221,7 +221,7 @@ const gerarRelatorioDmt = async linhas => {
     throw new AppError(
       'A planilha-semente do Relatório DMT deveria ter ' +
       `${LINHAS_NA_SEMENTE} linhas (duas de cabeçalho e uma de modelo), e tem ${linhasNaSemente}`,
-      httpCode.InternalServerError
+      httpCode.InternalError
     )
   }
 

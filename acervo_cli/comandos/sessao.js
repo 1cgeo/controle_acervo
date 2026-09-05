@@ -59,7 +59,35 @@ async function executar (args, cfg) {
   }
 
   // login
-  const { token, administrador, perfis } = await http.autenticar(cfg)
+  //
+  // `acervo schema` lista `login` entre os RECURSOS, com a operacao `autenticar`
+  // e a forma `acervo <recurso> <operacao> [--data '{...}']`. Mas o ROTEADOR e
+  // consultado ANTES de RECURSOS (acervo.js), entao
+  // `acervo login autenticar --data '{...}' --dry-run` cai AQUI: o corpo e o
+  // ensaio nao chegam a lugar nenhum. Sumir com eles em silencio faz a pessoa
+  // acreditar que ensaiou; o aviso e o que a manda para o caminho certo.
+  const avisos = []
+  const ignoradas = ['data', 'data-file', 'dry-run'].filter(f => args.flags[f] !== undefined)
+  if (ignoradas.length) {
+    avisos.push(
+      `acervo login nao usa ${ignoradas.map(f => '--' + f).join(' nem ')}. ` +
+      'Ele autentica com SCA_USER/SCA_SENHA (ou --user e --senha) e guarda o token em ' +
+      'cache; a operacao "autenticar" que o `acervo schema login` mostra e a MESMA rota, ' +
+      'e este comando e o atalho dela.'
+    )
+  }
+
+  let sessao
+  try {
+    sessao = await http.autenticar(cfg)
+  } catch (err) {
+    // O aviso precisa sair mesmo quando o login falha, que e justamente o caso
+    // medido: sem credencial no ambiente a resposta e "Faltam credenciais", e
+    // sem isto ninguem descobre que o --data foi ignorado.
+    if (avisos.length) err.avisos = [...(err.avisos || []), ...avisos]
+    throw err
+  }
+  const { token, administrador, perfis } = sessao
   // --sem-cache pede para NAO tocar o disco. Gravar assim mesmo desmentia a
   // flag e ainda anunciava "sessao em cache" que o usuario tinha recusado.
   if (!cfg.semCache) http.gravarSessao(cfg, token)
@@ -76,7 +104,6 @@ async function executar (args, cfg) {
       ? `perfil ${nivel} no modulo acervo`
       : 'SEM perfil no modulo acervo'
 
-  const avisos = []
   if (!administrador && !nivel) {
     avisos.push(
       'Autenticado, porem sem perfil no modulo acervo: as rotas vao voltar 403. ' +

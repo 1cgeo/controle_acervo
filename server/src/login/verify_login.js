@@ -8,6 +8,8 @@ const validateToken = require('./validate_token')
 
 const { montarContexto } = require('./contexto')
 
+const { colunaCarimbo, conferirCarimbo } = require('./carimbo_da_senha')
+
 /**
  * A guarda da PROPRIA CONTA: token valido e usuario ATIVO, sem perguntar por
  * modulo nenhum.
@@ -60,13 +62,21 @@ const verifyLogin = asyncHandler(async (req, res, next) => {
   // `ativo`: os dois envelhecem dentro do JWT. E a politica que verifyAdmin,
   // verifyPerfil, verifyAcesso e verifyGerente ja seguem.
   const usuario = await db.conn.oneOrNone(
-    'SELECT id, administrador FROM dgeo.usuario WHERE uuid = $<uuid> AND ativo IS TRUE',
+    `SELECT id, administrador, ${colunaCarimbo()}
+     FROM dgeo.usuario WHERE uuid = $<uuid> AND ativo IS TRUE`,
     { uuid: decoded.uuid }
   )
 
   if (!usuario) {
     throw new AppError('Usuário não encontrado ou inativo', httpCode.Forbidden)
   }
+
+  // A SENHA MUDOU? O `carimbo` do token é derivado do hash que valia quando ele
+  // foi emitido, e a coluna acima traz o do hash de HOJE. Divergiu, a sessão
+  // acabou -- é o que faz a troca de senha (e o reset pelo administrador)
+  // expulsar quem já estava dentro. Token sem o claim é legado e passa; ver
+  // `carimbo_da_senha.js`.
+  conferirCarimbo(decoded, usuario)
 
   req.usuarioUuid = decoded.uuid
   req.usuarioId = usuario.id
@@ -77,6 +87,12 @@ const verifyLogin = asyncHandler(async (req, res, next) => {
   // Sai daqui para o `POST /login/tile` poder copiá-lo no token curto da tile:
   // sem ele, toda tile entraria no rastro como 'desconhecido'.
   req.clienteDoToken = decoded.cliente
+
+  // O carimbo DO BANCO, e não do token, e é a diferença que importa: o token
+  // curto da tile nasce com o carimbo de HOJE, e não com o da sessão que o
+  // pediu. Assim a tile emitida por uma sessão legada (sem o claim) já nasce
+  // amarrada ao hash vigente, e a troca de senha a derruba junto.
+  req.carimboDaSenha = usuario.carimbo
 
   // Origem, rota e lote da rastreabilidade.
   montarContexto(req, decoded)

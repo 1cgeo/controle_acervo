@@ -72,6 +72,19 @@ const corpoMeta = (extra = {}) => ({
 // A META que o DELETE le, mais o exercicio VIGENTE. As declaracoes saem do
 // `t.any`, que no duble responde lista vazia por padrao: meta sem declaracao
 // nenhuma passa as duas metades da regra de apagar.
+// A DECLARACAO como o banco a devolve (`SELECT mr.*, r.codigo`). Ela cai por
+// ON DELETE CASCADE junto com o item e vira evento de auditoria, cujo agregado
+// sai do proprio `meta_item_id` da linha: um duble com so dois campos passaria
+// aqui e estouraria em producao.
+const DECLARACAO_R0 = {
+  id: 90,
+  meta_item_id: 1,
+  revisao_id: 7,
+  codigo: 'R0',
+  descricao: 'Carta Topográfica 1:25.000.',
+  quantidade_prevista: 24
+}
+
 const metaApagavel = (meta = { id: 1, meta_id: 40, item: '7.1' }) => {
   mockDb.conn.oneOrNone.mockResolvedValueOnce(meta)
   // O ANO vem do GRUPO: `pit.meta_item` nao o guarda.
@@ -435,7 +448,7 @@ describe('DELETE /metas/:id', () => {
   // CANCELAR a meta.
   test('apagar de uma revisao que nao criou a meta recusa com 400', async () => {
     metaApagavel()
-    mockDb.conn.any.mockResolvedValueOnce([{ revisao_id: 7, codigo: 'R0' }])
+    mockDb.conn.any.mockResolvedValueOnce([DECLARACAO_R0])
 
     const res = await request(app).delete('/metas/1?revisao_id=9')
 
@@ -449,7 +462,7 @@ describe('DELETE /metas/:id', () => {
   // tudo.
   test('apagar da revisao criadora passa', async () => {
     metaApagavel()
-    mockDb.conn.any.mockResolvedValueOnce([{ revisao_id: 7, codigo: 'R0' }])
+    mockDb.conn.any.mockResolvedValueOnce([DECLARACAO_R0])
     mockDb.conn.one.mockResolvedValueOnce({ n: 0 })
 
     const res = await request(app).delete('/metas/1?revisao_id=7')
@@ -547,5 +560,106 @@ describe('Rastreabilidade da meta do PIT', () => {
       ([sql]) => typeof sql === 'string' && sql.includes('INSERT INTO auditoria.evento')
     )
     expect(chamadas).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// APAGAR O RASCUNHO DE REVISAO leva o ANEXO e as DECLARACOES por cascata.
+//
+// `pit.anexo_revisao.revisao_id` e `pit.meta_item_revisao.revisao_id` sao
+// ON DELETE CASCADE (er/pit.sql): o banco leva o PIT assinado e tudo o que a
+// revisao declarava sem um DELETE no controlador, e ate 2026-09-05 o unico
+// evento gravado era o de `pit.revisao`. Quem abrisse a ficha do exercicio lia
+// "anexo cadastrado" e nunca lia que ele foi embora.
+//
+// `t.any` e DUBLADO aqui de proposito: com o padrao (`[]`) os dois lacos nao
+// rodariam e o caso ficaria verde sem provar nada.
+// ---------------------------------------------------------------------------
+describe('DELETE /metas/revisoes/:revisaoId', () => {
+  const RASCUNHO = {
+    id: 7, ano: 2026, codigo: 'R1', data_vigencia: null, assinante: null
+  }
+
+  const ANEXO = {
+    id: 55,
+    revisao_id: 7,
+    tipo_anexo_id: 1,
+    nome_original: 'PIT 2026 R1 assinado.pdf',
+    extensao: 'pdf',
+    mimetype: 'application/pdf',
+    tamanho_bytes: 307200
+  }
+
+  const DECLARACAO = {
+    id: 90, meta_item_id: 12, revisao_id: 7, quantidade_prevista: 252
+  }
+
+  const rascunhoComCascata = () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce(RASCUNHO) // o `lerAntes`
+    mockDb.conn.any.mockResolvedValueOnce([ANEXO])
+    mockDb.conn.any.mockResolvedValueOnce([DECLARACAO])
+    // O agregado de `pit.anexo_revisao` sai do ANO da revisao, por uma consulta
+    // do proprio mapa: sem este duble o `registrar` derruba a exclusao.
+    mockDb.conn.one.mockResolvedValueOnce({ ano: 2026 })
+  }
+
+  test('apagar o rascunho registra o ANEXO que cai por cascata', async () => {
+    rascunhoComCascata()
+
+    const res = await request(app).delete('/metas/revisoes/7')
+    expect(res.status).toBe(200)
+
+    const doAnexo = eventosAuditados().find(e => e.tabela === 'pit.anexo_revisao')
+    expect(doAnexo).toBeDefined()
+    expect(doAnexo).toMatchObject({
+      operacao: 'D',
+      entidade: 'exercicio',
+      entidadeId: '2026',
+      registroId: '55',
+      usuarioUuid: TEST_USER.uuid
+    })
+    // O NOME do arquivo perdido vai no evento: e o unico registro que sobra dele.
+    expect(JSON.parse(doAnexo.dadosAntes).nome_original)
+      .toBe('PIT 2026 R1 assinado.pdf')
+    // E o motivo diz de que revisao ele caiu.
+    expect(doAnexo.motivo).toContain('R1')
+  })
+
+  test('a DECLARACAO da revisao apagada tambem vira evento', async () => {
+    rascunhoComCascata()
+
+    await request(app).delete('/metas/revisoes/7')
+
+    const daDeclaracao = eventosAuditados()
+      .find(e => e.tabela === 'pit.meta_item_revisao')
+    expect(daDeclaracao).toMatchObject({
+      operacao: 'D',
+      entidade: 'meta',
+      // O agregado e o ITEM: a declaracao se le na ficha da meta, e nao na do ano.
+      entidadeId: '12',
+      registroId: '90'
+    })
+  })
+
+  test('os dois eventos da cascata vem ANTES do da revisao', async () => {
+    rascunhoComCascata()
+
+    await request(app).delete('/metas/revisoes/7')
+
+    const tabelas = eventosAuditados().map(e => e.tabela)
+    expect(tabelas).toEqual([
+      'pit.anexo_revisao', 'pit.meta_item_revisao', 'pit.revisao'
+    ])
+  })
+
+  // O CONTROLE: a revisao PUBLICADA nao se apaga, e nada e auditado.
+  test('a revisao publicada recusa, e nao registra nada', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      ...RASCUNHO, data_vigencia: '2026-03-01'
+    })
+
+    const res = await request(app).delete('/metas/revisoes/7')
+    expect(res.status).toBe(400)
+    expect(eventosAuditados()).toHaveLength(0)
   })
 })

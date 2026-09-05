@@ -75,7 +75,30 @@ const camposTipo = {
 }
 
 models.tipoCriar = Joi.object().keys(camposTipo)
-models.tipoAtualizar = Joi.object().keys(camposTipo)
+
+// NA CRIACAO O DEFAULT E LEGITIMO; NA ATUALIZACAO ELE E PERDA SILENCIOSA.
+//
+// O PUT reescreve a linha INTEIRA, e ali default nao e ausencia: ele GRAVA. Um
+// corpo com so os campos obrigatorios e sem `ativo` faria o Joi por `true`, o
+// UPDATE gravar, e o bem BAIXADO voltar ao parque com 200 e sem aviso nenhum. O
+// mesmo vale para `patrimonio_pendente`, cujo `false` apagaria a marca que o
+// Relatorio DMT le para escrever "Patrimonio por conferir", e para os dois
+// SIAFI da transferencia, que poriam de novo em transito contabil um bem ja
+// apropriado.
+//
+// A saida e a mesma de `mapoteca_schema.js`: o schema de ATUALIZACAO redeclara
+// sem default o campo que tem um, e o controller preserva a COLUNA quando a
+// chave nao vem (`COALESCE($<campo>, campo)`). Redeclarar aqui e mudar o
+// COALESCE la andam JUNTOS: sem o COALESCE, o campo ausente viraria NULL contra
+// uma coluna NOT NULL.
+//
+// As DUAS pontas de hoje mandam os campos sempre (a tela e o `equipamento_cli`,
+// que ainda avisa sobre ausentes com default), entao isto nao conserta bug
+// visto: fecha o vao para a proxima ponta (carga, integracao, curl).
+models.tipoAtualizar = Joi.object().keys({
+  ...camposTipo,
+  ativo: Joi.boolean()
+})
 
 // --- O bem ------------------------------------------------------------------
 
@@ -108,7 +131,14 @@ const camposEquipamento = {
 }
 
 models.equipamentoCriar = Joi.object().keys(camposEquipamento)
-models.equipamentoAtualizar = Joi.object().keys(camposEquipamento)
+
+// Sem os defaults de `patrimonio_pendente` e `ativo`: ver a nota do
+// `tipoAtualizar` acima.
+models.equipamentoAtualizar = Joi.object().keys({
+  ...camposEquipamento,
+  patrimonio_pendente: Joi.boolean(),
+  ativo: Joi.boolean()
+})
 
 // --- Os quatro historicos ---------------------------------------------------
 
@@ -206,9 +236,12 @@ models.transferenciaCriar = Joi.object().keys({
   equipamento_id: donoObrigatorio,
   ...camposTransferencia
 })
+// Sem os defaults dos dois SIAFI: ver a nota do `tipoAtualizar` acima.
 models.transferenciaAtualizar = Joi.object().keys({
   equipamento_id: donoOpcional,
-  ...camposTransferencia
+  ...camposTransferencia,
+  transferido_siafi: Joi.boolean(),
+  apropriado_siafi: Joi.boolean()
 })
 
 module.exports = models

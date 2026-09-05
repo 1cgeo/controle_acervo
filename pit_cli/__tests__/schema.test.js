@@ -71,10 +71,24 @@ test('desce no aninhado: as linhas da subsecao sao array de array de texto', () 
   assert.strictEqual(linhas.tipo, 'array<array<string>>')
 })
 
-test('anota o default, que e o que apaga a lista de militares por omissao', () => {
-  const campos = esquema.camposDe(rpcmtec.criarCapacitacao)
+test('militares NAO tem default: a chave ausente PRESERVA a lista gravada', () => {
+  // Ate 2026-09-05 a lista tinha `.default([])`, e o contrato que o CLI imprime
+  // anotava isso. O default ERA o defeito (achado S5-10): com ele, "ausente"
+  // nunca chegava ao controlador, o `gravarMilitares` fazia o DELETE de qualquer
+  // jeito, e quem corrigisse pelo CLI so o nome de uma capacitacao perdia os
+  // oito instrutores dela -- com um evento de auditoria dizendo que a lista
+  // mudou. Agora vale a mesma distincao de `meta_pit_id` e `data_prevista`:
+  // chave AUSENTE preserva, lista VAZIA apaga.
+  //
+  // O contrato que o agente le nao pode anunciar um default que nao existe: ele
+  // e a unica coisa que diz a esse agente se pode omitir a chave.
+  const campos = esquema.camposDe(rpcmtec.atualizarCapacitacao)
   const militares = campos.find(c => c.nome === 'militares')
-  assert.ok(militares.notas.some(n => n.includes('default')))
+  assert.ok(
+    !(militares.notas || []).some(n => n.includes('default')),
+    `o contrato voltou a anunciar default em militares: ${JSON.stringify(militares.notas)}`
+  )
+  assert.strictEqual(militares.obrigatorio, false, 'omitir a lista precisa continuar sendo legal')
   assert.ok(militares.tipo.includes('único'), 'falta o .unique() da lista')
 })
 

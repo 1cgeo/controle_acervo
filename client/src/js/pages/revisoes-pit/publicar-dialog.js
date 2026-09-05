@@ -59,7 +59,11 @@ export function abrirPublicarRevisao({ revisao, alteracoes = 0, onPublicado = nu
       {
         label: 'Publicar',
         variant: 'primary',
-        onClick: async ({ close }) => {
+        // `setOcupado` segura o modal enquanto a publicação corre. Publicar é o
+        // ato que faz a revisão passar a REGER, e sem a trava um Escape no meio
+        // fechava a caixa com a requisição em voo: a pessoa ficava sem saber se
+        // a revisão publicou, e a recusa do servidor não tinha onde chegar.
+        onClick: async ({ close, setOcupado }) => {
           if (publicando) return;
           vigenciaField.setError(null);
 
@@ -70,14 +74,17 @@ export function abrirPublicarRevisao({ revisao, alteracoes = 0, onPublicado = nu
           }
 
           publicando = true;
+          setOcupado(true);
           try {
             const r = await publicarRevisao(revisao.id, { data_vigencia: vigencia });
             showSuccess(`Revisão publicada com ${r.alteracoes} alteração(ões)`);
+            setOcupado(false);
             close();
             if (onPublicado) onPublicado();
           } catch (err) {
             // O modal FICA ABERTO: a data digitada continua na tela, e o motivo
             // do servidor diz o que corrigir.
+            setOcupado(false);
             showError(err.message || 'Erro ao publicar a revisão');
           } finally {
             publicando = false;

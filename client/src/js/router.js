@@ -3,6 +3,7 @@ import {
   ehGerenteDeAlgumModulo, temAlgumAcesso,
 } from '@store/auth-store.js';
 import { primeiroModuloAcessivel, rotaInicial } from '@modules/registry.js';
+import { fecharTodosOsModais } from '@components/modal/modal-base.js';
 
 /**
  * Hash-based router with path params (:id), query strings and per-page cleanup.
@@ -50,6 +51,26 @@ class Router {
     return this;
   }
 
+  /**
+   * O segmento do caminho como texto, tolerando escape QUEBRADO.
+   *
+   * `decodeURIComponent` LANCA `URIError` num '%' solto ou num par incompleto
+   * ('#/campo/100%', '#/consultar-pedido/AB%C'). A excecao subia por `resolve()`
+   * a partir do ouvinte de `hashchange`, virava rejeicao nao tratada e parava
+   * ali: a limpeza da pagina anterior ja tinha rodado, entao a pessoa ficava com
+   * a tela morta na frente, sem 404 e sem mensagem nenhuma. Com a queda para o
+   * literal, o segmento simplesmente nao casa e o caminho normal do /404 vale.
+   * @param {string} bruto
+   * @returns {string}
+   */
+  static #decodificar(bruto) {
+    try {
+      return decodeURIComponent(bruto);
+    } catch {
+      return bruto;
+    }
+  }
+
   #match(pathname) {
     const parts = pathname.split('/').filter(Boolean);
     for (const route of this.#routes) {
@@ -59,7 +80,7 @@ class Router {
       for (let i = 0; i < route.segments.length; i++) {
         const seg = route.segments[i];
         if (seg.startsWith(':')) {
-          params[seg.slice(1)] = decodeURIComponent(parts[i]);
+          params[seg.slice(1)] = Router.#decodificar(parts[i]);
         } else if (seg !== parts[i]) {
           ok = false;
           break;
@@ -114,6 +135,12 @@ class Router {
    * @param {string} hash - destino sem o '#' (ex.: '/orcamento/dfd?ano=2026')
    */
   async #executar(hash) {
+    // O modal vive no `document.body`, fora do `#app`: sem isto ele sobrevive a
+    // navegacao e fica por cima da tela seguinte, com a armadilha de foco ligada.
+    // Vem ANTES da limpeza da pagina porque o `onClose` de um modal costuma
+    // mexer na tela que o abriu, e ela ainda esta de pe aqui.
+    fecharTodosOsModais();
+
     // Cleanup previous page
     if (typeof this.#currentCleanup === 'function') {
       try {

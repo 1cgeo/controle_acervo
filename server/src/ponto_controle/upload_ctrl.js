@@ -19,9 +19,11 @@ const controller = {}
  * `tipo_situacao` 3 = Aprovado, e o valor sai do DDL, nunca do nome do campo.
  * Ver `er/ponto_controle.sql`: 1 Nao medido, 2 Aguardando revisao, 3 Aprovado,
  * 4 Reprovado. Trocar 3 por 4 aqui deixaria entrar exatamente o oposto, e sem
- * erro nenhum.
+ * erro nenhum. O code mora em `utils/domain_constants.js`, o mesmo que o
+ * painel (`dashboard_ctrl.js`) le: a importacao e a tela nao divergem.
  */
-const SITUACAO_APROVADO = 3
+const { SITUACAO_PONTO_CONTROLE } = require('../utils/domain_constants')
+const SITUACAO_APROVADO = SITUACAO_PONTO_CONTROLE.APROVADO
 
 const OPERACAO = 'importar_missao'
 
@@ -207,6 +209,33 @@ controller.prepararMissao = async (
         relatorio.recusados.push({
           cod_ponto: codPonto,
           motivo: 'só ponto APROVADO entra no acervo; revise antes de importar'
+        })
+        continue
+      }
+
+      // `data_rastreio` FALTANDO recusa o PONTO aqui, e não a missão inteira lá.
+      //
+      // `ponto_controle.ponto.data_rastreio` é `DATE NOT NULL` sem DEFAULT
+      // (`er/ponto_controle.sql:239`), e `models.ponto.atributos` é um objeto
+      // ABERTO de propósito: nada nesta fase cobrava o campo. O ponto sem a data
+      // passava com 201, quem importa copiava os arquivos (podem ser centenas de
+      // MB) para o volume, e só na fase 2 o INSERT estourava a violação de NOT
+      // NULL -- derrubando a transação INTEIRA, ou seja, TODOS os pontos da
+      // missão, e deixando os arquivos de todos eles órfãos no volume, fora até
+      // do relatório de `arquivos_orfaos`.
+      //
+      // A recusa é do PONTO e a missão segue, exatamente como na situação acima:
+      // é o mesmo tipo de defeito, e o motivo volta em `recusados`.
+      const dataRastreio = aceitos.data_rastreio
+      if (
+        dataRastreio === undefined ||
+        dataRastreio === null ||
+        dataRastreio === '' ||
+        Number.isNaN(new Date(dataRastreio).getTime())
+      ) {
+        relatorio.recusados.push({
+          cod_ponto: codPonto,
+          motivo: 'sem data_rastreio válida; a coluna é obrigatória no acervo'
         })
         continue
       }
@@ -544,12 +573,21 @@ controller.confirmarMissao = async (sessionUuid, usuarioUuid, contexto) => {
           loteId: sessao.lote_id,
           usuarioUuid,
           ...aceitos,
-          // A posicao vem DEPOIS do espalhamento, e nunca antes. O `atributos`
-          // costuma trazer as colunas `latitude` e `longitude` do plugin, que
-          // sao REAL; se elas vierem por ultimo, a GEOMETRIA nasce com a
-          // precisao de float4, o que custa cerca de 12 cm num ponto de apoio.
-          latitude: pontoTemp.latitude,
-          longitude: pontoTemp.longitude
+          // A GEOMETRIA usa NOMES PROPRIOS, e nao os das colunas.
+          //
+          // O `atributos` costuma trazer as colunas `latitude` e `longitude` do
+          // plugin, que sao REAL: a geometria tem de nascer da posicao da
+          // SESSAO, que e dupla precisao, porque float4 custa cerca de 12 cm num
+          // ponto de apoio. Enquanto os dois nomes eram os mesmos, as chaves
+          // literais vinham depois do espalhamento e sobrescreviam o `aceitos`:
+          // `campos` produzia `latitude = $<latitude>` na lista de colunas, e o
+          // `ST_MakePoint` lia o MESMO parametro, entao as colunas REAIS da
+          // tabela nunca recebiam o valor do plugin -- recebiam sempre o da
+          // sessao. Hoje os dois costumam ser o mesmo numero e o custo e zero; o
+          // dia em que o plugin puser outra coordenada em `atributos`, ela
+          // sumiria sem erro nenhum.
+          geomLatitude: pontoTemp.latitude,
+          geomLongitude: pontoTemp.longitude
         }
 
         // Reconfere a existência AGORA, e não o que o prepare viu: entre as duas
@@ -580,7 +618,7 @@ controller.confirmarMissao = async (sessionUuid, usuarioUuid, contexto) => {
           await t.none(
             `UPDATE ponto_controle.ponto SET
                lote_id = $<loteId>${campos.length > 0 ? ', ' + atribuicoes : ''},
-               geom = ST_SetSRID(ST_MakePoint($<longitude>, $<latitude>), 4674),
+               geom = ST_SetSRID(ST_MakePoint($<geomLongitude>, $<geomLatitude>), 4674),
                data_modificacao = NOW(), usuario_modificacao_uuid = $<usuarioUuid>
              WHERE cod_ponto = $<codPonto>`,
             valores
@@ -657,7 +695,7 @@ controller.confirmarMissao = async (sessionUuid, usuarioUuid, contexto) => {
           const inserido = await t.one(
             `INSERT INTO ponto_controle.ponto (${nomes.join(', ')}, geom)
              VALUES (${marcadores.join(', ')},
-                     ST_SetSRID(ST_MakePoint($<longitude>, $<latitude>), 4674))
+                     ST_SetSRID(ST_MakePoint($<geomLongitude>, $<geomLatitude>), 4674))
              RETURNING id`,
             valores
           )

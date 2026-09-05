@@ -368,7 +368,21 @@ describe('pit_ctrl', () => {
   //
   // A ordem das leituras: o item (lerAntes), o GRUPO (de onde vem o ano), o
   // exercicio, as declaracoes, os dependentes e os lancamentos.
-  const metaApagavel = ({ declaracoes = [{ revisao_id: 7, codigo: 'R0' }] } = {}) => {
+  //
+  // A DECLARACAO VEM INTEIRA do banco (`SELECT mr.*`), e o duble a espelha: ela
+  // cai por cascata junto com o item e vira evento de auditoria, e o agregado
+  // desse evento sai do proprio `meta_item_id` da linha. Um duble com so dois
+  // campos deixaria o controlador passar num teste e estourar em producao.
+  const DECLARACAO_R0 = {
+    id: 90,
+    meta_item_id: 1,
+    revisao_id: 7,
+    codigo: 'R0',
+    descricao: 'Carta Topográfica 1:25.000.',
+    quantidade_prevista: 24
+  }
+
+  const metaApagavel = ({ declaracoes = [DECLARACAO_R0] } = {}) => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1, meta_id: 40 }) // o item
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ ano: 2026 }) // o grupo
     mockDb.conn.oneOrNone.mockResolvedValueOnce({ situacao_id: 2 }) // exercicio
@@ -422,11 +436,55 @@ describe('pit_ctrl', () => {
 
   // CONTROLE NEGATIVO da regra nova: com DUAS declaracoes a meta ja entrou na
   // historia do plano. Antes desta regra o DELETE passava aqui.
+  // A DECLARACAO QUE CAI POR CASCATA TEM RASTRO PROPRIO.
+  //
+  // `pit.meta_item_revisao.meta_item_id` e ON DELETE CASCADE: o DELETE do item
+  // leva a declaracao sem um DELETE explicito no controlador. Sem este evento, o
+  // que a DSG prometeu naquele item (descricao, quantidade, prazo, demandante)
+  // sumiria em silencio, e a exclusao e justamente o que o rastro existe para
+  // guardar. Mesmo desenho de `arquivoCtrl.auditarCascata` no orcamento.
+  test('deletar registra a DECLARACAO que cai por cascata, antes do DELETE', async () => {
+    metaApagavel()
+    mockDb.conn.one.mockResolvedValueOnce({ n: 0 })
+    mockDb.conn.one.mockResolvedValueOnce({ lancamentos: 0 })
+    mockDb.conn.none.mockResolvedValueOnce(undefined)
+
+    await ctrl.deletar(1, 7)
+
+    const eventos = eventosDeAuditoria(mockDb)
+    const daDeclaracao = eventos.find(e => e.tabela === 'pit.meta_item_revisao')
+    expect(daDeclaracao).toBeDefined()
+    expect(daDeclaracao).toMatchObject({
+      operacao: 'D',
+      entidade: 'meta',
+      entidadeId: '1',
+      registroId: '90'
+    })
+    // O QUE SE PERDEU vai no evento, e nao so o id: e o unico registro que
+    // sobra do que aquele item prometia.
+    expect(JSON.parse(daDeclaracao.dadosAntes)).toMatchObject({
+      descricao: 'Carta Topográfica 1:25.000.',
+      quantidade_prevista: 24
+    })
+    // `codigo` NAO ENTRA NO RASTRO. Ele vem do INNER JOIN com `pit.revisao` e
+    // nao e coluna de `pit.meta_item_revisao`; `sanitizar` copia toda chave da
+    // linha e `diffCampos` lista toda chave nao-nula, entao sem o destructuring
+    // o evento passaria a exibir uma coluna que a tabela nao tem -- e o
+    // renderizador pediria que alguem a declarasse no mapa.
+    expect(JSON.parse(daDeclaracao.dadosAntes)).not.toHaveProperty('codigo')
+    expect(daDeclaracao.camposAlterados).not.toContain('codigo')
+    // E ele continua servindo ao MOTIVO, que e onde ele diz alguma coisa.
+    expect(daDeclaracao.motivo).toContain('R0')
+    // ANTES do evento do item: a ordem e a da leitura do historico.
+    expect(eventos.findIndex(e => e.tabela === 'pit.meta_item_revisao'))
+      .toBeLessThan(eventos.findIndex(e => e.tabela === 'pit.meta_item'))
+  })
+
   test('deletar recusa a meta que DUAS revisoes declaram, e manda cancelar', async () => {
     metaApagavel({
       declaracoes: [
-        { revisao_id: 7, codigo: 'R0' },
-        { revisao_id: 8, codigo: 'R1' }
+        { ...DECLARACAO_R0, revisao_id: 7, codigo: 'R0' },
+        { ...DECLARACAO_R0, id: 91, revisao_id: 8, codigo: 'R1' }
       ]
     })
 
@@ -439,7 +497,7 @@ describe('pit_ctrl', () => {
 
   // A OUTRA METADE DA REGRA: estando noutra revisao, so resta cancelar.
   test('deletar recusa quando a revisao de onde se apaga nao e a criadora', async () => {
-    metaApagavel({ declaracoes: [{ revisao_id: 7, codigo: 'R0' }] })
+    metaApagavel({ declaracoes: [DECLARACAO_R0] })
 
     await expect(ctrl.deletar(1, 9)).rejects.toThrow(/R0/)
     expect(mockDb.conn.none).not.toHaveBeenCalled()

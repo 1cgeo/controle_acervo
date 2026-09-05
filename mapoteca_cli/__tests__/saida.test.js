@@ -155,3 +155,75 @@ test('registro unico sai como pares chave e valor', () => {
   assert.ok(texto.includes('cliente_nome'))
   assert.ok(!texto.includes('localizador_pedido'))
 })
+
+// ---------------------------------------------------------------------------
+// `--json` puro: quem encadeia faz JSON.parse do stdout INTEIRO
+// ---------------------------------------------------------------------------
+//
+// Ate 2026-09-05 a fila de pendentes colava o resumo DEPOIS do array e o
+// `pedido itens` colava um cabecalho ANTES dele. Os dois quebravam o
+// `JSON.parse` de quem le a saida para montar a chamada seguinte, que e
+// exatamente para quem o `--json` existe.
+
+const http = require('../lib/http')
+const relatorio = require('../comandos/relatorio')
+const pedidoCmd = require('../comandos/pedido')
+
+/** Troca o transporte por uma resposta fixa, e o devolve ao fim. */
+async function comResposta (resposta, fn) {
+  const antes = http.autenticada
+  http.autenticada = async () => resposta
+  try {
+    return await fn()
+  } finally {
+    http.autenticada = antes
+  }
+}
+
+test('pendentes --json nao cola o resumo no fim do array', async () => {
+  const r = await comResposta(
+    { dados: [{ id: 7, atrasado: true, prazo: null, dias_ate_prazo: -3, cliente_nome: 'CMS' }] },
+    () => relatorio.VERBOS.pendentes({ _: ['pendentes'], flags: { json: true } }, {})
+  )
+  const voltou = JSON.parse(r.texto)
+  assert.strictEqual(voltou.length, 1)
+  assert.strictEqual(voltou[0].id, 7)
+  assert.ok(
+    r.avisos.some(a => a.includes('em aberto')),
+    'o resumo nao pode sumir: ele so muda de stream (stderr)'
+  )
+})
+
+test('pendentes sem --json mantem o resumo no texto', async () => {
+  const r = await comResposta(
+    { dados: [{ id: 7, atrasado: true, prazo: null, dias_ate_prazo: -3, cliente_nome: 'CMS' }] },
+    () => relatorio.VERBOS.pendentes({ _: ['pendentes'], flags: {} }, {})
+  )
+  assert.ok(r.texto.includes('1 pedido(s) em aberto'), r.texto)
+})
+
+test('pedido itens --json nao leva cabecalho antes do array', async () => {
+  const r = await comResposta(
+    {
+      dados: {
+        id: 42,
+        cliente_nome: 'CMS',
+        situacao_pedido_nome: 'Em andamento',
+        prazo: '2026-09-30',
+        produtos: [{ id: 1, mi: '2965-2', quantidade: 3 }],
+        impressao: { itens_concluidos: 0, total_itens: 1 }
+      }
+    },
+    () => pedidoCmd.VERBOS.itens({ _: ['itens'], flags: { json: true, id: 42 } }, {})
+  )
+  const voltou = JSON.parse(r.texto)
+  assert.strictEqual(voltou.length, 1)
+  assert.strictEqual(voltou[0].mi, '2965-2')
+  assert.ok(r.avisos.some(a => a.includes('pedido 42')), 'o cabecalho vai para stderr')
+  assert.ok(r.avisos.some(a => a.includes('impressao')), 'o rodape tambem')
+})
+
+test('registro ausente com --json sai como null, e nao como (vazio)', () => {
+  assert.strictEqual(JSON.parse(saida.registro(null, { formato: 'json' })), null)
+  assert.strictEqual(saida.registro(null, {}), '(vazio)')
+})

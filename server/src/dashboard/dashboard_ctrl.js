@@ -4,18 +4,14 @@ const { db } = require('../database')
 const {
   domainConstants: { STATUS_ARQUIVO, TIPO_VERSAO }
 } = require('../utils')
+const { ARQUIVOS_DO_ACERVO } = require('../utils/arquivos_do_acervo')
 
 const controller = {}
 
-// O acervo guarda arquivo em DUAS tabelas: `acervo.arquivo`, do produto, e
-// `ponto_controle.arquivo`, do ponto de controle. As duas gravam no MESMO volume
-// físico e disputam a MESMA capacidade, então tudo que fala de espaço ocupado
-// tem de somar as duas. Contar só a primeira faria o volume do ponto de controle
-// aparecer vazio com 77 GB dentro, e o alerta de 80% nunca dispararia.
-const ARQUIVOS_DO_ACERVO = `
-  SELECT volume_armazenamento_id, tamanho_mb FROM acervo.arquivo
-  UNION ALL
-  SELECT volume_armazenamento_id, tamanho_mb FROM ponto_controle.arquivo`
+// A soma das DUAS tabelas de arquivo mora em `utils/arquivos_do_acervo.js`, e
+// não mais aqui: as três checagens de espaço do `prepare-upload` usavam a
+// própria conta, que olhava só `acervo.arquivo`, e o par divergia sem que nada
+// acusasse. O motivo por escrito está no módulo.
 
 controller.getTotalProdutos = async () => {
   return db.conn.one('SELECT COUNT(*) AS total_produtos FROM acervo.produto');
@@ -239,6 +235,12 @@ controller.getVersionStatistics = async () => {
  * O recorte nasce no INÍCIO DO MÊS (`date_trunc`), e não em "hoje menos N
  * meses", senão o mês mais antigo vem pela metade e o primeiro ponto do gráfico
  * fica sistematicamente menor sem razão visível.
+ *
+ * SOMA AS DUAS TABELAS DE ARQUIVO (`ARQUIVOS_DO_ACERVO`), como o cartão do total
+ * e o alerta de volume cheio. Lendo só `acervo.arquivo`, o saldo anterior e cada
+ * mês ficavam menores pelo tamanho do ponto de controle, e a série voltava a
+ * terminar abaixo do cartão "Armazenamento Total" -- que é exatamente a
+ * divergência que o saldo anterior veio corrigir.
  */
 controller.getStorageGrowthTrends = async (months = 12) => {
   return db.conn.any(`
@@ -247,15 +249,15 @@ controller.getStorageGrowthTrends = async (months = 12) => {
     ),
     saldo_anterior AS (
       SELECT COALESCE(SUM(tamanho_mb) / 1024, 0) AS gb
-      FROM acervo.arquivo, janela
-      WHERE data_cadastramento < janela.inicio
+      FROM (${ARQUIVOS_DO_ACERVO}) AS a, janela
+      WHERE a.data_cadastramento < janela.inicio
     ),
     monthly_data AS (
       SELECT
-        date_trunc('month', data_cadastramento) AS month,
-        SUM(tamanho_mb) / 1024 AS gb_added
-      FROM acervo.arquivo, janela
-      WHERE data_cadastramento >= janela.inicio
+        date_trunc('month', a.data_cadastramento) AS month,
+        SUM(a.tamanho_mb) / 1024 AS gb_added
+      FROM (${ARQUIVOS_DO_ACERVO}) AS a, janela
+      WHERE a.data_cadastramento >= janela.inicio
       GROUP BY month
     ),
     months_series AS (

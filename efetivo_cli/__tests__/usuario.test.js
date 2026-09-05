@@ -395,3 +395,69 @@ test('listar filtra no cliente e ANUNCIA que o filtro nao e do servidor', async 
   assert.ok(!r.texto.includes('silva'))
   assert.ok(r.avisos.some(a => a.includes('no CLIENTE')))
 })
+
+// ---------------------------------------------------------------------------
+// trocar-senha: a senha entra pelo AMBIENTE
+// ---------------------------------------------------------------------------
+//
+// Ate 2026-09-05 a forma ANUNCIADA na ajuda era
+// `--senha-atual X --senha-nova Y`, e as duas ficavam para sempre no historico
+// do shell e visiveis no `ps` enquanto a chamada durava. A mesma ajuda dizia,
+// 35 linhas abaixo, "AMBIENTE (nunca ponha senha na linha de comando)". As
+// flags continuam funcionando como ultimo recurso, e agora avisam.
+
+/** Roda com as duas chaves de ambiente postas, e as devolve como estavam. */
+async function comAmbiente (atual, nova, fn) {
+  const antes = [process.env.SCA_SENHA_ATUAL, process.env.SCA_SENHA_NOVA]
+  if (atual === null) delete process.env.SCA_SENHA_ATUAL
+  else process.env.SCA_SENHA_ATUAL = atual
+  if (nova === null) delete process.env.SCA_SENHA_NOVA
+  else process.env.SCA_SENHA_NOVA = nova
+  try {
+    return await fn()
+  } finally {
+    for (const [chave, valor] of [['SCA_SENHA_ATUAL', antes[0]], ['SCA_SENHA_NOVA', antes[1]]]) {
+      if (valor === undefined) delete process.env[chave]
+      else process.env[chave] = valor
+    }
+  }
+}
+
+test('trocar-senha le as duas do ambiente, sem flag nenhuma', async () => {
+  const r = await comAmbiente('Antiga123', 'NovaSenha456', () =>
+    rodar(['usuario', 'trocar-senha', '--dry-run'])
+  )
+  assert.ok(r.texto.includes('nao ecoadas'), r.texto)
+  assert.ok(!r.texto.includes('Antiga123'), 'a senha nunca pode aparecer na saida')
+  assert.ok(!r.avisos.some(a => a.includes('historico do shell')), 'sem flag, sem aviso')
+})
+
+test('senha por FLAG ainda funciona, e sai com aviso', async () => {
+  const r = await comAmbiente(null, null, () =>
+    rodar([
+      'usuario', 'trocar-senha',
+      '--senha-atual', 'Antiga123', '--senha-nova', 'NovaSenha456', '--dry-run'
+    ])
+  )
+  assert.ok(
+    r.avisos.some(a => a.includes('historico do shell')),
+    `o aviso e o unico lugar em que a pessoa fica sabendo: ${JSON.stringify(r.avisos)}`
+  )
+})
+
+test('a flag manda sobre o ambiente, e o aviso acompanha', async () => {
+  // Precedencia igual a do resto do CLI (flag explicita > ambiente). Quem
+  // digitou a flag pediu aquela senha, e o aviso diz o preco.
+  const r = await comAmbiente('DoAmbiente1', 'DoAmbiente2', () =>
+    rodar(['usuario', 'trocar-senha', '--senha-atual', 'DaFlag123', '--dry-run'])
+  )
+  assert.ok(r.avisos.some(a => a.includes('historico do shell')))
+})
+
+test('sem ambiente e sem flag, a recusa ENSINA a forma segura', async () => {
+  const err = await comAmbiente(null, null, () =>
+    recusa(['usuario', 'trocar-senha', '--dry-run'])
+  )
+  assert.ok(err.message.includes('SCA_SENHA_ATUAL'), err.message)
+  assert.ok(err.message.includes('SCA_SENHA_NOVA'), err.message)
+})

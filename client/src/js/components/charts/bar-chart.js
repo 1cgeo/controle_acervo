@@ -1,5 +1,6 @@
 import { Chart, BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend } from 'chart.js';
 import { el } from '@utils/dom.js';
+import { EVENTO_TEMA_MUDOU } from '@utils/theme.js';
 
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
@@ -183,8 +184,19 @@ export function createBarChart({
   };
 
   card._cleanup = () => {
+    window.removeEventListener(EVENTO_TEMA_MUDOU, aoTrocarTema);
     if (chartInstance) chartInstance.destroy();
   };
+
+  // O TEMA MUDA DEPOIS DE O GRAFICO NASCER, e as cores do Chart.js sao lidas UMA
+  // vez, no `render()`: a paleta, a tinta do eixo, a da legenda e a do tooltip
+  // saem de `getComputedStyle` na hora de desenhar, e ficam congeladas no que o
+  // Chart.js recebeu. Sem repintar, trocar para o tema escuro com um dashboard
+  // aberto deixava o rotulo do eixo em `--text-secondary` CLARO sobre o cartao
+  // escuro -- ou, no caminho contrario, cinza claro sobre branco. Repintar e so
+  // refazer o render, que ja rele os tokens.
+  const aoTrocarTema = () => render();
+  window.addEventListener(EVENTO_TEMA_MUDOU, aoTrocarTema);
 
   render();
   return card;

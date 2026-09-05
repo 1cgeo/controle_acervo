@@ -30,16 +30,23 @@ let container;
 beforeEach(() => {
   container = document.createElement('div');
   document.body.replaceChildren(container);
+  // O FILTRO VIVE NA URL, e a barra de endereço é estado compartilhado entre os
+  // casos deste arquivo: sem zerar, a query que um caso escreveu chegaria ao
+  // seguinte como se fosse a rota por onde a pessoa entrou.
+  history.replaceState(null, '', '#/producao/situacao_subfase');
   servico.resposta = [];
   servico.falha = null;
   servico.chamadas = 0;
 });
 
-const abrir = async () => {
-  const cleanup = await renderSituacaoSubfase(container);
+const abrir = async (busca = '') => {
+  const cleanup = await renderSituacaoSubfase(container, { query: new URLSearchParams(busca) });
   await flush();
   return cleanup;
 };
+
+const campoDeBusca = () => container.querySelector('.page__filters input');
+const urlDaTela = () => window.location.hash.replace(/^#/, '');
 
 const quadros = () => [...container.querySelectorAll('.situacao-sub__quadro')];
 
@@ -185,5 +192,28 @@ describe('situação da subfase: filtro, vazio e falha', () => {
 
     expect(servico.chamadas).toBe(2);
     expect(quadros()).toHaveLength(1);
+  });
+});
+
+// A BUSCA VIVE NA URL: sair da tela para conferir outra coisa e voltar apagava o
+// texto digitado, e sem nada na barra de endereço não havia como mandar o
+// recorte para outra pessoa.
+describe('situação da subfase: a busca vive na URL', () => {
+  test('abre já filtrada, e o campo nasce escrito', async () => {
+    servico.resposta = [
+      linha(),
+      linha({ bloco_id: 2, bloco: 'Bloco B', subfase: 'Validação' }),
+    ];
+    await abrir('busca=validacao');
+
+    expect(campoDeBusca().value).toBe('validacao');
+    expect(container.textContent).toContain('Validação');
+    expect(container.textContent).not.toContain('Bloco A');
+  });
+
+  test('a tela pelada não leva query nenhuma', async () => {
+    servico.resposta = [linha()];
+    await abrir();
+    expect(urlDaTela()).toBe('/producao/situacao_subfase');
   });
 });

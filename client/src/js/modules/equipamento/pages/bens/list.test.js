@@ -71,9 +71,13 @@ function respostasBoas() {
   servico.getTipos.mockResolvedValue(TIPOS);
 }
 
+// O rótulo casa por IGUALDADE, e não por `includes`: "Situação de carga"
+// CONTÉM "Situação", e com `includes` o `filtro(c, 'Situação')` só acharia o
+// campo certo por ele estar declarado antes na barra de filtros. Trocar a ordem
+// dos campos passaria a testar o filtro errado, sem erro visível.
 function filtro(container, rotulo) {
   const campos = [...container.querySelectorAll('.page__filters .form-field')];
-  const campo = campos.find(f => f.querySelector('.form-field__label')?.textContent.includes(rotulo));
+  const campo = campos.find(f => f.querySelector('.form-field__label')?.textContent.trim() === rotulo);
   return campo ? campo.querySelector('select') : null;
 }
 
@@ -170,6 +174,58 @@ describe('lista de bens: os filtros vão como QUERY ao servidor', () => {
 
     expect(linhas(atual.container)).toHaveLength(1);
     expect(atual.container.textContent).toContain('104820700014462');
+  });
+
+  test('pedir "Baixado" tira a tela de "Somente ativos", que nunca teria um', async () => {
+    // A situação `Baixado` é DERIVADA de `ativo = false`
+    // (`equipamento.situacao_em`, precedência 50), e a tela nasce em "Somente
+    // ativos": pedir Baixado ali devolve lista vazia SEMPRE, e a tabela escrevia
+    // "Nenhum equipamento com esses filtros" como se fosse resposta sobre o
+    // acervo. O filtro de carga acompanha, e o aviso diz que acompanhou.
+    atual = await montar();
+    expect(ultimaQuery().ativo).toBe('true');
+
+    await escolher(atual.container, 'Situação', '5');
+
+    expect(ultimaQuery()).toEqual({ situacao_id: 5, ativo: 'false' });
+    expect(filtro(atual.container, 'Situação de carga').value).toBe('false');
+    expect(toast.showInfo).toHaveBeenCalledTimes(1);
+    expect(toast.showInfo.mock.calls[0][0]).toContain('Somente baixados');
+  });
+
+  test('sair de "Baixado" devolve o filtro de carga a "Somente ativos"', async () => {
+    // A VOLTA, que é o defeito espelho: sem ela o `ativo = false` fica grudado e
+    // `situacao_id=4 AND ativo=false` é o mesmo vazio garantido, num recorte que
+    // a tela montou sozinha e desta vez SEM aviso nenhum.
+    atual = await montar();
+
+    await escolher(atual.container, 'Situação', '5');
+    await escolher(atual.container, 'Situação', '4');
+
+    expect(ultimaQuery()).toEqual({ situacao_id: 4, ativo: 'true' });
+    expect(filtro(atual.container, 'Situação de carga').value).toBe('true');
+  });
+
+  test('a carga escolhida A MÃO não é desfeita ao trocar de situação', async () => {
+    // Quem mexeu no filtro de carga foi a PESSOA: dali em diante a tela não o
+    // desfaz, nem ao sair de "Baixado".
+    atual = await montar();
+
+    await escolher(atual.container, 'Situação de carga', 'false');
+    await escolher(atual.container, 'Situação', '5');
+    await escolher(atual.container, 'Situação', '4');
+
+    expect(ultimaQuery().ativo).toBe('false');
+    expect(toast.showInfo).not.toHaveBeenCalled();
+  });
+
+  test('as outras situações não mexem no filtro de carga', async () => {
+    atual = await montar();
+
+    await escolher(atual.container, 'Situação', '4');
+
+    expect(ultimaQuery().ativo).toBe('true');
+    expect(toast.showInfo).not.toHaveBeenCalled();
   });
 
   test('o filtro de situação e o de seção saem do domínio do servidor, pelo `code`', async () => {

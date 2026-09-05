@@ -250,7 +250,11 @@ export function openCapacitacaoDialog({
       {
         label: 'Salvar',
         variant: 'primary',
-        onClick: async ({ close }) => {
+        // `setOcupado` segura o diálogo enquanto a gravação corre. Sem ele,
+        // Escape e clique no fundo fechavam este formulário -- que é o maior do
+        // PIT, com o seletor de militares junto -- com a requisição em voo, e a
+        // recusa do servidor chegava a uma tela sem campo nenhum para corrigir.
+        onClick: async ({ close, setOcupado }) => {
           if (saving) return;
 
           nomeField.setError(null);
@@ -303,6 +307,7 @@ export function openCapacitacaoDialog({
           };
 
           saving = true;
+          setOcupado(true);
           try {
             if (isEdit) {
               await servico.atualizar(capacitacao.id, payload);
@@ -311,9 +316,12 @@ export function openCapacitacaoDialog({
               await servico.criar(payload);
               showSuccess('Capacitação criada com sucesso');
             }
+            setOcupado(false);
             close();
             if (onSaved) onSaved();
           } catch (err) {
+            // O diálogo FICA ABERTO: o que a pessoa digitou continua na tela.
+            setOcupado(false);
             showError(err.message || 'Erro ao salvar a capacitação');
           } finally {
             saving = false;

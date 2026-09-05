@@ -67,22 +67,60 @@ export function createNavbar({ onToggleSidebar }) {
   const avatar = el('div', { className: 'navbar__avatar', textContent: initial });
   const usernameEl = el('span', { className: 'navbar__username', textContent: username });
 
-  const userBtn = el('div', {
-    className: 'navbar__user',
+  /**
+   * O GATILHO E UM `<button>`, e nao a `<div>` com `onClick` que estava aqui.
+   *
+   * A `<div>` nao entra na ordem de tabulacao e nao responde a tecla nenhuma:
+   * "Meu perfil" e "Sair" existiam so para quem usa o mouse. E "Meu perfil" e o
+   * UNICO caminho pelo qual a pessoa troca a propria senha -- sem ele, quem
+   * navega pelo teclado dependia do administrador para isso.
+   *
+   * A `.navbar__user` continua existindo como a caixa POSICIONADORA: o dropdown
+   * e `position: absolute` em relacao a ela. O que desceu para o botao foi o
+   * visual do gatilho (a linha com nome e avatar, e o realce ao passar o mouse).
+   */
+  const gatilho = el('button', {
+    className: 'navbar__user-gatilho',
+    type: 'button',
+    'aria-haspopup': 'true',
+    'aria-expanded': 'false',
+    'aria-label': username ? `Menu de ${username}` : 'Menu do usuário',
     onClick: (e) => {
       e.stopPropagation();
-      dropdownOpen = !dropdownOpen;
-      dropdown.classList.toggle('hidden', !dropdownOpen);
+      abrirDropdown(!dropdownOpen);
     },
-  }, [usernameEl, avatar, dropdown]);
+  }, [usernameEl, avatar]);
+
+  const userBtn = el('div', { className: 'navbar__user' }, [gatilho, dropdown]);
+
+  // ACIONAR UM ITEM FECHA O MENU. O `closeDropdown` abaixo so fecha por clique
+  // FORA da caixa, e o dropdown esta DENTRO dela: clicar em "Meu perfil" navegava
+  // e deixava o menu aberto por cima da pagina nova, ate a pessoa clicar em
+  // qualquer outro lugar. Pior para quem ja esta em '#/perfil': o clique nao
+  // muda nada na tela e ainda deixa o menu aberto.
+  dropdown.addEventListener('click', () => abrirDropdown(false));
+
+  function abrirDropdown(aberto) {
+    dropdownOpen = aberto;
+    dropdown.classList.toggle('hidden', !dropdownOpen);
+    gatilho.setAttribute('aria-expanded', String(dropdownOpen));
+  }
 
   const closeDropdown = (e) => {
     if (dropdownOpen && !userBtn.contains(e.target)) {
-      dropdownOpen = false;
-      dropdown.classList.add('hidden');
+      abrirDropdown(false);
     }
   };
   document.addEventListener('click', closeDropdown);
+
+  // Escape fecha e DEVOLVE O FOCO ao gatilho: sem isso quem abriu pelo teclado
+  // fecharia o menu e ficaria com o foco no nada, no fim da barra.
+  const escaparDropdown = (e) => {
+    if (!dropdownOpen || e.key !== 'Escape') return;
+    abrirDropdown(false);
+    gatilho.focus();
+  };
+  document.addEventListener('keydown', escaparDropdown);
 
   const navbar = el('nav', { className: 'navbar' }, [
     el('div', { className: 'navbar__left' }, [toggleBtn, title]),
@@ -91,6 +129,7 @@ export function createNavbar({ onToggleSidebar }) {
 
   navbar._cleanup = () => {
     document.removeEventListener('click', closeDropdown);
+    document.removeEventListener('keydown', escaparDropdown);
   };
 
   return navbar;

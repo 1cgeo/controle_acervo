@@ -603,3 +603,61 @@ describe('microcontrole: a janela de datas', () => {
     expect(codigo).not.toMatch(/new Date\(/)
   })
 })
+
+
+// ---------------------------------------------------------------------------
+// 5. O AVISO DE TRUNCAMENTO DA COBERTURA DE TELA CITA A JANELA EFETIVA
+// ---------------------------------------------------------------------------
+//
+// A leitura devolve no maximo 5.000 amostras, escolhidas por `ORDER BY data
+// DESC` -- as MAIS RECENTES. Quem abre a cobertura de um lote inteiro em trinta
+// dias e recebe o corte ve um mapa dos ultimos dias, com o painel ainda rotulado
+// com o periodo que a pessoa pediu: a leitura natural ("o operador so cobriu
+// esta area") e exatamente a leitura errada. O aviso antigo citava o teto e nao
+// dizia QUE PEDACO do periodo sobreviveu.
+
+describe('microcontrole: o aviso de truncamento da cobertura de tela', () => {
+  const AMOSTRAS = 5001
+
+  // Uma amostra por dia, da mais RECENTE para a mais antiga, que e a ordem que
+  // o `ORDER BY data DESC` da consulta entrega.
+  const linhas = Array.from({ length: AMOSTRAS }, (_v, i) => ({
+    atividade_id: 1,
+    usuario_uuid: 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
+    zoom: 5000,
+    data: `amostra-${String(i).padStart(4, '0')}`,
+    geometry: { type: 'Point', coordinates: [-51, -30] }
+  }))
+
+  afterEach(() => {
+    db.microConn = null
+  })
+
+  it('o aviso nomeia os dois extremos da fatia que sobrou, e não só o teto', async () => {
+    db.microConn = { any: jest.fn().mockResolvedValue(linhas) }
+
+    const r = await microcontroleCtrl.getCoberturaTela(
+      null, null, '2026-08-01', '2026-08-31'
+    )
+
+    expect(r.features).toHaveLength(5000)
+    expect(r.aviso).toContain('5000 amostras')
+    // O extremo NOVO e o primeiro registro; o VELHO e o ultimo que sobrou.
+    expect(r.aviso).toContain('amostra-4999')
+    expect(r.aviso).toContain('amostra-0000')
+    // A 5001a foi cortada, e o aviso nao pode cita-la como limite.
+    expect(r.aviso).not.toContain('amostra-5000')
+    expect(r.aviso).toContain('e não o período inteiro que você pediu')
+  })
+
+  it('sem truncamento não há aviso nenhum', async () => {
+    db.microConn = { any: jest.fn().mockResolvedValue(linhas.slice(0, 10)) }
+
+    const r = await microcontroleCtrl.getCoberturaTela(
+      null, null, '2026-08-01', '2026-08-31'
+    )
+
+    expect(r.features).toHaveLength(10)
+    expect(r.aviso).toBeNull()
+  })
+})

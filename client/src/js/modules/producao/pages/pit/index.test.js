@@ -36,8 +36,8 @@ const POR_LOTE = [
 ];
 
 const POR_SUBFASE = [
-  { lote: 'Lote 1', subfase: 'Extração', mes: 1, quantidade: 2 },
-  { lote: 'Lote 1', subfase: 'Validação', mes: 3, quantidade: 1 },
+  { lote_id: '3', lote: 'Lote 1', subfase_id: '11', subfase: 'Extração', mes: 1, quantidade: 2 },
+  { lote_id: '3', lote: 'Lote 1', subfase_id: '12', subfase: 'Validação', mes: 3, quantidade: 1 },
 ];
 
 async function montar() {
@@ -78,15 +78,45 @@ describe('agruparPitPorProjeto', () => {
 });
 
 describe('agruparPitPorSubfase', () => {
-  // A CHAVE É O PAR (lote, subfase): o mesmo nome de subfase existe em lotes
+  // A CHAVE É O PAR (lote_id, subfase_id): a mesma subfase existe em lotes
   // diferentes, e juntá-los somaria trabalho de lotes que não se falam.
   test('a mesma subfase em lotes diferentes fica em linhas diferentes', () => {
     const linhas = agruparPitPorSubfase([
-      { lote: 'Lote 1', subfase: 'Extração', mes: 1, quantidade: 2 },
-      { lote: 'Lote 2', subfase: 'Extração', mes: 1, quantidade: 5 },
+      { lote_id: '3', lote: 'Lote 1', subfase_id: '11', subfase: 'Extração', mes: 1, quantidade: 2 },
+      { lote_id: '4', lote: 'Lote 2', subfase_id: '11', subfase: 'Extração', mes: 1, quantidade: 5 },
     ]);
     expect(linhas).toHaveLength(2);
     expect(linhas.map(l => l.total)).toEqual([2, 5]);
+  });
+
+  // O CASO QUE DECIDE A CHAVE. Os RÓTULOS não são únicos: `acervo.lote` só é
+  // UNIQUE em `(projeto_id, pit)`, então dois projetos têm um "Lote 1" cada, e
+  // `producao.subfase` é UNIQUE em `(nome, fase_id)`, então "Edição" existe em
+  // mais de uma linha de produção. Agrupando por nome, as entregas dos dois
+  // caem numa linha só e a tela mostra um lote com o dobro do que ele entregou,
+  // enquanto a seção "Por lote" logo acima, que agrupa por `lote_id`, mostra os
+  // dois separados.
+  test('lotes HOMÔNIMOS de projetos diferentes não se fundem', () => {
+    const linhas = agruparPitPorSubfase([
+      { lote_id: '3', lote: 'Lote 1', subfase_id: '11', subfase: 'Edição', mes: 1, quantidade: 2 },
+      { lote_id: '9', lote: 'Lote 1', subfase_id: '11', subfase: 'Edição', mes: 1, quantidade: 5 },
+    ]);
+    expect(linhas).toHaveLength(2);
+    expect(linhas.map(l => l.total)).toEqual([2, 5]);
+    // E os dois continuam se chamando "Lote 1" na tela: o que mudou foi a
+    // chave, e não o rótulo.
+    expect(linhas.map(l => l.lote)).toEqual(['Lote 1', 'Lote 1']);
+  });
+
+  // O GÊMEO PELO OUTRO LADO: mesmo lote, mesmo NOME de subfase, subfases
+  // diferentes (a "Edição" da Carta Topográfica e a do CDGV).
+  test('subfases HOMÔNIMAS do mesmo lote não se fundem', () => {
+    const linhas = agruparPitPorSubfase([
+      { lote_id: '3', lote: 'Lote 1', subfase_id: '11', subfase: 'Edição', mes: 2, quantidade: 4 },
+      { lote_id: '3', lote: 'Lote 1', subfase_id: '27', subfase: 'Edição', mes: 2, quantidade: 7 },
+    ]);
+    expect(linhas).toHaveLength(2);
+    expect(linhas.map(l => l.total)).toEqual([4, 7]);
   });
 });
 

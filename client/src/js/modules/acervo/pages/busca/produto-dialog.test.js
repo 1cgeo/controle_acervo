@@ -273,6 +273,60 @@ describe('abrirProdutoDialog: relacionamentos', () => {
     expect(svc.getProdutoDetalhado).toHaveBeenLastCalledWith(55);
     expect(document.querySelector('.produto-ficha__posicao').textContent).toBe('2 de 2');
   });
+
+  // O `<select>` do tipo so nasce com LISTA. `getTiposRelacionamento` tem
+  // `catch` proprio de proposito (a ficha nao morre por causa do dominio), e com
+  // ele vazio o combo nascia sem nenhuma opcao: o que a relacao e sumia da tela
+  // justamente para quem trabalha com ela.
+  test('dominio que nao carrega deixa o TIPO na tela, e nao um combo vazio', async () => {
+    svc.getTiposRelacionamento.mockRejectedValueOnce(new Error('500'));
+    svc.getProdutoDetalhado.mockResolvedValue(COM_RELACAO);
+    saveAuth({ token: 't', administrador: true, uuid: 'u', perfis: {}, modulos: [] }, 'x');
+
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    // So o combo DA LINHA some; o de criar relacao continua ali, e ele ja tem
+    // frase propria para o dominio que nao veio ("Nao foi possivel carregar os
+    // tipos de relacao").
+    expect(document.querySelectorAll('[aria-label="Tipo da relação"]')).toHaveLength(0);
+    expect(document.body.textContent).toContain('Insumo');
+    expect(document.body.textContent).toContain('Complementar');
+
+    clearAuth();
+  });
+
+  // Segundo caminho do mesmo defeito: o codigo gravado saiu do dominio, o
+  // `<select>` caia na PRIMEIRA opcao e a tela AFIRMAVA um tipo que nao e o do
+  // banco.
+  test('tipo gravado fora do dominio entra na lista, em vez de virar outro', async () => {
+    svc.getProdutoDetalhado.mockResolvedValue({
+      ...COM_RELACAO,
+      versoes: [{
+        ...COM_RELACAO.versoes[0],
+        relacionamentos: [{
+          id: 1,
+          versao_relacionada_id: 700,
+          tipo_relacionamento_id: 99,
+          tipo_relacionamento: 'Tipo aposentado',
+          versao_relacionada: '3ª Edição',
+          produto_relacionado_id: 55,
+          produto_relacionado: '2823-1-SE',
+        }],
+      }],
+    });
+    saveAuth({ token: 't', administrador: true, uuid: 'u', perfis: {}, modulos: [] }, 'x');
+
+    abrirProdutoDialog(PRODUTO);
+    await flush();
+
+    const combo = document.querySelector('[aria-label="Tipo da relação"]');
+    expect(combo).not.toBeNull();
+    expect(combo.value).toBe('99');
+    expect([...combo.options].map(o => o.textContent)).toContain('Tipo aposentado');
+
+    clearAuth();
+  });
 });
 
 // --- O DADO QUE O SERVIDOR JA MANDAVA E A TELA DESCARTAVA -------------------

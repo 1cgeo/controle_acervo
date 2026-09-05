@@ -776,10 +776,17 @@ export function getEtiquetaEnvio(pedidoId) {
  * Grava a etiqueta do pedido: cria na primeira vez, substitui nas seguintes.
  * Devolve a linha como o banco a gravou, que é o que o diálogo compara com a
  * tela.
+ *
+ * INVALIDA 'pedidos', embora a etiqueta tenha tabela própria. A LISTA de pedidos
+ * mostra `cep_etiqueta`, que sai de `mapoteca.etiqueta_envio` no JOIN de
+ * `GET /pedido?ano=` e é por onde se procura um envio: sem esta linha, quem
+ * corrigisse o CEP e voltasse para a lista continuava vendo o valor antigo (ou
+ * um traço) pelos cinco minutos do cache, e a busca por ele não achava o pedido.
  * @param {number} pedidoId
  * @param {{destinatario:string, aos_cuidados?:string, endereco?:string, cep?:string}} dados
  */
 export function salvarEtiquetaEnvio(pedidoId, dados) {
+  invalidate('pedidos');
   return apiPut(`${BASE}/pedido/${pedidoId}/etiqueta`, dados);
 }
 

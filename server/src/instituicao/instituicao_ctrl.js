@@ -378,6 +378,18 @@ controller.apagarSimbolo = async (usuarioUuid, contexto) => {
          FROM dgeo.instituicao WHERE id = $<id>`,
       { id: LINHA_UNICA }
     )
+    // A MESMA RECUSA DO `salvarSimbolo`, e nao por simetria: sem ela o `t.one`
+    // abaixo nao casa linha nenhuma e rejeita com o erro cru do pg-promise, que
+    // vira 500 "Erro no servidor". A causa e a mesma do 404 do `get()` -- linha
+    // apagada por `psql` ou migracao que nao rodou --, e ela tem frase propria.
+    // Sem isto o `registrar` ainda receberia `antes: null` e o rastro leria a
+    // exclusao do simbolo como se a instituicao tivesse acabado de nascer.
+    if (!antes) {
+      throw new AppError(
+        'A instituição desta instalação não está cadastrada',
+        httpCode.NotFound
+      )
+    }
     const depois = await t.one(
       `UPDATE dgeo.instituicao SET
          simbolo = NULL, simbolo_mimetype = NULL, simbolo_nome_original = NULL,

@@ -384,3 +384,90 @@ describe('ficha do bem: o que cada perfil vê', () => {
     expect(rotulos.some(r => r.includes('Editar equipamento'))).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// CONCLUIR UMA DESCARGA NÃO TIRA O BEM DE CARGA.
+//
+// `equipamento.situacao_em(dia)` só olha afastamento, manutenção,
+// indisponibilidade e `e.ativo`: a tabela `equipamento.transferencia` não entra
+// na função. O gerente lançava a Descarga como Concluída, lia "Transferência
+// registrada com sucesso", e o chip continuava "Disponível", o cartão "Em carga"
+// continuava "Sim" e o bem continuava aparecendo em "Somente ativos".
+// ---------------------------------------------------------------------------
+
+describe('ficha do bem: a descarga concluída avisa que a baixa ainda falta', () => {
+  function campoDoModal(rotulo) {
+    const campo = [...document.querySelectorAll('.modal__body .form-field')]
+      .find(f => f.querySelector('.form-field__label')?.textContent.trim().replace('*', '') === rotulo);
+    if (!campo) throw new Error(`campo "${rotulo}" não está no diálogo`);
+    return campo.querySelector('select, input, textarea');
+  }
+
+  function escolher(rotulo, valor) {
+    const campo = campoDoModal(rotulo);
+    campo.value = String(valor);
+    campo.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  const salvarNoModal = () => [...document.querySelectorAll('.modal__footer .btn')]
+    .find(b => b.textContent.trim() === 'Salvar').click();
+
+  async function abrirDialogoDeTransferencia() {
+    servico.getDominio.mockResolvedValue({
+      classe_suprimento: [{ code: 6, nome: 'VI' }],
+      secao_detentora: [{ code: 1, nome: 'Cia Lev' }],
+      situacao: [{ code: 4, nome: 'Indisponível', precedencia: 40 }],
+      situacao_transferencia: [
+        { code: 1, nome: 'Solicitada' },
+        { code: 3, nome: 'Concluída' },
+      ],
+      tipo_transferencia: [
+        { code: 1, nome: 'Recebimento' },
+        { code: 3, nome: 'Descarga' },
+      ],
+    });
+    atual = await montar();
+    [...atual.container.querySelectorAll('.btn')]
+      .find(b => b.textContent.includes('Nova transferência')).click();
+    await flush();
+  }
+
+  test('descarga CONCLUÍDA avisa que dar baixa é desmarcar "Ativo"', async () => {
+    await abrirDialogoDeTransferencia();
+
+    escolher('Tipo', 3);
+    escolher('Situação', 3);
+    salvarNoModal();
+    await flush();
+
+    expect(servico.createTransferencia).toHaveBeenCalledTimes(1);
+    expect(toast.showWarning).toHaveBeenCalledTimes(1);
+    expect(toast.showWarning.mock.calls[0][0]).toContain('Ativo');
+  });
+
+  // O CONTROLE NEGATIVO: a descarga que ainda está no meio do caminho não avisa
+  // nada, senão o aviso viraria ruído em todo lançamento.
+  test('descarga apenas SOLICITADA não avisa nada', async () => {
+    await abrirDialogoDeTransferencia();
+
+    escolher('Tipo', 3);
+    escolher('Situação', 1);
+    salvarNoModal();
+    await flush();
+
+    expect(servico.createTransferencia).toHaveBeenCalledTimes(1);
+    expect(toast.showWarning).not.toHaveBeenCalled();
+  });
+
+  test('recebimento concluído não avisa: ele traz o bem, e não o tira', async () => {
+    await abrirDialogoDeTransferencia();
+
+    escolher('Tipo', 1);
+    escolher('Situação', 3);
+    salvarNoModal();
+    await flush();
+
+    expect(servico.createTransferencia).toHaveBeenCalledTimes(1);
+    expect(toast.showWarning).not.toHaveBeenCalled();
+  });
+});

@@ -6,15 +6,21 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 def main():
-    if len(sys.argv) != 6:
-        logging.error(f"Uso: python3 getFileBySMB.py <smb_path> <local_path> <user> <password> <domain>")
+    # A SENHA NÃO É ARGUMENTO, E ISSO É O PONTO: argumento de processo é legível
+    # por qualquer usuário da máquina (`ps aux`, /proc/<pid>/cmdline). Ela chega
+    # em SMB_PASSWD, que só o dono do processo e o root leem. A forma de SEIS
+    # argumentos continua aceita para quem chama o script à mão.
+    if len(sys.argv) == 6:
+        smb_file_path, local_file_path, user, passwd, domain = sys.argv[1:6]
+    elif len(sys.argv) == 5:
+        smb_file_path, local_file_path, user, domain = sys.argv[1:5]
+        passwd = os.environ.get('SMB_PASSWD', '')
+    else:
+        logging.error(
+            "Uso: SMB_PASSWD=<senha> python3 getFileBySMB.py "
+            "<smb_path> <local_path> <user> <domain>"
+        )
         sys.exit(1)
-
-    smb_file_path = sys.argv[1]
-    local_file_path = sys.argv[2]
-    user = sys.argv[3]
-    passwd = sys.argv[4]
-    domain = sys.argv[5]
 
     # Validar que o caminho SMB tem formato esperado
     if not smb_file_path.startswith("smb:"):
@@ -28,7 +34,7 @@ def main():
 
     # Validar credenciais não vazias
     if not user or not passwd or not domain:
-        logging.error("Credenciais SMB incompletas (user, password ou domain vazios)")
+        logging.error("Credenciais SMB incompletas (usuário, senha em SMB_PASSWD ou domínio vazios)")
         sys.exit(2)
 
     try:

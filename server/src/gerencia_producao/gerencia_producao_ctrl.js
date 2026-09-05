@@ -1158,15 +1158,61 @@ controller.iniciaAtividadeModoLocal = async (atividadeId, usuarioUuid, contexto)
       'Atividade'
     )
 
-    const depois = await t.one(
+    // A SITUACAO ENTRA NO `WHERE`, e sao os mesmos dois codes que o `/inicia` do
+    // operador aceita. Sem eles a rota comecava QUALQUER atividade pelo id:
+    //
+    //   EM EXECUCAO de outra pessoa  o `usuario_uuid` era sobrescrito pelo do
+    //                                gerente e o `data_inicio` voltava a agora.
+    //                                O operador que estava com a folha na mao
+    //                                perdia `/verifica` e levava 400 no
+    //                                `/finaliza`, sem nada explicando por que.
+    //   FINALIZADA                   voltava a "Em execução" mantendo a
+    //                                `data_fim` da entrega: producao entregue
+    //                                reaberta, e o acompanhamento contando como
+    //                                em curso o que ja fora feito.
+    //
+    // Quem quer mesmo tirar a folha da mao de alguem usa `/atividade/pausar`,
+    // que encerra a atividade viva, abre a pausada e REVOGA o acesso ao banco
+    // de edicao -- coisas que este UPDATE nunca fez.
+    //
+    // A PAUSADA SO ENTRA SE FOR DE NINGUEM, e essa e a outra metade da mesma
+    // regra. A pausada COM dono e o desfecho NORMAL de um
+    // `/problema_atividade` (que encerra a viva e abre uma pausada no nome de
+    // quem executava) e de um `POST /atividade/pausar` da gerencia. O `SET`
+    // aqui grava `usuario_uuid = $<usuarioUuid>`, e esse uuid e o do GERENTE --
+    // a rota passa `req.usuarioUuid`, e o corpo nao tem campo de executor.
+    // Sem a conferencia de dono, o gerente que digitasse o id de uma pausada
+    // trocaria o dono dela em silencio, e `calcula_fila_pausada.sql` (que
+    // filtra por `a.usuario_uuid = $<usuarioUuid>`) nunca mais devolveria ao
+    // operador a folha em que ele parou no meio.
+    const depois = await t.oneOrNone(
       `UPDATE producao.atividade SET
          data_inicio = CURRENT_TIMESTAMP,
          tipo_situacao_atividade_id = $<emExecucao>,
          usuario_uuid = $<usuarioUuid>
        WHERE id = $<atividadeId>
+         AND (
+           tipo_situacao_atividade_id = $<naoIniciada>
+           OR (tipo_situacao_atividade_id = $<pausada> AND usuario_uuid IS NULL)
+         )
        RETURNING *`,
-      { atividadeId, usuarioUuid, emExecucao: SITUACAO_ATIVIDADE.EM_EXECUCAO }
+      {
+        atividadeId,
+        usuarioUuid,
+        emExecucao: SITUACAO_ATIVIDADE.EM_EXECUCAO,
+        naoIniciada: SITUACAO_ATIVIDADE.NAO_INICIADA,
+        pausada: SITUACAO_ATIVIDADE.PAUSADA
+      }
     )
+
+    if (!depois) {
+      throw new AppError(
+        'Só se inicia em modo local a atividade Não iniciada, ou a Pausada que ainda não tem executor. ' +
+        'Esta já está em execução, finalizada, descartada, ou é uma pausada que pertence a alguém. ' +
+        'Para tirar a folha da mão de quem está com ela, use Pausar atividade',
+        httpCode.BadRequest
+      )
+    }
 
     await auditoriaCtrl.registrar(t, {
       tabela: 'producao.atividade',
@@ -1210,22 +1256,47 @@ controller.finalizaAtividadeModoLocal = async (
       )
     }
 
-    const depois = await t.one(
+    // O QUE JA ESTA ENCERRADO NAO SE FINALIZA DE NOVO, e e a mesma leitura da
+    // zona de perigo (`/perigo/atividades/usuario/:uuid` solta 1, 2 e 3 e NAO
+    // toca nas finalizadas). Sem este filtro a rota reescrevia pelo id:
+    //
+    //   FINALIZADA        uma segunda chamada -- o duplo clique, ou o id
+    //                     digitado errado -- trocava o dono, a `data_inicio` e a
+    //                     `data_fim` de uma entrega ja feita. A folha passava a
+    //                     dizer que quem a produziu foi outra pessoa, em outra
+    //                     data, e o PIT do ano mudava de mao sem rastro do que
+    //                     havia antes na propria linha.
+    //   NAO FINALIZADA    ressuscitava uma tentativa DESCARTADA (code 5) como
+    //                     entrega, e o indice unico parcial daquele par
+    //                     respondia com violacao de chave -- um 500 onde cabia
+    //                     a frase abaixo.
+    const depois = await t.oneOrNone(
       `UPDATE producao.atividade SET
          data_inicio = $<dataInicio>,
          data_fim = $<dataFim>,
          tipo_situacao_atividade_id = $<finalizada>,
          usuario_uuid = $<usuarioAtividadeUuid>
        WHERE id = $<atividadeId>
+         AND tipo_situacao_atividade_id IN ($<naoIniciada>, $<emExecucao>, $<pausada>)
        RETURNING *`,
       {
         atividadeId,
         usuarioAtividadeUuid,
         dataInicio,
         dataFim,
-        finalizada: SITUACAO_ATIVIDADE.FINALIZADA
+        finalizada: SITUACAO_ATIVIDADE.FINALIZADA,
+        naoIniciada: SITUACAO_ATIVIDADE.NAO_INICIADA,
+        emExecucao: SITUACAO_ATIVIDADE.EM_EXECUCAO,
+        pausada: SITUACAO_ATIVIDADE.PAUSADA
       }
     )
+
+    if (!depois) {
+      throw new AppError(
+        'Esta atividade já está finalizada ou foi descartada, e não se finaliza de novo. Para desfazer uma entrega, use "voltar atividade"',
+        httpCode.BadRequest
+      )
+    }
 
     await auditoriaCtrl.registrar(t, {
       tabela: 'producao.atividade',
@@ -1479,7 +1550,24 @@ const criarFila = async (
       })
     }
 
-    return criadas.map(c => c.id)
+    // O PARCIAL TEM DE APARECER, e nao so o zero. O INSERT filtra por
+    // 'Não iniciada', entao mandar cinco atividades das quais duas ja estao em
+    // execucao ou pausadas cria TRES entradas e responde 201, sem nada dizendo
+    // que duas ficaram de fora: o gerente conta cinco na tela, cinco no que
+    // mandou, e volta na segunda-feira achando que furou a fila de cinco
+    // folhas. E a mesma regua que `avancaAtividade` ja aplica ao ZERO
+    // ('avancei' sobre zero linhas e a resposta que ele nao tem como distinguir
+    // da certa); aqui o PARCIAL escapava dela.
+    //
+    // RECUSAR O LOTE INTEIRO seria a outra saida, e e mais dura do que o caso
+    // pede: o gerente teria de reselecionar tudo por causa de duas folhas que
+    // outra pessoa comecou nesse meio tempo.
+    const entraram = new Set(criadas.map(c => c.atividade_id))
+
+    return {
+      ids: criadas.map(c => c.id),
+      nao_incluidas: atividadeIds.filter(id => !entraram.has(id))
+    }
   })
 }
 

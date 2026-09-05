@@ -181,7 +181,24 @@ describe('renderProducaoDashboard', () => {
 
     const { instanciasChart } = await import('@components/charts/chart-stub.js');
     const grafico = instanciasChart[instanciasChart.length - 1];
-    expect(grafico.data.datasets.map(d => d.label)).toEqual(['Em execução', 'Não iniciado']);
+    // "Nao iniciado" TAMBEM SAI, e nao so a serie que caiu: ele e uma CONTA
+    // entre as tres (`juntarPorLote` o deixa nulo em toda linha quando falta
+    // qualquer uma delas). Mantendo a legenda, o grafico ganharia um rotulo que
+    // nao desenha barra nenhuma, e a leitura seria "nao ha nada nao iniciado".
+    expect(grafico.data.datasets.map(d => d.label)).toEqual(['Em execução']);
+
+    cleanup();
+  });
+
+  test('a fonte de execucao que cai tambem leva o "Nao iniciado" embora', async () => {
+    servico.getLotesEmExecucao.mockRejectedValue(new Error('falhou'));
+
+    const container = document.createElement('div');
+    const cleanup = await renderProducaoDashboard(container);
+
+    const { instanciasChart } = await import('@components/charts/chart-stub.js');
+    const grafico = instanciasChart[instanciasChart.length - 1];
+    expect(grafico.data.datasets.map(d => d.label)).toEqual(['Finalizado']);
 
     cleanup();
   });

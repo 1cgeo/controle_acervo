@@ -199,7 +199,19 @@ export async function renderPontoControleTab(container) {
   await load();
 
   return {
-    cleanup: () => { disposed = true; },
+    // Os quatro filhos que guardam estado FORA do proprio no sao soltos aqui.
+    // Os graficos assinam a troca de tema na `window` para se repintar: sem o
+    // `_cleanup()`, o ouvinte da aba descartada nunca sai, segura o cartao
+    // inteiro vivo, e cada clique no botao de tema cria uma instancia nova de
+    // Chart.js sobre um canvas que ja saiu da arvore -- uma por visita anterior
+    // a esta aba. As tabelas soltam os ouvintes delas pela mesma porta.
+    cleanup: () => {
+      disposed = true;
+      barTipoArquivo._cleanup();
+      barMes._cleanup();
+      tabelaMissoes._cleanup();
+      tabelaImportacoes._cleanup();
+    },
     refresh: load,
   };
 }

@@ -153,6 +153,40 @@ describe('montarMudancas: a resposta que faltava', () => {
   })
 })
 
+// A TRILHA E APPEND-ONLY E O MAPA ANDA: tabela renomeada ou apagada leva a
+// chave embora e DEIXA os eventos dela para tras. `pit.exercicio` virou
+// `pit.pit` em 2026-08-09 (15 eventos medidos no dump de producao),
+// `orcamento.configuracao` foi podada na 1.34.0, `mapoteca.consumo_material` na
+// 1.41.0, e `mapoteca.plotter` saiu do banco em 2026-08-13.
+//
+// Com o `entradaDe` lancando na LEITURA, uma dessas linhas numa pagina derrubava
+// a varredura INTEIRA com 500, e a ficha daquele registro nunca mais abria --
+// sumia justamente o rastro que a trilha existe para guardar.
+describe('evento de tabela que saiu do mapa', () => {
+  const orfao = {
+    tabela: 'pit.exercicio',
+    operacao: 'U',
+    campos_alterados: ['situacao_id'],
+    dados_antes: { ano: 2026, situacao_id: 1 },
+    dados_depois: { ano: 2026, situacao_id: 2 }
+  }
+
+  it('nao derruba a leitura: sai como campo nao declarado', () => {
+    const m = montarMudancas(orfao, CATALOGOS)
+
+    expect(m).toHaveLength(1)
+    expect(m[0].campo).toBe('situacao_id')
+    expect(m[0].rotulo).toBe('situacao_id')
+    expect(m[0].declarado).toBe(false)
+    expect(m[0].antes_texto).toBe('1')
+    expect(m[0].depois_texto).toBe('2')
+  })
+
+  it('o resumo cai no nome da tabela, em vez de estourar', () => {
+    expect(montarResumo(orfao)).toBe('pit.exercicio')
+  })
+})
+
 describe('montarResumo', () => {
   it('identifica o registro pelo que a pessoa usa para falar dele', () => {
     const resumo = montarResumo(evento({

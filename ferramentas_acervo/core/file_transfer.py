@@ -128,9 +128,21 @@ class FileTransferThread(QThread):
         try:
             return self._copy_file_with_progress(source_path, dest_path)
         except Exception as e:
+            # O arquivo parcial tem de sair: sobrando na pasta, ele tem o nome
+            # exato do bom e passa por arquivo baixado, truncado.
+            self._descartar_parcial(dest_path)
             msg = f"Erro ao copiar o arquivo: {e}"
             logging.error(msg)
             return False, msg
+
+    @staticmethod
+    def _descartar_parcial(caminho):
+        """Apaga o arquivo de destino incompleto de uma cópia interrompida."""
+        try:
+            if os.path.exists(caminho):
+                os.remove(caminho)
+        except OSError as e:
+            logging.warning(f"Não foi possível apagar o arquivo parcial {caminho}: {e}")
 
     @classmethod
     def ensure_smb_credentials(cls, parent=None):
@@ -177,16 +189,20 @@ class FileTransferThread(QThread):
 
         source_path = self.source_path.replace("\\", "/")
         script_path = os.path.join(os.path.dirname(__file__), 'getFileBySMB.py')
+        # A SENHA VAI PELO AMBIENTE, E NUNCA NA LINHA DE COMANDO. Argumento de
+        # processo é legível por qualquer usuário da máquina (`ps aux`,
+        # /proc/<pid>/cmdline), e o `getFileBySMB.py` roda num processo separado.
+        # Pelo ambiente, só o dono do processo e o root leem.
         command = [
             'python3',
             script_path,
             f"smb:{source_path}",
             self.destination_path,
             user,
-            passwd,
             domain
         ]
-        return self.run_system_command(command)
+        ambiente = dict(os.environ, SMB_PASSWD=passwd)
+        return self.run_system_command(command, ambiente)
 
     def _copy_file_with_progress(self, source_path, dest_path):
         """Copia arquivo com atualização de progresso. Retorna (sucesso, erro|None)."""
@@ -219,35 +235,43 @@ class FileTransferThread(QThread):
                     buffer = src.read(buffer_size)
 
         if self.cancelled:
+            self._descartar_parcial(dest_path)
             return False, "Transferência cancelada."
         return True, None
 
-    def run_system_command(self, command):
-        """Executa o comando de cópia SMB. Retorna (sucesso, mensagem_erro|None)."""
-        try:
-            if isinstance(command, list):
-                result = subprocess.run(command, check=True, capture_output=True, text=True)
-            else:
-                result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
+    def run_system_command(self, command, ambiente=None):
+        """Executa o comando de cópia SMB. Retorna (sucesso, mensagem_erro|None).
 
-            if result.returncode == 0:
-                logging.info(f"Comando executado com sucesso: {command if isinstance(command, str) else ' '.join(command)}")
-                # Emitir progresso 100% para indicar sucesso
-                self.progress_update.emit(100, 100)
-                return True, None
-            else:
-                msg = (result.stderr or '').strip() or f"Comando falhou (código {result.returncode})"
-                logging.error(f"Comando falhou com código de retorno {result.returncode}: {result.stderr}")
-                return False, msg
+        NADA DE CREDENCIAL NO LOG. O comando carrega o usuário e o domínio, e o
+        `str(CalledProcessError)` repete a linha de comando inteira: registrar
+        qualquer um dos dois grava credencial num arquivo de log que sobrevive à
+        sessão. O que vai para o log é a ORIGEM e o código de retorno, que é o
+        que serve para diagnosticar.
+        """
+        origem = self.source_path
+        try:
+            subprocess.run(command, check=True, capture_output=True, text=True,
+                           env=ambiente)
+            logging.info(f"Cópia SMB concluída: {origem}")
+            # Emitir progresso 100% para indicar sucesso
+            self.progress_update.emit(100, 100)
+            return True, None
 
         except subprocess.CalledProcessError as e:
             # getFileBySMB.py escreve mensagens claras em stderr (biblioteca
             # ausente, credenciais incompletas, erro de transferência).
             # Propague-as à UI, em vez do genérico "Falha na transferência".
-            msg = (e.stderr or '').strip() or str(e)
-            logging.error(f"Erro ao executar comando: {str(e)}, saída: {e.stderr}")
+            msg = (e.stderr or '').strip() or f"Comando falhou (código {e.returncode})"
+            logging.error(
+                f"Cópia SMB falhou (código {e.returncode}) para {origem}: {msg}"
+            )
+            return False, msg
+        except FileNotFoundError:
+            msg = ("Interpretador 'python3' não encontrado. Instale o Python 3 "
+                   "e a biblioteca pysmbc para copiar arquivos por SMB.")
+            logging.error(msg)
             return False, msg
         except Exception as e:
             msg = str(e)
-            logging.error(f"Exceção ao executar comando: {msg}")
+            logging.error(f"Exceção ao copiar por SMB {origem}: {msg}")
             return False, msg

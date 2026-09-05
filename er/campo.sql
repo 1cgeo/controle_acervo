@@ -276,7 +276,7 @@ CREATE TABLE campo.track_ponto(
 );
 
 COMMENT ON TABLE campo.track_ponto IS
-    'Ponto do GPS. A ordem do trajeto vem de momento, e não de uma coluna de sequência.';
+    'Ponto do GPS. A ordem do trajeto vem de momento; sem hora, da ordem de inserção (id).';
 
 CREATE INDEX idx_track_ponto_track ON campo.track_ponto (track_id);
 CREATE INDEX idx_track_ponto_geom ON campo.track_ponto USING gist (geom);
@@ -294,6 +294,33 @@ CREATE INDEX idx_track_ponto_geom ON campo.track_ponto USING gist (geom);
 -- O HAVING NAO E DETALHE: `ST_MakeLine` com um ponto so devolve um ponto, e a
 -- coluna se declara LineString. Track com um vertice unico simplesmente nao
 -- tem linha, e some daqui em vez de derrubar a consulta.
+--
+-- O TRACK SEM HORA TAMBEM SE DESENHA, desde 2026-09-05.
+--
+-- Ate aqui a view filtrava `WHERE p.momento IS NOT NULL` e costurava
+-- `ORDER BY p.momento`, entao um trajeto importado de GeoJSON -- onde TODO
+-- ponto entra com `momento` nulo, porque GeoJSON de linha nao carrega hora --
+-- nao produzia linha NENHUMA. O servidor respondia "Trajeto importado com 6.500
+-- pontos", a lista mostrava os 6.500 e ao lado "sem linha para desenhar", e o
+-- trajeto nunca aparecia no mapa. A hora e o que ORDENA melhor, e nao o que
+-- autoriza a existir.
+--
+-- A ORDEM PASSA A SER `momento NULLS LAST, id`: quem tem hora ordena pela hora,
+-- e quem nao tem cai para o fim na ordem de INSERCAO, que e a ordem do arquivo
+-- (os pontos entram num INSERT unico, na ordem em que foram lidos). Num track
+-- misto o trecho cronometrado vem primeiro e o resto segue atras, que e o
+-- melhor que se pode afirmar sem inventar hora.
+--
+-- O `NaN` NO M NAO E ENFEITE, e sem ele nada disto funciona: `ST_MakePointM` e
+-- STRICT, entao `momento` nulo devolvia PONTO NULO, e `ST_MakeLine` PULA os
+-- nulos -- um track todo sem hora virava uma linha de zero vertices, isto e,
+-- NULL. Um zero no lugar do `NaN` seria pior que a falta: ele afirmaria
+-- 1970-01-01T00:00:00Z em cada vertice, e quem lesse o M acreditaria. `NaN` diz
+-- "nao ha hora aqui", e some no `ST_Force2D` que o servidor aplica antes de
+-- serializar para o mapa.
+--
+-- O `WHERE` sobrou como guarda de geometria: `geom` e NOT NULL na tabela, e a
+-- condicao existe para que uma linha sem ponto nunca chegue ao `ST_MakeLine`.
 CREATE VIEW campo.track_linha AS
 SELECT
   p.track_id,
@@ -302,12 +329,15 @@ SELECT
   count(*) AS pontos,
   ST_MakeLine(
     ST_SetSRID(
-      ST_MakePointM(ST_X(p.geom), ST_Y(p.geom), extract(epoch FROM p.momento)),
+      ST_MakePointM(
+        ST_X(p.geom), ST_Y(p.geom),
+        COALESCE(extract(epoch FROM p.momento), 'NaN'::double precision)
+      ),
       4674
-    ) ORDER BY p.momento
+    ) ORDER BY p.momento NULLS LAST, p.id
   )::geometry(LineStringM, 4674) AS geom
 FROM campo.track_ponto p
-WHERE p.momento IS NOT NULL
+WHERE p.geom IS NOT NULL
 GROUP BY p.track_id
 HAVING count(*) > 1;
 

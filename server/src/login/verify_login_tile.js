@@ -8,6 +8,8 @@ const validateToken = require('./validate_token')
 
 const { montarContexto } = require('./contexto')
 
+const { colunaCarimbo, conferirCarimbo } = require('./carimbo_da_senha')
+
 /**
  * A ÚNICA GUARDA DO SISTEMA QUE ACEITA O TOKEN NA QUERY STRING, e ela existe por
  * um motivo só: as camadas MVT.
@@ -80,13 +82,21 @@ const verifyLoginTile = asyncHandler(async (req, res, next) => {
   }
 
   const usuario = await db.conn.oneOrNone(
-    'SELECT id, administrador FROM dgeo.usuario WHERE uuid = $<uuid> AND ativo IS TRUE',
+    `SELECT id, administrador, ${colunaCarimbo()}
+     FROM dgeo.usuario WHERE uuid = $<uuid> AND ativo IS TRUE`,
     { uuid: decoded.uuid }
   )
 
   if (!usuario) {
     throw new AppError('Usuário não encontrado ou inativo', httpCode.Forbidden)
   }
+
+  // A SENHA MUDOU? O `carimbo` do token é derivado do hash que valia quando ele
+  // foi emitido, e a coluna acima traz o do hash de HOJE. Divergiu, a sessão
+  // acabou -- é o que faz a troca de senha (e o reset pelo administrador)
+  // expulsar quem já estava dentro. Token sem o claim é legado e passa; ver
+  // `carimbo_da_senha.js`.
+  conferirCarimbo(decoded, usuario)
 
   req.usuarioUuid = decoded.uuid
   req.usuarioId = usuario.id

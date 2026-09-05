@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import mapoteca from '@modules/mapoteca/index.js';
+import mapoteca, { PERFIS_DA_LISTA_DE_PEDIDOS } from '@modules/mapoteca/index.js';
 import { getModulo, modulosPortados, rotaInicial } from '@modules/registry.js';
 import { mockMapotecaService } from '@modules/mapoteca/services/service-mocks.js';
 import * as servicoReal from '@modules/mapoteca/services/mapoteca-service.js';
@@ -69,6 +69,26 @@ describe('manifesto do modulo mapoteca', () => {
     expect(perfisDe('/clientes')).toEqual(['consulta', 'gerente']);
     expect(perfisDe('/pedidos')).toEqual(['consulta', 'gerente']);
     expect(perfisDe('/atendimento')).toEqual(['operador', 'gerente']);
+  });
+
+  // AS TELAS SO OFERECEM O QUE A ROTA ACEITA.
+  //
+  // A fila de atendimento e do operador e do gerente, e o dashboard e dos tres
+  // perfis; as duas levam para '/pedidos', '/pedidos/:id' e '/clientes/:id', que
+  // sao de consulta e gerente. Para o operador aqueles caminhos terminavam em
+  // '#/unauthorized'. As telas passaram a esconde-los de quem nao os abre, e a
+  // lista que elas usam para decidir e esta. Divergir em silencio devolveria o
+  // link morto ou esconderia o link de quem pode.
+  test('o recorte que as telas usam e o mesmo das rotas de leitura', () => {
+    const daRota = mapoteca.rotas.find(r => r.path === '/pedidos').perfis;
+    expect(PERFIS_DA_LISTA_DE_PEDIDOS).toEqual(daRota);
+    // As quatro rotas para as quais ha link no atendimento e no dashboard.
+    for (const path of ['/pedidos/:id', '/clientes', '/clientes/:id']) {
+      expect(mapoteca.rotas.find(r => r.path === path).perfis).toEqual(daRota);
+    }
+    // E a prova de que o operador esta MESMO fora: sem isto o teste passaria
+    // igual num dia em que a rota o incluisse e a tela deixasse de esconder.
+    expect(PERFIS_DA_LISTA_DE_PEDIDOS).not.toContain('operador');
   });
 
   // A LISTA NAO HIERARQUICA MORREU NA TELA DE MATERIAL, em 2026-08-08.

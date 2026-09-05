@@ -86,9 +86,22 @@ models.limpaLogBody = confirmacao(
   models.TOKEN.LOG, 'apaga o log combinado anterior a três dias'
 )
 
+// O `lote_id` E O ALVO, e e OPCIONAL de proposito. Sem ele a varredura continua
+// alcancando a instalacao inteira -- e ha um custo real nisso: entre `POST
+// /producao/unidade_trabalho` (que cria as unidades) e `POST
+// /producao/atividades` (que cria as atividades) TODA unidade recem-carregada e
+// "sem atividade", e as duas chamadas sao duas telas que podem ficar dias uma da
+// outra. Quem limpa quatro sobras de um lote antigo leva junto os milhares de
+// recortes que outro gerente carregou de manha, e a geometria nao volta.
+// Opcional, e nao obrigatorio, porque quem ja chama a rota sem ele nao pode
+// quebrar no deploy -- o que a resposta ganhou, quando ele nao vem, e a
+// contagem POR LOTE no resumo, que e o que permite enxergar o acidente no
+// evento.
 models.utSemAtividadeBody = confirmacao(
   models.TOKEN.UT_SEM_ATIVIDADE, 'apaga toda unidade de trabalho sem atividade'
-)
+).keys({
+  lote_id: id()
+})
 
 // --- Propriedades de camada ---------------------------------------------------
 

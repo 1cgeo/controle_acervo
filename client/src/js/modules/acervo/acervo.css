@@ -331,6 +331,16 @@
   flex: 1;
 }
 
+/* A faceta que nao carregou. Ela nasce escondida e so aparece quando NENHUMA
+   opcao chegou: sem ela, os quatro filtros abriam dizendo "Nenhuma opcao para
+   este recorte", que e um fato diferente do que aconteceu. */
+.busca-filtros__aviso {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-warning);
+  font-size: var(--font-size-sm);
+}
+
 .busca-area-chip {
   display: inline-flex;
   align-items: center;
@@ -1928,6 +1938,24 @@
   font-size: 0.8125rem;
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+/* O arquivo que passa do teto do envio pelo navegador, e a frase que explica por
+   que o "Continuar para o envio" está travado. Sem cor, a marca da linha não
+   existe: é a única coisa que diz QUAL dos cinco arquivos é o grande. */
+.envio-assistente__erro {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-error);
+}
+
+.envio-item--acima-do-teto {
+  border-color: var(--color-error);
+}
+
+.envio-item__tamanho--acima {
+  color: var(--color-error);
+  font-weight: 600;
 }
 
 .envio-item__campos {

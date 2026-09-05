@@ -187,6 +187,37 @@ const textoDoValor = (valor, decl, catalogo) => {
 // --- A montagem -------------------------------------------------------------
 
 /**
+ * A entrada do mapa para LER um evento antigo, ou uma entrada neutra.
+ *
+ * `entradaDe` LANCA quando a tabela nao esta no mapa, e isso e a regra para
+ * ESCREVER: evento sem agregado nao apareceria em ficha nenhuma, e o erro em
+ * tempo de execucao e o que impede uma tabela auditada de nascer fora do mapa.
+ *
+ * NA LEITURA A MESMA REGRA E O DEFEITO. `auditoria.evento` e append-only, e o
+ * mapa e codigo que anda: tabela renomeada ou apagada leva a chave embora e
+ * DEIXA os eventos dela para tras. Ja aconteceu cinco vezes -- `pit.exercicio`
+ * (renomeada para `pit.pit` em 2026-08-09, com 15 eventos medidos no dump de
+ * producao), `orcamento.configuracao` (podada na 1.34.0),
+ * `mapoteca.consumo_material` (1.41.0), `mapoteca.plotter` e
+ * `mapoteca.manutencao_plotter` (fora do banco em 2026-08-13). Com o lanco,
+ * UMA dessas linhas numa pagina derruba a varredura INTEIRA com 500, e a ficha
+ * daquele registro nunca mais abre -- some justamente o rastro que a trilha
+ * existe para guardar.
+ *
+ * A DEGRADACAO E A QUE O ARQUIVO JA DESCREVE para o campo nao declarado: sai o
+ * nome cru da coluna com o valor cru, e o resumo vira o nome da tabela. Quem
+ * escreve continua barrado, porque `auditoria_ctrl.registrar` chama `entradaDe`
+ * direto.
+ */
+const entradaParaLeitura = tabela => {
+  try {
+    return entradaDe(tabela)
+  } catch (err) {
+    return { campos: {}, resumo: null }
+  }
+}
+
+/**
  * As mudancas de um evento, prontas para a tela.
  *
  * A ORDEM e a da declaracao do mapa (que espelha a ordem da ficha), e nao
@@ -199,7 +230,7 @@ const textoDoValor = (valor, decl, catalogo) => {
  * @returns {Array<object>}
  */
 const montarMudancas = (evento, catalogosCarregados) => {
-  const entrada = entradaDe(evento.tabela)
+  const entrada = entradaParaLeitura(evento.tabela)
   const campos = entrada.campos || {}
   const alterados = evento.campos_alterados || []
   const antes = evento.dados_antes || {}
@@ -247,9 +278,12 @@ const montarMudancas = (evento, catalogosCarregados) => {
  * acessorio; a ficha e o trabalho.
  */
 const montarResumo = evento => {
-  const entrada = entradaDe(evento.tabela)
+  const entrada = entradaParaLeitura(evento.tabela)
   const linha = evento.dados_depois || evento.dados_antes
   if (!linha) return evento.tabela
+  // Tabela que saiu do mapa nao tem funcao de resumo: sobra o nome dela, que e
+  // a mesma resposta do resumo que falha logo abaixo.
+  if (typeof entrada.resumo !== 'function') return evento.tabela
   try {
     return entrada.resumo(linha) || evento.tabela
   } catch (err) {

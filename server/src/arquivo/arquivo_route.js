@@ -9,7 +9,8 @@ const { verifyPerfil, verifyAdmin } = require('../login')
 const arquivoCtrl = require('./arquivo_ctrl')
 const arquivoSchema = require('./arquivo_schema')
 const {
-  uploadWebProduto, uploadWebVersao, uploadWebArquivos, planoDaRequisicao, limparParciais
+  uploadWebProduto, uploadWebVersao, uploadWebArquivos, planoDaRequisicao, limparParciais,
+  tetoEmGb
 } = require('./upload_web')
 
 const router = express.Router()
@@ -117,6 +118,32 @@ router.post(
 //
 // O campo `dados` (JSON) tem de vir ANTES dos arquivos no multipart: e dele que
 // sai o destino de cada byte.
+// O TETO DO ENVIO PELO NAVEGADOR, publicado.
+//
+// A tela nao tinha como saber o numero: ela dizia "arquivo muito grande continua
+// entrando pelo plugin do QGIS" sem dizer o que e grande, e quem escolhia um
+// arquivo acima do teto so descobria depois de esperar a subida inteira -- no
+// pior caso com "Falha de rede durante o envio", que manda tentar de novo
+// exatamente o que nunca vai passar.
+//
+// LITERAL, e declarada ANTES das tres rotas `/upload-web/*` abaixo: o Express
+// casa na ordem de declaracao, e um `/upload-web/:algo` que nasca depois nao
+// pode engolir esta.
+//
+// O numero sai de `tetoEmGb()`, do proprio `upload_web.js`: quem publica o
+// limite e quem o aplica sao a mesma leitura de `UPLOAD_WEB_MAX_GB`.
+router.get(
+  '/upload-web/teto',
+  verifyPerfil('operador'),
+  asyncHandler(async (req, res, next) => {
+    const dados = { max_gb: tetoEmGb() };
+
+    const msg = `Teto do envio pelo navegador: ${dados.max_gb} GB`;
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
+  })
+);
+
 router.post(
   '/upload-web/produto',
   verifyPerfil('operador'),
@@ -243,11 +270,19 @@ router.post(
   })
 );
 
+// QUEM VE TUDO E O GERENTE, e o administrador global. O operador ve as sessoes
+// DELE -- que sao as que ele tem de consertar. `req.perfilId` e o nivel dentro
+// do modulo, posto por `verifyPerfil` a partir do BANCO, e nao do token.
+const donoOuTudo = (req) =>
+  (req.administrador || req.perfilId >= verifyPerfil.PERFIL.gerente)
+    ? null
+    : req.usuarioUuid;
+
 router.get(
   '/problem-uploads',
   verifyPerfil('operador'),
   asyncHandler(async (req, res, next) => {
-    const dados = await arquivoCtrl.getProblemUploads();
+    const dados = await arquivoCtrl.getProblemUploads(donoOuTudo(req));
     const msg = 'Uploads com problemas recuperados com sucesso';
     return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })
@@ -258,7 +293,7 @@ router.get(
   '/upload-sessions',
   verifyPerfil('operador'),
   asyncHandler(async (req, res, next) => {
-    const dados = await arquivoCtrl.getUploadSessions();
+    const dados = await arquivoCtrl.getUploadSessions(donoOuTudo(req));
 
     const msg = 'Sessões de upload retornadas com sucesso';
 
@@ -300,6 +335,31 @@ router.post(
     const msg = 'Sessão de upload cancelada com sucesso';
 
     return res.sendJsonAndLog(true, msg, httpCode.OK);
+  })
+);
+
+// Devolve 24 horas de prazo a uma sessao de envio, sem mexer no rascunho.
+//
+// A carga pelo plugin copia por SMB e passa de centenas de GB; o prazo da sessao
+// e de 24 horas contadas do prepare. Ate 2026-09-05 vencer o prazo custava a
+// transferencia INTEIRA: o confirm respondia 400 mandando transferir tudo de
+// novo, e o byte ja copiado virava lixo orfao no volume.
+//
+// PERFIL `operador`, e o dono sai do TOKEN: renovar e continuar o proprio envio,
+// que e o que o operador LANCA. Sessao de outra pessoa responde 403, como no
+// cancel-upload ao lado.
+router.post(
+  '/renovar-upload',
+  verifyPerfil('operador'),
+  schemaValidation({
+    body: arquivoSchema.renovarUpload
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await arquivoCtrl.renovarUpload(req.body.session_uuid, req.usuarioUuid);
+
+    const msg = 'Sessão de upload renovada por mais 24 horas. Confirme o envio antes do novo prazo.';
+
+    return res.sendJsonAndLog(true, msg, httpCode.OK, dados);
   })
 );
 

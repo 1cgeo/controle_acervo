@@ -423,20 +423,90 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
 // e é deliberado: o documento é assinado DEPOIS de fechado, e é justamente aí
 // que essas duas informações chegam. O que o fechamento congela é o que o
 // relatório afirma, não quem o assinou.
+//
+// O ANO E O MÊS SÃO A EXCEÇÃO, e param de ser editáveis quando a edição fecha.
+// Eles não são metadado do mesmo tipo dos dois acima: o par (ano, mes) é o que
+// diz DE QUE MÊS são as 33 subseções já congeladas, e trocá-lo faz a edição
+// afirmar agosto com os números de julho, sem nada acusar. Não há volta pela
+// tela: reabrir APAGA o congelado calculado e o recalcula para o mês novo, então
+// os números que o chefe assinou se perdem. O diálogo de metadados oferece os
+// dois campos com a edição fechada, e a recusa mora aqui porque assim ela vale
+// também para o CLI.
+//
+// NA EDIÇÃO ABERTA os dois continuam editáveis, e a troca AVISA: com subseção
+// digitada já preenchida, a rota responde 409 e só aceita com
+// `confirmar_troca_de_periodo`. Ver o bloco no corpo.
 controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const antes = await auditoriaCtrl.lerAntes(
       t, 'rpcmtec.edicao', id, 'Edição do RPCMTec'
     )
 
+    const mudouOPeriodo =
+      Number(dados.ano) !== Number(antes.ano) ||
+      Number(dados.mes) !== Number(antes.mes)
+
+    if (antes.data_fechamento && mudouOPeriodo) {
+      throw new AppError(
+        'A edição está fechada, e o ano e o mês dela dizem de que mês são as ' +
+        'subseções congeladas. Reabra-a antes de mudá-los. O assinante e a ' +
+        'data da assinatura continuam editáveis.',
+        httpCode.BadRequest
+      )
+    }
+
+    // NA EDIÇÃO ABERTA A TROCA É PERMITIDA, E AVISADA. O argumento do bloco
+    // acima vale meio a meio aqui: as 21 calculadas se refazem sozinhas na
+    // próxima montagem, porque saem do banco, e as 11 DIGITADAS ficam onde
+    // estão. O texto que descreve julho passa a sair sob o rótulo de agosto, e
+    // nada acusa. É o mesmo estrago da rota de copiar o mês anterior, podada em
+    // 2026-08-06 por essa razão.
+    //
+    // AVISA, E NÃO RECUSA, como o fechamento faz com a conferência que falta: a
+    // edição aberta é rascunho, e quem criou julho no lugar de agosto no dia 1º
+    // precisa poder consertar. Quem manda `confirmar_troca_de_periodo` está
+    // dizendo que vai reescrever as digitadas.
+    if (mudouOPeriodo && !dados.confirmar_troca_de_periodo) {
+      const { total } = await t.one(
+        `SELECT count(*)::int AS total FROM rpcmtec.subsecao
+         WHERE edicao_id = $<id> AND origem_id = $<digitada>`,
+        { id, digitada: estrutura.ORIGEM.DIGITADA }
+      )
+
+      if (total > 0) {
+        throw new AppError(
+          `Esta edição já tem ${total} subseção(ões) preenchida(s) à mão, e elas ` +
+          `descrevem ${antes.mes}/${antes.ano}. Trocar o período NÃO as reescreve: ` +
+          'as tabelas calculadas se refazem sozinhas, e o texto digitado sai como ' +
+          'está sob o rótulo do mês novo. Confirme a troca se for isso mesmo.',
+          httpCode.Conflict
+        )
+      }
+    }
+
+    // A CONDIÇÃO VIAJA PARA DENTRO DO UPDATE, e não fica só no `if` acima. O
+    // `lerAntes` é um `oneOrNone` simples (`auditoria/auditoria_ctrl.js`) e NÃO
+    // trava a linha: entre ele e o UPDATE cabe um `fechar` inteiro, e a troca de
+    // (ano, mes) que o `if` acabou de proibir passaria por baixo dele. É a mesma
+    // defesa que `deletar`, `fechar` e `reabrir` já usam: o predicado no próprio
+    // UPDATE trava a linha e reavalia depois de esperar o fechamento concorrente
+    // (EvalPlanQual em READ COMMITTED).
+    //
+    // O `OR (ano = ... AND mes = ...)` é o que mantém o assinante e a data da
+    // assinatura editáveis na edição fechada, que é o desenho descrito acima: o
+    // UPDATE só é recusado quando a edição está fechada E o período muda.
+    //
+    // O `if` de cima FICA: ele dá a mensagem que ensina no caso comum, sem gastar
+    // o UPDATE.
     const depois = await t
-      .one(
+      .oneOrNone(
         `UPDATE rpcmtec.edicao SET
            ano = $<ano>, mes = $<mes>, assinante_uuid = $<assinanteUuid>,
            data_assinatura = $<dataAssinatura>,
            data_modificacao = $<dataModificacao>,
            usuario_modificacao_uuid = $<usuarioUuid>
          WHERE id = $<id>
+           AND (data_fechamento IS NULL OR (ano = $<ano> AND mes = $<mes>))
          RETURNING *`,
         {
           id,
@@ -449,6 +519,15 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
         }
       )
       .catch(tratarErroEdicao)
+
+    if (!depois) {
+      throw new AppError(
+        'A edição está fechada, e o ano e o mês dela dizem de que mês são as ' +
+        'subseções congeladas. Reabra-a antes de mudá-los. O assinante e a ' +
+        'data da assinatura continuam editáveis.',
+        httpCode.BadRequest
+      )
+    }
 
     await auditoriaCtrl.registrar(t, {
       tabela: 'rpcmtec.edicao',
@@ -480,7 +559,24 @@ controller.deletar = async (id, usuarioUuid, contexto) => {
       )
     }
 
-    await t.none('DELETE FROM rpcmtec.edicao WHERE id = $<id>', { id })
+    // `AND data_fechamento IS NULL`, o mesmo espelho que `fechar` e `reabrir`
+    // já usam: o `lerAntes` acima é um SELECT simples e NÃO trava a linha, então
+    // um fechamento simultâneo passava entre a conferência e o DELETE e a edição
+    // ASSINADA sumia, levando junto o anexo e as 33 subseções congeladas (o
+    // CASCADE). A condição trava a linha e desempata no banco.
+    const removida = await t.oneOrNone(
+      `DELETE FROM rpcmtec.edicao
+       WHERE id = $<id> AND data_fechamento IS NULL
+       RETURNING id`,
+      { id }
+    )
+
+    if (!removida) {
+      throw new AppError(
+        'Edição fechada não pode ser excluída. Reabra-a primeiro.',
+        httpCode.BadRequest
+      )
+    }
 
     await auditoriaCtrl.registrar(t, {
       tabela: 'rpcmtec.edicao',
@@ -596,6 +692,56 @@ controller.fechar = async (id, usuarioUuid, contexto, cienteDaRevisao = false) =
 
     if (!depois) {
       throw new AppError('A edição já está fechada', httpCode.BadRequest)
+    }
+
+    // O DIGITADO SE RELÊ AQUI, e o congelado NÃO é o que o `montar` viu.
+    //
+    // O `montar` roda fora desta transação e são dezoito consultas: entre ele e
+    // este ponto cabem segundos. Uma gravação de subseção que chegasse nessa
+    // janela encontrava a edição ABERTA (ela estava), gravava, commitava e
+    // deixava o rastro de auditoria dizendo que a gravação foi aplicada -- e
+    // então o UPSERT abaixo passava por cima dela com o texto do snapshot. A
+    // edição fechava afirmando o parágrafo anterior, o gestor via "gravada com
+    // sucesso" no histórico e nada acusava. A trava de `conferirAlvo` cobre a
+    // ordem INVERSA (a gravação que chega depois de o fechamento começar), e não
+    // esta.
+    //
+    // A RELEITURA VEM DEPOIS DO UPDATE de propósito. Aquele UPDATE toma a linha
+    // da edição no mesmo nível que `conferirAlvo` pede (`FOR NO KEY UPDATE`),
+    // então uma gravação em voo o faz ESPERAR: quando ele passa, não há mais
+    // escrita pendente, e o que se lê aqui é o último estado commitado.
+    //
+    // SÓ O DIGITADO. O calculado sai do `calcular()` do próprio `montar`, e
+    // congelá-lo com o instante do cálculo é o desenho: `rpcmtec.subsecao` de
+    // uma edição aberta não guarda calculado nenhum.
+    const frescas = await lerSubsecoes(t, id)
+    const perdidas = []
+
+    for (const b of blocos) {
+      if (b.origem !== estrutura.ORIGEM.DIGITADA) continue
+
+      const gravada = frescas.get(b.numero)
+
+      // A conferência de "preenchida" se REFAZ sobre o fresco, pela mesma razão:
+      // um `limpar` na janela deixaria a subseção vazia, e o snapshot a
+      // congelaria com o texto apagado. Recusar aqui desfaz a transação inteira,
+      // e o fechamento se repete depois de a subseção voltar a ser preenchida.
+      if (!foiPreenchida(gravada)) {
+        perdidas.push(b.numero)
+        continue
+      }
+
+      b.linhas = gravada.linhas
+      b.texto = gravada.texto
+      b.semOcorrencia = gravada.sem_ocorrencia
+    }
+
+    if (perdidas.length > 0) {
+      throw new AppError(
+        'Faltam subseções por preencher: ' + perdidas.join(', ') +
+        '. Preencha cada uma ou marque "sem ocorrência no mês".',
+        httpCode.BadRequest
+      )
     }
 
     for (const b of blocos) {
@@ -718,6 +864,21 @@ controller.reabrir = async (id, usuarioUuid, contexto) => {
  *
  * SÓ AS CALCULADAS entram: as digitadas não têm com que comparar, porque o
  * banco não as produz.
+ *
+ * E CALCULADA É O QUE A LINHA CONGELADA DIZ QUE ERA, e não o que a estrutura de
+ * hoje diria. `montar` já segue essa regra ("a edição FECHADA se desenha com a
+ * estrutura QUE ELA TEVE") e aqui ela faltava: a lista de calculadas ENCOLHE e
+ * CRESCE a cada subseção que o SAP passa a apurar sozinho -- a 2.2 e a 2.4 em
+ * 2026-08-05, a 2.5 e a 7.1 em 2026-08-08 --, e uma subseção DIGITADA na época
+ * do fechamento entrava na comparação contra um gerador que não existia quando
+ * ela foi escrita. A tela acusava divergência para sempre, numa edição em que
+ * ninguém mexeu.
+ *
+ * O QUE ISTO NÃO RESOLVE, e é deliberado: a calculada que SAIU da estrutura (a
+ * 7.3, fundida na 7.2 em 2026-08-08) continua fora da comparação. Ela não tem
+ * gerador hoje, então compará-la seria compará-la com lista vazia, e toda edição
+ * fechada que a tenha sairia divergente por causa da fusão, e não do dado. Ficar
+ * calado é pior do que dizer, mas acusar o que não aconteceu é pior ainda.
  */
 controller.conferirHoje = async id => {
   const edicao = await controller.getPorId(id)
@@ -736,6 +897,9 @@ controller.conferirHoje = async id => {
   for (const numero of estrutura.NUMEROS_CALCULADOS) {
     const congelada = gravadas.get(numero)
     if (!congelada) continue
+    // A ORIGEM QUE VALE É A CONGELADA. Ver o bloco acima: a subseção que era
+    // digitada quando a edição fechou não se compara com o gerador de hoje.
+    if (congelada.origem_id !== estrutura.ORIGEM.CALCULADA) continue
 
     const linhasHoje = hoje[numero] || []
     const linhasAntes = congelada.linhas || []
@@ -888,6 +1052,9 @@ controller.revisar = async (id, numero, revisado, usuarioUuid, contexto) => {
   // Numa edição FECHADA o documento já foi congelado e assinado. Conferir
   // depois disso não muda nada, e a marca sugeriria que mudou. As marcas
   // existentes continuam VISÍVEIS: elas contam quem conferiu antes de assinar.
+  //
+  // Esta é a recusa BARATA, sobre o que o `montar` viu. Quem decide de verdade é
+  // a releitura travada lá dentro da transação, e o porquê está escrito nela.
   if (montada.fechada) {
     throw new AppError(
       'A edição está fechada. A conferência é o passo ANTES do fechamento.',
@@ -906,6 +1073,34 @@ controller.revisar = async (id, numero, revisado, usuarioUuid, contexto) => {
   }
 
   return db.conn.tx(async t => {
+    // A CONFERÊNCIA DE "FECHADA" SE REFAZ AQUI DENTRO, COM TRAVA. O `montar`
+    // acima roda FORA de qualquer transação e não trava nada: entre ele e o
+    // INSERT abaixo cabe um `fechar` inteiro, e a edição já assinada ganhava uma
+    // marca de conferência carimbada DEPOIS do fechamento -- a tela a mostra
+    // como "Conferida por Fulano em <hora>", com hora posterior à assinatura.
+    //
+    // É a mesma trava, e pela mesma razão, do `conferirAlvo` de
+    // `rpcmtec_subsecao_ctrl.js`: `FOR NO KEY UPDATE` conflita com o
+    // `UPDATE rpcmtec.edicao SET data_fechamento` do fechamento e não conflita
+    // com o `FOR KEY SHARE` que a FK desta mesma tabela toma no INSERT logo
+    // abaixo. Quem chega durante o fechamento espera, relê `data_fechamento` já
+    // preenchida e recebe a recusa que a regra manda.
+    const edicao = await t.oneOrNone(
+      `SELECT id, data_fechamento FROM rpcmtec.edicao
+       WHERE id = $<id>
+       FOR NO KEY UPDATE`,
+      { id }
+    )
+    if (!edicao) {
+      throw new AppError('Edição do RPCMTec não encontrada', httpCode.NotFound)
+    }
+    if (edicao.data_fechamento) {
+      throw new AppError(
+        'A edição está fechada. A conferência é o passo ANTES do fechamento.',
+        httpCode.BadRequest
+      )
+    }
+
     const antes = await t.oneOrNone(
       `SELECT id, edicao_id, numero, impressao, data_revisao, usuario_uuid
        FROM rpcmtec.subsecao_revisao

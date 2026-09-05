@@ -10,6 +10,9 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 });
 import { renderAtendimento } from '@modules/mapoteca/pages/atendimento/index.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
+import { logarComo, OPERADOR, GERENTE } from '@/__tests__/helpers/sessao.js';
+
+const entrarComo = (nivel) => logarComo({ mapoteca: nivel });
 
 // Tres pedidos DA FILA DE IMPRESSAO: um atrasado, um sem prazo e um
 // recem-recebido.
@@ -82,6 +85,9 @@ const acaoDaLinha = (container, titulo, indiceLinha = 0) => {
 };
 
 beforeEach(() => {
+  // A sessao padrao e a do GERENTE: ele ve a tela inteira, inclusive os caminhos
+  // para a lista de pedidos. O recorte do operador tem casos proprios.
+  entrarComo(GERENTE);
   svc.getPedidosEmAberto.mockResolvedValue(PEDIDOS);
   svc.getImpressaoDoPedido.mockResolvedValue(IMPRESSAO);
   svc.registrarImpressao.mockResolvedValue(null);
@@ -261,24 +267,28 @@ describe('renderAtendimento: atender um pedido', () => {
 // Despachar e marcar Concluído são as duas últimas ações de quem atende, e eram
 // elas que apagavam o pedido desta tela sem nada lembrar que faltava fechá-lo.
 describe('renderAtendimento: o que a fila de impressão deixou para trás', () => {
+  // A contagem de itens vem em `total_itens`, que e como GET /pedido/em_aberto a
+  // chama. As fixturas diziam `quantidade_produtos`, campo da LISTA de pedidos
+  // que aquela rota nunca devolveu: a coluna "Produtos" saia em branco na
+  // producao e o teste nao via nada.
   const REMETIDO = {
     id: 81, localizador_pedido: 'RR11-TT22-YY33', cliente_nome: '4º BE Cmb',
     situacao_pedido_id: 4, situacao_pedido_nome: 'Remetido',
     data_pedido: '2026-05-02', documento_solicitacao: 'DIEx 900',
-    quantidade_produtos: 3,
+    total_itens: 3,
   };
   const CONCLUIDO = {
     id: 82, localizador_pedido: 'AA11-BB22-CC33', cliente_nome: '9º BE Cmb',
     situacao_pedido_id: 5, situacao_pedido_nome: 'Concluído',
     data_pedido: '2026-05-03', documento_solicitacao: 'DIEx 901',
-    quantidade_produtos: 1,
+    total_itens: 1,
   };
 
   const AGUARDANDO_ENVIO = {
     id: 83, localizador_pedido: 'EE44-FF55-GG66', cliente_nome: '2º BCom',
     situacao_pedido_id: 8, situacao_pedido_nome: 'Aguardando envio',
     data_pedido: '2026-05-04', documento_solicitacao: 'DIEx 902',
-    quantidade_produtos: 7,
+    total_itens: 7,
   };
 
   const secaoFechamento = (container) => [...container.querySelectorAll('.dashboard-section')]
@@ -296,6 +306,20 @@ describe('renderAtendimento: o que a fila de impressão deixou para trás', () =
     expect(secao.textContent).toContain('1 pedido(s) a fechar');
     // E diz por que ele não está na fila acima.
     expect(secao.textContent).toContain('sai da fila acima');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A COLUNA "Produtos" LE `total_itens`, o campo que a rota da fila devolve.
+  // Ela lia `quantidade_produtos`, que e da lista de pedidos e nao chega aqui:
+  // a celula saia com um traco em toda linha, e a coluna nao dizia nada.
+  test('a coluna Produtos mostra a contagem de itens da fila', async () => {
+    svc.getPedidosEmAberto.mockResolvedValue([AGUARDANDO_ENVIO]);
+    const { container, cleanup } = await montar();
+
+    const celulas = [...secaoFechamento(container).querySelectorAll('tbody td')]
+      .map(td => td.textContent);
+    expect(celulas).toContain('7');
 
     if (typeof cleanup === 'function') cleanup();
   });
@@ -390,6 +414,64 @@ describe('renderAtendimento: o que a fila de impressão deixou para trás', () =
     const botao = secaoFechamento(container)
       .querySelector('[title="Etiqueta de envio"]');
     expect(botao).toBeTruthy();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// O RECORTE DO OPERADOR.
+//
+// Esta tela e dele ('/atendimento' declara `perfis: ['operador','gerente']`), e
+// '/pedidos' e '/pedidos/:id' declaram `perfis: ['consulta','gerente']`: o
+// operador NAO abre nenhuma das duas, e o guarda de rota o manda para
+// '#/unauthorized'. Todo caminho daqui para la era, para ele, um clique que
+// sempre falhava.
+describe('renderAtendimento: o operador nao ve caminho para tela que nao abre', () => {
+  const REMETIDO = {
+    id: 81, localizador_pedido: 'RR11-TT22-YY33', cliente_nome: '4º BE Cmb',
+    situacao_pedido_id: 4, situacao_pedido_nome: 'Remetido',
+    data_pedido: '2026-05-02', total_itens: 3,
+  };
+
+  test('sem "Abrir o pedido" e sem os links da lista de pedidos', async () => {
+    entrarComo(OPERADOR);
+    svc.getPedidosEmAberto.mockResolvedValue([...PEDIDOS, REMETIDO]);
+    const { container, cleanup } = await montar();
+
+    expect(container.querySelector('[title="Abrir o pedido"]')).toBeNull();
+    expect(container.querySelector('a[href*="/mapoteca/pedidos"]')).toBeNull();
+    // O que ele PODE fazer continua na tela.
+    expect(container.querySelector('[title="Etiqueta de envio"]')).toBeTruthy();
+    expect(acaoDaLinha(container, 'Atender')).toBeTruthy();
+    // E a instrucao passa a dizer de quem e a marca de Remetido, em vez de
+    // mandar o operador fazer o que so o gerente faz.
+    expect(container.textContent).toContain('é do gerente, na lista de pedidos');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('no painel de atender, o operador nao ve "Abrir o pedido"', async () => {
+    entrarComo(OPERADOR);
+    const { container, cleanup } = await montar();
+
+    acaoDaLinha(container, 'Atender').click();
+    await flush();
+
+    const rodape = [...document.querySelectorAll('.modal__footer button')]
+      .map(b => b.textContent.trim());
+    expect(rodape).not.toContain('Abrir o pedido');
+    expect(rodape).toContain('Etiqueta de envio');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('o gerente continua com os tres caminhos', async () => {
+    entrarComo(GERENTE);
+    svc.getPedidosEmAberto.mockResolvedValue([...PEDIDOS, REMETIDO]);
+    const { container, cleanup } = await montar();
+
+    expect(container.querySelector('[title="Abrir o pedido"]')).toBeTruthy();
+    expect(container.querySelectorAll('a[href*="/mapoteca/pedidos"]')).toHaveLength(2);
 
     if (typeof cleanup === 'function') cleanup();
   });

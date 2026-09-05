@@ -392,6 +392,159 @@ describe('corpo de POST /linha_producao', () => {
     )
   })
 
+  // O CICLO É O QUE O `de si mesma` NÃO PEGAVA, e ele é de dois passos: A antes
+  // de B e B antes de A. Nada no banco recusa isso -- o gatilho
+  // `a_relacionamento_pre_requisito_subfase` materializa os dois sentidos em
+  // `producao.relacionamento_ut`, e o `filtro2` de `calcula_fila.sql` passa a
+  // excluir as duas unidades para sempre: cada uma espera a outra. A fila
+  // simplesmente não entrega, sem erro e sem log.
+  it('recusa ciclo de duas subfases entre pré-requisitos', () => {
+    const corpo = linhaValida()
+    corpo.linha_producao.fases[1].pre_requisito_subfase.push({
+      subfase_anterior: 'Edição',
+      subfase_posterior: 'Vetorização',
+      tipo_pre_requisito_id: 1
+    })
+
+    recusaPor(
+      schema.validate(corpo),
+      'linha_producao',
+      'fluxo.preRequisitoCiclico'
+    )
+  })
+
+  // O TIPO 2 NÃO ENTRA NO GRAFO. 'Região não estar em execução' bloqueia só
+  // enquanto a outra está EM EXECUÇÃO (situação 2, `calcula_fila.sql`): com as
+  // duas Não iniciadas, uma começa e a outra espera a vez. Um ciclo dele é
+  // "estas duas não se trabalham ao mesmo tempo na mesma região", que o banco
+  // aceita e a fila resolve. Recusá-lo seria o Joi barrando o que o banco aceita.
+  it('aceita o ciclo de exclusão mútua, que é o tipo 2', () => {
+    const corpo = linhaValida()
+    corpo.linha_producao.fases[1].pre_requisito_subfase = [
+      {
+        subfase_anterior: 'Vetorização',
+        subfase_posterior: 'Edição',
+        tipo_pre_requisito_id: 2
+      },
+      {
+        subfase_anterior: 'Edição',
+        subfase_posterior: 'Vetorização',
+        tipo_pre_requisito_id: 2
+      }
+    ]
+
+    expect(schema.validate(corpo).error).toBeUndefined()
+  })
+
+  // Um ciclo MISTO também não trava: basta uma aresta de tipo 2 para ele se
+  // resolver pela mesma razão.
+  it('aceita o ciclo misto, com uma aresta de tipo 2', () => {
+    const corpo = linhaValida()
+    corpo.linha_producao.fases[1].pre_requisito_subfase = [
+      {
+        subfase_anterior: 'Vetorização',
+        subfase_posterior: 'Edição',
+        tipo_pre_requisito_id: 1
+      },
+      {
+        subfase_anterior: 'Edição',
+        subfase_posterior: 'Vetorização',
+        tipo_pre_requisito_id: 2
+      }
+    ]
+
+    expect(schema.validate(corpo).error).toBeUndefined()
+  })
+
+  it('recusa ciclo de três subfases, e a mensagem cita as três', () => {
+    const corpo = linhaValida()
+    corpo.linha_producao.fases[1].pre_requisito_subfase = [
+      {
+        subfase_anterior: 'Vetorização',
+        subfase_posterior: 'Generalização',
+        tipo_pre_requisito_id: 1
+      },
+      {
+        subfase_anterior: 'Generalização',
+        subfase_posterior: 'Edição',
+        tipo_pre_requisito_id: 1
+      },
+      {
+        subfase_anterior: 'Edição',
+        subfase_posterior: 'Vetorização',
+        tipo_pre_requisito_id: 1
+      }
+    ]
+
+    const { error } = schema.validate(corpo)
+    expect(error.details[0].type).toBe('fluxo.preRequisitoCiclico')
+    for (const nome of ['Vetorização', 'Generalização', 'Edição']) {
+      expect(error.details[0].message).toContain(nome)
+    }
+  })
+
+  // A CADEIA E O DIAMANTE CONTINUAM PASSANDO: a guarda é de ciclo, e não de
+  // "cada subfase depende de uma só".
+  it('aceita cadeia e diamante de pré-requisitos', () => {
+    const corpo = linhaValida()
+    corpo.linha_producao.fases[1].pre_requisito_subfase = [
+      {
+        subfase_anterior: 'Vetorização',
+        subfase_posterior: 'Generalização',
+        tipo_pre_requisito_id: 1
+      },
+      {
+        subfase_anterior: 'Vetorização',
+        subfase_posterior: 'Edição',
+        tipo_pre_requisito_id: 1
+      },
+      {
+        subfase_anterior: 'Generalização',
+        subfase_posterior: 'Edição',
+        tipo_pre_requisito_id: 2
+      }
+    ]
+
+    expect(schema.validate(corpo).error).toBeUndefined()
+  })
+
+  // O PAR REPETIDO morria na `UNIQUE (subfase_anterior_id,
+  // subfase_posterior_id)` NO MEIO da transação, e o 23505 caía na tradução da
+  // linha de produção -- a recusa dizia "já existe uma linha de produção com
+  // este nome", que fala de outra coisa. Os pré-requisitos são declarados POR
+  // FASE, e nada impedia duas fases citarem o mesmo par.
+  it('recusa o mesmo par de subfases declarado duas vezes', () => {
+    const corpo = linhaValida()
+    corpo.linha_producao.fases[1].pre_requisito_subfase.push({
+      subfase_anterior: 'Vetorização',
+      subfase_posterior: 'Edição',
+      tipo_pre_requisito_id: 2
+    })
+
+    recusaPor(
+      schema.validate(corpo),
+      'linha_producao',
+      'fluxo.preRequisitoRepetido'
+    )
+  })
+
+  it('recusa o mesmo par declarado em fases diferentes', () => {
+    const corpo = linhaValida()
+    corpo.linha_producao.fases[0].pre_requisito_subfase = [
+      {
+        subfase_anterior: 'Vetorização',
+        subfase_posterior: 'Edição',
+        tipo_pre_requisito_id: 1
+      }
+    ]
+
+    recusaPor(
+      schema.validate(corpo),
+      'linha_producao',
+      'fluxo.preRequisitoRepetido'
+    )
+  })
+
   it('recusa a mesma camada duas vezes na mesma subfase', () => {
     const corpo = linhaValida()
     corpo.linha_producao.propriedades_camadas = [camadaComum(), camadaComum()]

@@ -8,6 +8,8 @@ import { createDataTable } from '@components/data-table/data-table.js';
 import { mostrarErroNoGrafico } from '@components/estado-erro.js';
 import { criarAvisoDeErro } from '@modules/mapoteca/pages/aviso-carga.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
+import { ehDeAlgumPerfil } from '@store/auth-store.js';
+import { PERFIS_DA_LISTA_DE_PEDIDOS } from '@modules/mapoteca/index.js';
 import { mesLabel } from './utils.js';
 
 // Sem constante de recorte: o bloco "Pedidos parados" mostra a FILA INTEIRA,
@@ -40,6 +42,13 @@ import { mesLabel } from './utils.js';
 export async function renderPedidosTab(container, getAno) {
   let disposed = false;
   let ano = getAno();
+
+  // O DASHBOARD E DOS TRES PERFIS, e o detalhe do pedido nao e. O operador abre
+  // '/dashboard' e nao abre '/pedidos/:id' (PERFIS_DA_LISTA_DE_PEDIDOS), entao
+  // para ele o '#123' da coluna Pedido termina em '#/unauthorized' -- uma coluna
+  // inteira de links que sempre falham, no bloco que mais convida ao clique. O
+  // numero continua na tela; o que sai e a promessa de abrir.
+  const podeAbrirPedidos = ehDeAlgumPerfil(PERFIS_DA_LISTA_DE_PEDIDOS, 'mapoteca');
 
   const cardTotal = createStatsCard({
     title: 'Total de Pedidos', value: '-', icon: svgIcon(ICONS.assignment, 24), color: 'primary', loading: true,
@@ -90,7 +99,9 @@ export async function renderPedidosTab(container, getAno) {
       {
         key: 'id',
         label: 'Pedido',
-        render: (row) => el('a', { href: `#/mapoteca/pedidos/${row.id}`, textContent: `#${row.id}` }),
+        render: (row) => (podeAbrirPedidos
+          ? el('a', { href: `#/mapoteca/pedidos/${row.id}`, textContent: `#${row.id}` })
+          : `#${row.id}`),
       },
       { key: 'cliente_nome', label: 'Cliente', sortable: true },
       { key: 'situacao_nome', label: 'Situação', sortable: true },

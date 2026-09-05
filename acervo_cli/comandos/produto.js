@@ -86,8 +86,13 @@ async function executar (args, cfg) {
       ...opcoesSaida,
       padrao: ['id', 'nome', 'mi', 'inom', 'escala', 'tipo_produto', 'num_versoes']
     })
+    const comoEscolher = 'Mais de um produto casa com o termo. Escolha um: acervo produto --id <id>'
+    // Com `--json` o stdout e so o JSON: a ambiguidade e justamente o caso em
+    // que quem encadeia le a lista para escolher o id, e a frase colada no fim
+    // do array quebrava o `JSON.parse`. Ela desce para os AVISOS (stderr).
+    if (opcoesSaida.formato === 'json') return { texto: out.texto, avisos: [comoEscolher, ...out.avisos] }
     return {
-      texto: out.texto + '\nMais de um produto casa com o termo. Escolha um: acervo produto --id <id>',
+      texto: `${out.texto}\n${comoEscolher}`,
       avisos: out.avisos
     }
   }

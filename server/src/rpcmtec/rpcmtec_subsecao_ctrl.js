@@ -45,9 +45,33 @@ const controller = {}
 // A edição, com o bloco da estrutura ao lado, conferindo as duas coisas que
 // toda escrita aqui exige: que a edição esteja aberta e que o número seja de
 // uma subseção que o gestor preenche.
+//
+// A LEITURA TRAVA A LINHA, e não é um SELECT solto. Sem a trava, um fechamento
+// simultâneo passava por cima desta conferência: o gestor via a edição aberta, o
+// `fechar` congelava os 33 blocos, e a gravação daqui caía DEPOIS, sobrescrevendo
+// em silêncio uma subseção do documento já fechado. O UPSERT lá embaixo esperava
+// o `fechar` na trava de linha da própria `rpcmtec.subsecao` e então aplicava a
+// escrita, sem que nada acusasse: a edição ficava fechada dizendo outra coisa.
+//
+// Com a trava, quem chega durante o fechamento espera a transação dele terminar,
+// relê `data_fechamento` já preenchida e recebe a recusa que a regra manda. É a
+// mesma defesa do `AND data_fechamento IS NULL` de `fechar`, `reabrir` e
+// `deletar`, do lado de quem escreve conteúdo.
+//
+// `FOR NO KEY UPDATE`, E NÃO `FOR UPDATE`, e a diferença importa nas duas
+// pontas: ele CONFLITA com o `UPDATE rpcmtec.edicao SET data_fechamento` do
+// fechamento (que toma esse mesmo nível, por não mexer em coluna de chave), e
+// NÃO conflita com o `FOR KEY SHARE` que a chave estrangeira toma na edição
+// quando alguém insere anexo ou marca de conferência ao lado. Com `FOR UPDATE` o
+// preço seria travar essas duas por nada.
+//
+// O QUE ELE CUSTA: duas gravações de subseções DIFERENTES da mesma edição passam
+// a esperar uma pela outra. A transação são três comandos, e o preço é esse.
 const conferirAlvo = async (conexao, edicaoId, numero) => {
   const edicao = await conexao.oneOrNone(
-    'SELECT id, ano, mes, data_fechamento FROM rpcmtec.edicao WHERE id = $<edicaoId>',
+    `SELECT id, ano, mes, data_fechamento FROM rpcmtec.edicao
+     WHERE id = $<edicaoId>
+     FOR NO KEY UPDATE`,
     { edicaoId }
   )
   if (!edicao) {

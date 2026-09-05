@@ -107,6 +107,40 @@ describe('aba de Manutenção', () => {
     expect(status(ENVIOS)).toContain('5');
   });
 
+  // Mesma regra do cartao irmao: o servidor MEDE (`cleanupExpiredDownloads`
+  // devolve `{ fechados }`) e a tela anunciava a mesma frase tendo fechado 0 ou
+  // 400. Apertar de novo era o unico jeito de desconfiar se a primeira vez fez
+  // alguma coisa.
+  test('o cartão de downloads mostra quantos registros fechou', async () => {
+    svc.limparDownloadsExpirados.mockResolvedValue({ fechados: 3 });
+    await abrir();
+
+    botao('Downloads expirados', 'Limpar expirados').click();
+    await flush();
+
+    expect(status('Downloads expirados')).toContain('3 downloads expirados fechados');
+  });
+
+  test('um registro fechado sai no singular', async () => {
+    svc.limparDownloadsExpirados.mockResolvedValue({ fechados: 1 });
+    await abrir();
+
+    botao('Downloads expirados', 'Limpar expirados').click();
+    await flush();
+
+    expect(status('Downloads expirados')).toContain('1 download expirado fechado');
+  });
+
+  test('nada a fechar diz ZERO, e nao sucesso mudo', async () => {
+    svc.limparDownloadsExpirados.mockResolvedValue({ fechados: 0 });
+    await abrir();
+
+    botao('Downloads expirados', 'Limpar expirados').click();
+    await flush();
+
+    expect(status('Downloads expirados')).toContain('0 downloads expirados fechados');
+  });
+
   // Cada cartão diz o que a ação NÃO faz, que é onde mora o susto. Sem isso,
   // "Limpar downloads expirados" se lê como se apagasse arquivo.
   test('todo cartão traz os avisos do que a ação não faz', async () => {

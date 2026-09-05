@@ -39,10 +39,10 @@ const versaoSchema = Joi.string().pattern(VERSAO_HISTORICA_REGEX).required()
 // Regular ela costuma vir vazia (a folha nasceu pronta, e o plano dela não foi
 // declarado antes), e é legítimo: quem cobra a ausência é o diagnóstico do PIT.
 //
-// `demanda_extra_id` NÃO entra, e a omissão é deliberada: ele é exclusivo com a
-// meta pelo CHECK `versao_plano_ou_excecao`, e aceitar os dois aqui obrigaria a
-// espelhar a exclusão nesta árvore, que já é a mais funda do repositório. O
-// Extra-PIT se liga pela tela de Extra-PIT, que existe para isso.
+// `demanda_extra_id` fica FORA daqui, e entra só em `versaoWeb`: o caminho do
+// PLUGIN não o manda (nem `ferramentas_acervo` nem o `acervo_cli` conhecem a
+// chave), e a exclusão mútua com a meta pede um `.oxor` no objeto, que só faz
+// sentido onde a chave é aceita. Ver `versaoWeb`.
 const vinculoComOPit = {
   meta_pit_id: Joi.number().integer().strict().allow(null),
   data_prevista: dataCalendario().allow(null)
@@ -311,6 +311,15 @@ const arquivoWebCampos = {
 };
 
 // A versão, sem o produto: os campos são os mesmos das rotas irmãs.
+//
+// O VÍNCULO COM O PIT entra aqui pela MESMA razão do `vinculoComOPit` acima, e a
+// falta dele custava o mesmo defeito, só que no caminho da WEB: a versão REGULAR
+// nasce COM arquivo, e o único jeito de criá-la pela tela é este envio. O
+// `versao-dialog` já oferece "Meta do PIT" e "Mês previsto", monta o corpo com
+// eles e o entrega ao assistente de upload; como estas chaves não estavam
+// declaradas, o `stripUnknown` do `planoDaRequisicao` as DESCARTAVA em silêncio,
+// e a folha nascia pronta e fora da conta do plano anual. O `inserirVersaoDoEnvio`
+// já grava as duas colunas: só faltava a porta.
 const versaoWeb = Joi.object().keys({
   uuid_versao: Joi.string().uuid().allow(null),
   versao: versaoSchema,
@@ -324,7 +333,33 @@ const versaoWeb = Joi.object().keys({
   palavras_chave: Joi.array().items(Joi.string()).allow(null).default([]),
   data_criacao: dataCalendario().required(),
   // Espelha o CHECK data_edicao >= data_criacao de acervo.versao
-  data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required()
+  data_edicao: dataCalendario().min(Joi.ref('data_criacao')).required(),
+  ...vinculoComOPit,
+  // O EXTRA-PIT ENTRA POR AQUI, e só por aqui.
+  //
+  // O formulário de versão oferece "Demanda Extra-PIT" para QUALQUER tipo de
+  // versão, inclusive a Regular -- que é justamente a que nasce com arquivo e vai
+  // para o assistente de upload, ou seja, para esta rota. Enquanto a chave não
+  // era aceita, o `stripUnknown` a jogava fora: o operador escolhia a demanda,
+  // recebia 201 e a folha nascia fora da conta do Extra-PIT. É o mesmo defeito
+  // que `meta_pit_id` teve até 2026-08-05, e descartar em silêncio faz o cliente
+  // acreditar ter gravado o que mandou.
+  //
+  // A EXCLUSÃO É POR VALOR, e não por presença da chave, porque é assim que o
+  // CHECK `versao_plano_ou_excecao` está escrito
+  // (`meta_pit_id IS NULL OR demanda_extra_id IS NULL`). Um `.oxor` do Joi conta
+  // a chave PRESENTE, e `null` conta como presente: como o formulário manda as
+  // duas chaves SEMPRE, inclusive nulas (é assim que se desliga a versão de uma
+  // meta escolhida por engano), o `.oxor` recusaria com 400 todo envio regular
+  // pela web -- o caso comum, e não o conflito.
+  demanda_extra_id: Joi.number().integer().allow(null)
+    .when('meta_pit_id', {
+      is: Joi.number().required(),
+      then: Joi.valid(null).messages({
+        'any.only': 'A versão cumpre uma meta do PIT OU atende uma demanda '
+          + 'Extra-PIT, nunca as duas: envie apenas um dos dois'
+      })
+    })
 }).required();
 
 const arquivosWeb = Joi.array().items(Joi.object().keys(arquivoWebCampos)).min(1).required();
@@ -382,6 +417,13 @@ models.confirmUpload = Joi.object().keys({
 });
 
 models.cancelUpload = Joi.object().keys({
+  session_uuid: Joi.string().uuid().required()
+});
+
+// Renovar o prazo da sessao. So o uuid viaja: o prazo novo e sempre as mesmas 24
+// horas que o `prepare-upload` concede, contadas de agora, e deixar o cliente
+// pedir quantas horas quiser transformaria o prazo em sugestao.
+models.renovarUpload = Joi.object().keys({
   session_uuid: Joi.string().uuid().required()
 });
 

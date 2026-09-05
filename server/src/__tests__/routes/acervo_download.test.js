@@ -246,3 +246,57 @@ describe('Acervo - download de um arquivo pelo navegador', () => {
     })
   })
 })
+
+// O TOKEN DE DOWNLOAD E DE QUEM O PEDIU.
+//
+// `confirmDownload` casava so por `download_token`: qualquer conta com perfil
+// `consulta` no acervo que conhecesse um token pendente de outra pessoa podia
+// fecha-lo, e o dono recebia depois "Download nao encontrado" sem entender por
+// que. As duas rotas irmas (`confirmUpload` e `cancelUpload`) ja conferiam o
+// dono.
+describe('POST /api/acervo/confirm-download - o dono do token', () => {
+  // `Number(...)`: `acervo.arquivo.id` e BIGSERIAL e o driver o entrega como
+  // STRING, e o `arquivosIds` e `Joi.number().integer().strict()`. Sem o cast o
+  // prepare responde 400 antes de chegar ao controlador.
+  const prepararDownload = async (arquivoId, token) =>
+    request(app)
+      .post('/api/acervo/prepare-download/arquivos')
+      .set('Authorization', token)
+      .send({ arquivos_ids: [Number(arquivoId)] })
+
+  const confirmar = (downloadToken, token) =>
+    request(app)
+      .post('/api/acervo/confirm-download')
+      .set('Authorization', token)
+      .send({ confirmations: [{ download_token: downloadToken, success: true }] })
+
+  it('o dono fecha o proprio download', async () => {
+    const arquivo = await criaArquivoNoVolume()
+    const preparo = await prepararDownload(arquivo.id, generateUserToken())
+    expect(preparo.status).toBe(200)
+    const downloadToken = preparo.body.dados[0].download_token
+
+    const res = await confirmar(downloadToken, generateUserToken())
+    expect(res.status).toBe(200)
+    expect(res.body.dados[0].status).toBe('completed')
+  })
+
+  it('outro usuario NAO fecha o download alheio', async () => {
+    const arquivo = await criaArquivoNoVolume()
+    const preparo = await prepararDownload(arquivo.id, generateUserToken())
+    const downloadToken = preparo.body.dados[0].download_token
+
+    // O administrador tambem nao: o token e do dono, e nao ha "fechar pelo
+    // outro". O que ele faz e a limpeza (`cleanup-expired-downloads`).
+    const res = await confirmar(downloadToken, generateAdminToken())
+    expect(res.status).toBe(200)
+    expect(res.body.dados[0].status).toBe('error')
+
+    // E o download continua pendente para o dono.
+    const linha = await conn.one(
+      'SELECT status FROM acervo.download WHERE download_token = $1',
+      [downloadToken]
+    )
+    expect(linha.status).toBe('pending')
+  })
+})

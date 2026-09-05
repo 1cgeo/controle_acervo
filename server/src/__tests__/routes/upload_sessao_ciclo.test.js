@@ -36,7 +36,7 @@ const crypto = require('crypto')
 
 const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
-const { generateAdminToken, ADMIN_UUID } = require('../helpers/auth')
+const { generateAdminToken, generateToken, ADMIN_UUID } = require('../helpers/auth')
 const { createVolume, createProduto, createVersao } = require('../helpers/fixtures')
 
 let app
@@ -150,6 +150,12 @@ const cancelar = (sessionUuid) =>
   request(app)
     .post('/api/arquivo/cancel-upload')
     .set('Authorization', token())
+    .send({ session_uuid: sessionUuid })
+
+const renovar = (sessionUuid, tk = token()) =>
+  request(app)
+    .post('/api/arquivo/renovar-upload')
+    .set('Authorization', tk)
     .send({ session_uuid: sessionUuid })
 
 /** O plugin copiaria os bytes por SMB. Aqui o teste faz o papel dele. */
@@ -406,6 +412,58 @@ describe('add_files: arquivos numa versão que já existe', () => {
   })
 })
 
+// O PREPARE RESERVA O DESTINO, e a reserva vale entre sessões.
+//
+// A linha de `acervo.arquivo` só nasce no confirm: enquanto a conferência de
+// nome físico olhava SÓ aquela tabela, dois operadores preparando o mesmo
+// arquivo recebiam 200 com o MESMO `destination_path`, copiavam por SMB para o
+// mesmo caminho e o segundo sobrescrevia os bytes do primeiro sem aviso. O
+// comentário do controlador prometia "impede colisão de nome físico no volume
+// (sobrescrita silenciosa)" e não entregava.
+describe('a reserva do prepare-upload vale entre sessões abertas', () => {
+  it('o segundo prepare do mesmo nome físico é recusado com 409', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+    const versao = await createVersao(produto.id, { subtipo_produto_id: SUBTIPO })
+    const conteudo = Buffer.from('bytes disputados')
+
+    const primeiro = await preparar('prepare-upload/files', {
+      arquivos: [{ ...arquivoDeclarado(conteudo), versao_id: versao.id }]
+    })
+    expect(primeiro.status).toBe(200)
+
+    const segundo = await preparar('prepare-upload/files', {
+      arquivos: [{ ...arquivoDeclarado(conteudo), versao_id: versao.id }]
+    })
+    expect(segundo.status).toBe(409)
+    // A mensagem nomeia a sessão que já reservou, para quem tomou o 409 saber
+    // com quem falar (ou o que cancelar).
+    expect(segundo.body.message).toContain(primeiro.body.dados.session_uuid)
+
+    // Uma sessão só reservou: o segundo prepare não deixou rascunho para trás.
+    expect(await sessoes()).toHaveLength(1)
+  })
+
+  it('cancelada a primeira sessão, o mesmo nome físico volta a ser aceito', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+    const versao = await createVersao(produto.id, { subtipo_produto_id: SUBTIPO })
+    const conteudo = Buffer.from('bytes disputados')
+
+    const primeiro = await preparar('prepare-upload/files', {
+      arquivos: [{ ...arquivoDeclarado(conteudo), versao_id: versao.id }]
+    })
+    await cancelar(primeiro.body.dados.session_uuid)
+
+    // CONTROLE POSITIVO: sem ele, uma guarda que recusasse SEMPRE passaria no
+    // caso acima.
+    const segundo = await preparar('prepare-upload/files', {
+      arquivos: [{ ...arquivoDeclarado(conteudo), versao_id: versao.id }]
+    })
+    expect(segundo.status).toBe(200)
+  })
+})
+
 describe('replace_files: troca o conteúdo do arquivo no lugar', () => {
   it('apaga o antigo, insere o novo e fecha a sessão', async () => {
     await volumePrimario()
@@ -545,5 +603,280 @@ describe('POST /api/arquivo/cleanup-expired-uploads', () => {
       .set('Authorization', require('../helpers/auth').generateUserToken())
 
     expect(res.status).toBe(403)
+  })
+})
+
+// O OPERADOR VE AS SESSOES DELE, e nao as de todo mundo.
+//
+// `problem-uploads` e `upload-sessions` nao filtravam por usuario e as rotas
+// pedem so perfil `operador`: qualquer operador do acervo via o nome de quem
+// enviou, o tipo da operacao e, no `problem-uploads`, o RASCUNHO INTEIRO do
+// envio alheio (nome de arquivo, produto, versao). Pela regua do sistema, "ver
+// tudo da area" e do GERENTE.
+describe('o recorte por usuario nas listas de sessao', () => {
+  /** Um usuario com perfil no ACERVO (modulo 1) no nivel pedido. */
+  const criaUsuarioDoAcervo = async (login, uuid, perfilId) => {
+    const row = await conn.one(
+      `INSERT INTO dgeo.usuario
+         (login, nome, nome_guerra, tipo_posto_grad_id, administrador, ativo, uuid)
+       VALUES ($<login>, $<login>, $<login>, 1, FALSE, TRUE, $<uuid>)
+       RETURNING id`,
+      { login, uuid }
+    )
+    await conn.none(
+      'INSERT INTO dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id) VALUES ($1, 1, $2)',
+      [row.id, perfilId]
+    )
+    return generateToken({ id: Number(row.id), uuid, administrador: false })
+  }
+
+  const listar = (caminho, tk) =>
+    request(app).get(`/api/arquivo/${caminho}`).set('Authorization', tk)
+
+  it('o operador B nao ve a sessao aberta pelo operador A', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+    const versao = await createVersao(produto.id, { subtipo_produto_id: SUBTIPO })
+
+    const tokenA = await criaUsuarioDoAcervo(
+      'op_acervo_a', 'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380a41', 2)
+    const tokenB = await criaUsuarioDoAcervo(
+      'op_acervo_b', 'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380a42', 2)
+
+    const preparo = await request(app)
+      .post('/api/arquivo/prepare-upload/files')
+      .set('Authorization', tokenA)
+      .send({
+        arquivos: [{
+          ...arquivoDeclarado(Buffer.from('bytes do A')),
+          versao_id: versao.id
+        }]
+      })
+    expect(preparo.status).toBe(200)
+    const uuidSessao = preparo.body.dados.session_uuid
+
+    const doA = await listar('upload-sessions', tokenA)
+    expect(doA.body.dados.map(x => x.uuid_session)).toContain(uuidSessao)
+
+    const doB = await listar('upload-sessions', tokenB)
+    expect(doB.body.dados.map(x => x.uuid_session)).not.toContain(uuidSessao)
+  })
+
+  it('o gerente do acervo continua vendo a sessao de todo mundo', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+    const versao = await createVersao(produto.id, { subtipo_produto_id: SUBTIPO })
+
+    const tokenA = await criaUsuarioDoAcervo(
+      'op_acervo_c', 'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380a43', 2)
+    const tokenGerente = await criaUsuarioDoAcervo(
+      'ger_acervo', 'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380a44', 3)
+
+    const preparo = await request(app)
+      .post('/api/arquivo/prepare-upload/files')
+      .set('Authorization', tokenA)
+      .send({
+        arquivos: [{
+          ...arquivoDeclarado(Buffer.from('bytes do C')),
+          versao_id: versao.id
+        }]
+      })
+    const uuidSessao = preparo.body.dados.session_uuid
+
+    const doGerente = await listar('upload-sessions', tokenGerente)
+    expect(doGerente.body.dados.map(x => x.uuid_session)).toContain(uuidSessao)
+
+    // E o administrador tambem.
+    const doAdmin = await listar('upload-sessions', token())
+    expect(doAdmin.body.dados.map(x => x.uuid_session)).toContain(uuidSessao)
+  })
+})
+
+// RENOVAR O PRAZO DA SESSAO, em vez de transferir centenas de GB de novo.
+//
+// O prazo e de 24 horas contadas do prepare, e quem copia os bytes neste caminho
+// e o plugin, por SMB: o proprio codigo registra um lote de 362 GB que levou de
+// 1h20 a 3h em condicao boa. Ate 2026-09-05 vencer o prazo custava a
+// transferencia INTEIRA -- o confirm respondia 400 mandando refazer o prepare e
+// copiar tudo outra vez, e o byte ja copiado virava lixo orfao no volume, que
+// (como o proprio `cancelUpload` documenta) HOJE NINGUEM RECOLHE.
+//
+// O QUE ESTE BLOCO PRENDE, e o quarto caso e a razao de a rota existir:
+//
+//   1. o dono renova, e o prazo anda para a frente;
+//   2. sessao de OUTRA pessoa responde 403, como no cancel-upload;
+//   3. sessao que nao existe responde 404;
+//   4. a sessao que o confirm ja fechou POR VENCIMENTO se renova, e o confirm
+//      seguinte GRAVA O ACERVO com os MESMOS bytes que estavam la. Sem este
+//      caso a rota poderia aceitar so `pending` e continuar verde -- e seria
+//      inutil, porque quem descobre o vencimento e o confirm, e ele fecha a
+//      sessao antes de responder o 400 que manda renovar.
+describe('POST /api/arquivo/renovar-upload', () => {
+  /** Um operador (perfil 2) do ACERVO (modulo 1). */
+  const criaOperador = async (login, uuid) => {
+    const row = await conn.one(
+      `INSERT INTO dgeo.usuario
+         (login, nome, nome_guerra, tipo_posto_grad_id, administrador, ativo, uuid)
+       VALUES ($<login>, $<login>, $<login>, 1, FALSE, TRUE, $<uuid>)
+       RETURNING id`,
+      { login, uuid }
+    )
+    await conn.none(
+      'INSERT INTO dgeo.usuario_perfil (usuario_id, modulo_id, perfil_id) VALUES ($1, 1, 2)',
+      [row.id]
+    )
+    return generateToken({ id: Number(row.id), uuid, administrador: false })
+  }
+
+  /** Um prepare de arquivos pronto para confirmar, com os bytes ja copiados. */
+  const prepararComBytes = async (tk = token()) => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+    const versao = await createVersao(produto.id, { subtipo_produto_id: SUBTIPO })
+    const conteudo = Buffer.from('bytes que atravessaram o prazo')
+
+    const preparo = await request(app)
+      .post('/api/arquivo/prepare-upload/files')
+      .set('Authorization', tk)
+      .send({
+        arquivos: [{ ...arquivoDeclarado(conteudo), versao_id: versao.id }]
+      })
+    expect(preparo.status).toBe(200)
+
+    await copiarBytes(preparo.body.dados.arquivos[0].destination_path, conteudo)
+
+    return { preparo, versao, conteudo }
+  }
+
+  /** Empurra o prazo para o passado, como fariam 25 horas de copia por SMB. */
+  const vencer = (uuidSessao) => conn.none(
+    `UPDATE acervo.upload_session
+        SET expiration_time = NOW() - INTERVAL '1 hour'
+      WHERE uuid_session = $1`,
+    [uuidSessao]
+  )
+
+  const prazoDe = async (uuidSessao) => {
+    const linha = await conn.one(
+      'SELECT expiration_time FROM acervo.upload_session WHERE uuid_session = $1',
+      [uuidSessao]
+    )
+    return new Date(linha.expiration_time)
+  }
+
+  it('o dono renova, e o prazo anda para a frente', async () => {
+    const { preparo } = await prepararComBytes()
+    const uuidSessao = preparo.body.dados.session_uuid
+
+    await vencer(uuidSessao)
+    const antes = await prazoDe(uuidSessao)
+    expect(antes.getTime()).toBeLessThan(Date.now())
+
+    const res = await renovar(uuidSessao)
+
+    expect(res.status).toBe(200)
+    expect(res.body.dados.session_uuid).toBe(uuidSessao)
+
+    const depois = await prazoDe(uuidSessao)
+    expect(depois.getTime()).toBeGreaterThan(Date.now())
+    // As mesmas 24 horas que o prepare concede, contadas de agora. A margem e
+    // generosa de proposito: o relogio que conta e o do BANCO, e nao o do Node.
+    expect(depois.getTime() - Date.now()).toBeGreaterThan(23 * 60 * 60 * 1000)
+    expect(depois.getTime() - Date.now()).toBeLessThan(25 * 60 * 60 * 1000)
+  })
+
+  it('a sessao de outra pessoa responde 403', async () => {
+    const tokenA = await criaOperador('op_renova_a', 'e1eebc99-9c0b-4ef8-bb6d-6bb9bd380a51')
+    const tokenB = await criaOperador('op_renova_b', 'e1eebc99-9c0b-4ef8-bb6d-6bb9bd380a52')
+
+    const { preparo } = await prepararComBytes(tokenA)
+    const uuidSessao = preparo.body.dados.session_uuid
+    const antes = await prazoDe(uuidSessao)
+
+    const res = await renovar(uuidSessao, tokenB)
+
+    expect(res.status).toBe(403)
+    // E o prazo NAO andou: a recusa nao pode ter escrito nada.
+    const depois = await prazoDe(uuidSessao)
+    expect(depois.getTime()).toBe(antes.getTime())
+  })
+
+  it('sessao que nao existe responde 404', async () => {
+    const res = await renovar('99999999-8888-7777-6666-555555555555')
+    expect(res.status).toBe(404)
+  })
+
+  // O CASO QUE A ROTA EXISTE PARA RESOLVER, do inicio ao fim.
+  it('a sessao vencida e fechada pelo confirm se renova, e o confirm seguinte grava', async () => {
+    const { preparo, versao, conteudo } = await prepararComBytes()
+    const uuidSessao = preparo.body.dados.session_uuid
+
+    await vencer(uuidSessao)
+
+    // 1. O confirm recusa, e a MENSAGEM diz onde esta a saida.
+    const vencido = await confirmar(uuidSessao)
+    expect(vencido.status).toBe(400)
+    expect(vencido.body.message).toContain('/api/arquivo/renovar-upload')
+    expect(vencido.body.message).toMatch(/já copiados continuam valendo/)
+
+    // 2. E ele FECHOU a sessao. E por isso que a renovacao nao pode olhar so
+    //    `pending`: quando a mensagem chega, a sessao ja e `failed`.
+    const fechada = await conn.one(
+      'SELECT status FROM acervo.upload_session WHERE uuid_session = $1', [uuidSessao]
+    )
+    expect(fechada.status).toBe('failed')
+
+    // 3. Renova.
+    const renovacao = await renovar(uuidSessao)
+    expect(renovacao.status).toBe(200)
+
+    const reaberta = await conn.one(
+      'SELECT status, error_message, payload FROM acervo.upload_session WHERE uuid_session = $1',
+      [uuidSessao]
+    )
+    expect(reaberta.status).toBe('pending')
+    expect(reaberta.error_message).toBeNull()
+    // O rascunho volta inteiro a `pending`: sessao aberta com arquivo marcado
+    // como falho e estado que nenhuma tela sabe ler.
+    expect(reaberta.payload.arquivos[0].status).toBe('pending')
+
+    // 4. E o confirm seguinte grava, com os MESMOS bytes que ja estavam la.
+    //    Nenhum byte foi copiado de novo entre um confirm e outro.
+    const res = await confirmar(uuidSessao)
+    expect(res.status).toBe(200)
+    expect(res.body.dados.status).toBe('completed')
+
+    const arquivo = await conn.one('SELECT * FROM acervo.arquivo')
+    expect(arquivo.versao_id).toBe(versao.id)
+    expect(arquivo.checksum).toBe(sha256(conteudo))
+    expect(await sessoes()).toHaveLength(0)
+  })
+
+  // CONTROLE, e ele separa o RELOGIO do BYTE: a sessao que falhou por checksum
+  // nao se renova. Renovar so devolveria o mesmo diagnostico, e a tela de
+  // uploads com problema perderia a linha que explica o que aconteceu.
+  it('a sessao que falhou por CHECKSUM nao se renova', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+    const versao = await createVersao(produto.id, { subtipo_produto_id: SUBTIPO })
+    const conteudo = Buffer.from('este chegaria inteiro')
+
+    const preparo = await preparar('prepare-upload/files', {
+      arquivos: [{ ...arquivoDeclarado(conteudo), versao_id: versao.id }]
+    })
+    // Chega truncado: e o que a releitura do checksum existe para pegar.
+    await copiarBytes(preparo.body.dados.arquivos[0].destination_path, Buffer.from('meta'))
+
+    const falho = await confirmar(preparo.body.dados.session_uuid)
+    expect(falho.body.dados.status).toBe('failed')
+
+    const res = await renovar(preparo.body.dados.session_uuid)
+    expect(res.status).toBe(404)
+
+    const sessao = await conn.one(
+      'SELECT status FROM acervo.upload_session WHERE uuid_session = $1',
+      [preparo.body.dados.session_uuid]
+    )
+    expect(sessao.status).toBe('failed')
   })
 })

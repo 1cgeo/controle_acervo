@@ -3,6 +3,8 @@ const fs = require('fs').promises;
 const fsClassic = require('fs');
 const { caminhoNoVolume, motivoCaminhoInseguro } = require('../utils/caminho_volume');
 const { arquivarArquivos } = require('./arquivo_deletado');
+const { sessaoQueReservou } = require('./nome_fisico');
+const { assertEspacoNoVolume } = require('../utils/arquivos_do_acervo');
 const crypto = require('crypto');
 const { db } = require("../database");
 const { AppError, httpCode, preserveOmitted, logger, domainConstants: { STATUS_ARQUIVO, TIPO_ARQUIVO, TIPO_VERSAO, SITUACAO_CARREGAMENTO } } = require("../utils");
@@ -104,6 +106,22 @@ function calculateChecksumStream(filePath) {
 }
 
 /**
+ * A mensagem de "não cabe", igual nas quatro portas de envio.
+ *
+ * A conta em si vive em `utils/arquivos_do_acervo.js`, porque ela soma
+ * `acervo.arquivo` E `ponto_controle.arquivo`: as duas gravam no MESMO volume e
+ * disputam a MESMA capacidade. Enquanto a conta daqui olhava só a primeira, um
+ * volume com 90 GB de ponto de controle dentro se anunciava vazio para o
+ * `prepare-upload` e enchia o disco durante a cópia por SMB.
+ */
+const erroDeEspaco = (volumeId) => (necessarioGb, disponivelGb) =>
+  new AppError(
+    `Espaço insuficiente no volume de armazenamento ${volumeId}. `
+    + `Necessário: ${necessarioGb.toFixed(2)}GB, Disponível: ${disponivelGb.toFixed(2)}GB`,
+    httpCode.BadRequest
+  );
+
+/**
  * Garante que o nome físico (volume + nome_arquivo + extensao) ainda está
  * livre. O caminho de download é reconstruído como
  *   <volume>/<nome_arquivo>.<extensao>
@@ -149,6 +167,20 @@ async function assertNomeFisicoLivre(t, volumeId, nomeArquivo, extensao, usados)
     throw new AppError(
       `Já existe um arquivo com o nome físico "${nomeArquivo}.${extensao}" no volume ${volumeId} ` +
       `(arquivo id ${existente.id}). Os nomes físicos devem ser únicos para não sobrescrever o acervo.`,
+      httpCode.Conflict
+    );
+  }
+
+  // E as SESSÕES AINDA ABERTAS. Sem isto o prepare-upload não reserva coisa
+  // nenhuma: a linha de `acervo.arquivo` só nasce no confirm, então duas
+  // sessões preparadas na mesma hora recebiam o MESMO `destination_path` e o
+  // segundo SMB sobrescrevia o primeiro em silêncio. Ver `nome_fisico.js`.
+  const reservado = await sessaoQueReservou(t, volumeId, nomeArquivo, extensao);
+  if (reservado) {
+    throw new AppError(
+      `O nome físico "${nomeArquivo}.${extensao}" no volume ${volumeId} já foi reservado ` +
+      `pela sessão de envio ${reservado}, que continua aberta. Aguarde a conclusão dela ` +
+      'ou cancele-a antes de preparar este envio.',
       httpCode.Conflict
     );
   }
@@ -356,6 +388,17 @@ const arquivosDoRascunho = (payload) => {
   }
   return [];
 };
+
+/**
+ * O `error_message` com que o `confirm-upload` fecha a sessao VENCIDA.
+ *
+ * Constante, e nao literal repetido, porque ela e LIDA: o `renovarUpload` a usa
+ * para separar a sessao que so perdeu o prazo (rascunho intacto, bytes no lugar,
+ * checksum nunca conferido) daquela que falhou por checksum ou por erro de
+ * gravacao, que nao se renova. Duas copias da frase divergiriam e a renovacao
+ * pararia de achar a sessao, em silencio.
+ */
+const MSG_SESSAO_VENCIDA = 'Sessão de envio expirada; renove a sessão e confirme de novo';
 
 const controller = {};
 
@@ -704,19 +747,7 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
       }
       
       for (const [volumeId, space] of Object.entries(spaceNeededByVolume)) {
-        const spaceGB = space / 1024; // Convert to GB
-        const espacoDisponivel = await t.one(
-          `SELECT (va.capacidade_gb - COALESCE(SUM(a.tamanho_mb), 0) / 1024) as espaco_disponivel
-           FROM acervo.volume_armazenamento va
-           LEFT JOIN acervo.arquivo a ON a.volume_armazenamento_id = va.id
-           WHERE va.id = $1
-           GROUP BY va.id, va.capacidade_gb`,
-          [volumeId]
-        );
-        
-        if (espacoDisponivel.espaco_disponivel < spaceGB) {
-          throw new AppError(`Espaço insuficiente no volume de armazenamento ${volumeId}. Necessário: ${spaceGB.toFixed(2)}GB, Disponível: ${espacoDisponivel.espaco_disponivel.toFixed(2)}GB`, httpCode.BadRequest);
-        }
+        await assertEspacoNoVolume(t, volumeId, space / 1024, erroDeEspaco(volumeId));
       }
       
       const arquivosInfo = [];
@@ -730,7 +761,8 @@ controller.prepareAddFiles = async (requestData, usuarioUuid) => {
         // O nome vem do cliente e vira `destination_path`, que o confirm-upload
         // abre para ler. `caminhoNoVolume` é `path.join` puro e NÃO barra `..`,
         // então sem esta linha o corpo da requisição escolhe qualquer caminho da
-        // máquina. As rotas irmãs (prepararVersao, prepararProduto) já a tinham.
+        // máquina. As rotas irmãs (`prepararVersao`, `prepararProduto`) a chamam
+        // com a MESMA condição.
         if (!isTileserver) assertCaminhoSeguro(arquivo.nome_arquivo);
         // Tileserver é uma URL. Não tem arquivo físico, volume nem extensão
         const destinationPath = isTileserver
@@ -1013,19 +1045,7 @@ const prepararVersao = async (requestData, usuarioUuid) => {
       }
       
       for (const [volumeId, space] of Object.entries(spaceNeededByVolume)) {
-        const spaceGB = space / 1024; // Convert to GB
-        const espacoDisponivel = await t.one(
-          `SELECT (va.capacidade_gb - COALESCE(SUM(a.tamanho_mb), 0) / 1024) as espaco_disponivel
-           FROM acervo.volume_armazenamento va
-           LEFT JOIN acervo.arquivo a ON a.volume_armazenamento_id = va.id
-           WHERE va.id = $1
-           GROUP BY va.id, va.capacidade_gb`,
-          [volumeId]
-        );
-        
-        if (espacoDisponivel.espaco_disponivel < spaceGB) {
-          throw new AppError(`Espaço insuficiente no volume de armazenamento ${volumeId}. Necessário: ${spaceGB.toFixed(2)}GB, Disponível: ${espacoDisponivel.espaco_disponivel.toFixed(2)}GB`, httpCode.BadRequest);
-        }
+        await assertEspacoNoVolume(t, volumeId, space / 1024, erroDeEspaco(volumeId));
       }
       
       const result = [];
@@ -1043,7 +1063,13 @@ const prepararVersao = async (requestData, usuarioUuid) => {
 
         for (const arquivo of item.arquivos) {
           const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
-          assertCaminhoSeguro(arquivo.nome_arquivo);
+          // SÓ fora do Tileserver, como no prepareAddFiles. O `nome_arquivo` do
+          // Tileserver é uma URL (`https://.../x`), e o `//` dela é um segmento
+          // vazio para o `motivoCaminhoInseguro`: sem esta guarda, TODA sessão
+          // com um Tileserver era recusada com 400 dizendo que o caminho sairia
+          // da raiz do volume, e esta é justamente a rota que o schema aponta
+          // para cadastrá-lo.
+          if (!isTileserver) assertCaminhoSeguro(arquivo.nome_arquivo);
           // Tileserver é uma URL. Não tem arquivo físico, volume nem extensão
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
@@ -1150,19 +1176,7 @@ const prepararProduto = async (requestData, usuarioUuid) => {
       }
       
       for (const [volumeId, space] of Object.entries(spaceNeededByVolume)) {
-        const spaceGB = space / 1024; // Convert to GB
-        const espacoDisponivel = await t.one(
-          `SELECT (va.capacidade_gb - COALESCE(SUM(a.tamanho_mb), 0) / 1024) as espaco_disponivel
-           FROM acervo.volume_armazenamento va
-           LEFT JOIN acervo.arquivo a ON a.volume_armazenamento_id = va.id
-           WHERE va.id = $1
-           GROUP BY va.id, va.capacidade_gb`,
-          [volumeId]
-        );
-        
-        if (espacoDisponivel.espaco_disponivel < spaceGB) {
-          throw new AppError(`Espaço insuficiente no volume de armazenamento ${volumeId}. Necessário: ${spaceGB.toFixed(2)}GB, Disponível: ${espacoDisponivel.espaco_disponivel.toFixed(2)}GB`, httpCode.BadRequest);
-        }
+        await assertEspacoNoVolume(t, volumeId, space / 1024, erroDeEspaco(volumeId));
       }
       
       const result = [];
@@ -1185,7 +1199,10 @@ const prepararProduto = async (requestData, usuarioUuid) => {
 
           for (const arquivo of versao.arquivos) {
             const isTileserver = arquivo.tipo_arquivo_id === TIPO_ARQUIVO.TILESERVER;
-            assertCaminhoSeguro(arquivo.nome_arquivo);
+            // Mesma guarda do prepareAddFiles e do prepararVersao: a URL do
+            // Tileserver tem `//`, que o `motivoCaminhoInseguro` lê como
+            // segmento vazio e recusa.
+            if (!isTileserver) assertCaminhoSeguro(arquivo.nome_arquivo);
           // Tileserver é uma URL. Não tem arquivo físico, volume nem extensão
           const destinationPath = isTileserver
             ? arquivo.nome_arquivo
@@ -1417,22 +1434,26 @@ const inserirProdutoDoEnvio = async (t, p, usuarioUuid, contexto) => {
  */
 const inserirVersaoDoEnvio = async (t, v, produtoId, usuarioUuid, contexto) => {
   const criada = await t.one(
-    // `meta_pit_id` e `data_prevista` GRAVAM aqui desde 2026-08-05. Antes o
-    // schema nem os aceitava, e a meta escolhida no formulário era descartada em
-    // silêncio: a versão nascia pronta e fora da conta do PIT.
+    // `meta_pit_id` e `data_prevista` GRAVAM aqui desde 2026-08-05, e
+    // `demanda_extra_id` desde 2026-09-05. Antes o schema nem os aceitava, e o
+    // que o formulário escolhia era descartado em silêncio: a versão nascia
+    // pronta e fora da conta do PIT (ou do Extra-PIT). A exclusão entre a meta e
+    // a demanda é do CHECK `versao_plano_ou_excecao`, espelhado no `.oxor` de
+    // `versaoWeb`.
     `INSERT INTO acervo.versao(
       uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
       lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao,
-      data_edicao, meta_pit_id, data_prevista,
+      data_edicao, meta_pit_id, demanda_extra_id, data_prevista,
       usuario_cadastramento_uuid, data_cadastramento
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP)
     RETURNING *`,
     [
       v.uuid_versao || uuidv4(), v.versao, v.nome, v.tipo_versao_id,
       v.subtipo_produto_id, produtoId, v.lote_id ?? null, v.metadado || {},
       v.descricao || '', v.orgao_produtor, v.palavras_chave || [],
       v.data_criacao, v.data_edicao,
-      v.meta_pit_id ?? null, v.data_prevista ?? null, usuarioUuid
+      v.meta_pit_id ?? null, v.demanda_extra_id ?? null, v.data_prevista ?? null,
+      usuarioUuid
     ]
   );
 
@@ -1624,13 +1645,16 @@ controller.catalogarProduto = async (requestData, usuarioUuid, contexto) => {
 
         for (const versao of item.versoes) {
           const versaoCriada = await t.one(
-            // Mesmo par do outro caminho de envio: ver `inserirVersaoDoEnvio`.
+            // Mesmo trio do outro caminho de envio: ver `inserirVersaoDoEnvio`.
+            // Os dois leem o MESMO `versaoWeb`, entao o que um aceita o outro
+            // tem de gravar -- e o que nao se grava aqui volta a ser descarte
+            // mudo, que e o defeito que esta linha veio fechar.
             `INSERT INTO acervo.versao(
               uuid_versao, versao, nome, tipo_versao_id, subtipo_produto_id, produto_id,
               lote_id, metadado, descricao, orgao_produtor, palavras_chave, data_criacao,
-              data_edicao, meta_pit_id, data_prevista,
+              data_edicao, meta_pit_id, demanda_extra_id, data_prevista,
               usuario_cadastramento_uuid, data_cadastramento
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP)
             RETURNING *`,
             [
               versao.uuid_versao || uuidv4(),
@@ -1647,6 +1671,7 @@ controller.catalogarProduto = async (requestData, usuarioUuid, contexto) => {
               versao.data_criacao,
               versao.data_edicao,
               versao.meta_pit_id ?? null,
+              versao.demanda_extra_id ?? null,
               versao.data_prevista ?? null,
               usuarioUuid
             ]
@@ -1754,8 +1779,17 @@ controller.catalogarProduto = async (requestData, usuarioUuid, contexto) => {
  *
  * So sessao `failed` chega aqui. Sessao confirmada e sessao cancelada morrem no
  * ato, entao a tabela nao guarda o que deu certo.
+ *
+ * O OPERADOR VE AS DELE, e o gerente ve as da area. A consulta nao filtrava por
+ * usuario nenhum e a rota pede so perfil `operador`: qualquer operador do acervo
+ * via o nome de quem enviou e o RASCUNHO INTEIRO do envio alheio (nome de
+ * arquivo, produto, versao). Pela regua do sistema, "ver tudo da area" e do
+ * GERENTE. Subir o piso da rota resolveria pelo lado errado: o operador precisa
+ * das dele, que sao justamente as que ele tem de consertar.
+ *
+ * @param {string|null} usuarioUuid  null (gerente/administrador) traz todas
  */
-controller.getProblemUploads = async () => {
+controller.getProblemUploads = async (usuarioUuid = null) => {
   return db.conn.task(async t => {
     const failedSessions = await t.any(
       `SELECT us.uuid_session, us.operation_type, us.status,
@@ -1764,8 +1798,10 @@ controller.getProblemUploads = async () => {
        FROM acervo.upload_session us
        JOIN dgeo.usuario u ON us.usuario_uuid = u.uuid
        WHERE us.status = 'failed'
+         AND ($<usuarioUuid> IS NULL OR us.usuario_uuid = $<usuarioUuid>)
        ORDER BY us.created_at DESC
-       LIMIT 50`
+       LIMIT 50`,
+      { usuarioUuid }
     );
 
     // O nome do produto de todas as sessoes `add_version` de uma vez.
@@ -1972,6 +2008,49 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
         throw new AppError('Usuário não autorizado para esta sessão de upload', httpCode.Forbidden);
       }
 
+      // A EXPIRAÇÃO VALE AQUI, na hora do uso, e não só quando alguém limpa.
+      // NÃO HÁ AGENDADOR: a `cleanup_expired_uploads()` só roda quando um
+      // administrador aperta o botão, então a sessão vencida continua `pending`
+      // por dias. Sem esta guarda o confirm aceitava um destino reservado
+      // semanas antes, e o `destination_path` daquela reserva pode ter sido
+      // reocupado desde então: o `upload-web` e os outros `prepare` não olham
+      // sessão pendente ao escolher o nome físico (ver `assertNomeFisicoLivre`),
+      // então o destino pode ter sido tomado por outro caminho. É a mesma regra
+      // do `confirmDownload` ao lado e do `ponto_controle/upload_ctrl.js`.
+      //
+      // A sessão vira `failed` DENTRO da transação, e o `processingFailure`
+      // regrava fora dela: a exceção abaixo aborta esta transação e desfaria o
+      // UPDATE.
+      if (new Date(session.expiration_time) < new Date()) {
+        // O RASCUNHO VAI JUNTO, com cada arquivo marcado. A tela de "uploads com
+        // problema" existe para mostrar QUAL arquivo falhou, e não só que a
+        // sessão falhou: sem esta marcação ela listava a sessão vencida com a
+        // lista de arquivos VAZIA (todos ainda `pending`), e quem a abrisse não
+        // saberia o que estava sendo enviado. É a mesma gravação que o ramo do
+        // checksum divergente já faz logo abaixo.
+        const rascunho = session.payload || {};
+        for (const arquivo of arquivosDoRascunho(rascunho)) {
+          arquivo.status = 'failed';
+          arquivo.error_message = 'Sessão de envio expirada';
+        }
+
+        processingFailure = {
+          sessionId: session.id,
+          message: MSG_SESSAO_VENCIDA,
+          payload: rascunho
+        };
+        // A MENSAGEM CITA A SAIDA. Ate 2026-09-05 ela mandava refazer o
+        // prepare-upload e transferir tudo de novo, que para centenas de GB ja
+        // copiadas e o pior conselho possivel. Renovar devolve o prazo sem mexer
+        // no rascunho nem nos bytes.
+        throw new AppError(
+          'Sessão de upload expirada. Renove a sessão em '
+          + 'POST /api/arquivo/renovar-upload e confirme de novo; '
+          + 'os arquivos já copiados continuam valendo.',
+          httpCode.BadRequest
+        );
+      }
+
       const payload = session.payload || {};
       // Os objetos são os do PRÓPRIO `payload`: marcar um arquivo como falho
       // escreve na árvore, e o UPDATE do fim grava tudo de uma vez. Era isto ou
@@ -2148,11 +2227,15 @@ controller.confirmUpload = async (sessionUuid, usuarioUuid, contexto) => {
     }
   }).catch(async error => {
     if (processingFailure) {
+      // `payload` só vem no ramo da expiração, que é o único que marca arquivo
+      // aqui fora; nos outros o `COALESCE` deixa o rascunho como estava.
       await db.conn.none(
         `UPDATE acervo.upload_session
-         SET status = 'failed', error_message = $1, completed_at = NOW()
+         SET status = 'failed', error_message = $1, completed_at = NOW(),
+             payload = COALESCE($3, payload)
          WHERE id = $2`,
-        [processingFailure.message, processingFailure.sessionId]
+        [processingFailure.message, processingFailure.sessionId,
+         processingFailure.payload || null]
       ).catch(() => {});
     }
 
@@ -2501,15 +2584,25 @@ async function processAddProduct(t, session, payload, contexto) {
   }
 }
 
-controller.getUploadSessions = async () => {
+/**
+ * As sessoes de envio, do mais novo para o mais velho.
+ *
+ * Mesmo recorte de `getProblemUploads`: o operador ve as DELE, o gerente e o
+ * administrador veem todas.
+ *
+ * @param {string|null} usuarioUuid  null (gerente/administrador) traz todas
+ */
+controller.getUploadSessions = async (usuarioUuid = null) => {
   return db.conn.any(
     `SELECT us.id, us.uuid_session, us.operation_type, us.status,
             us.error_message, us.created_at, us.expiration_time, us.completed_at,
             u.nome AS usuario_nome
      FROM acervo.upload_session us
      JOIN dgeo.usuario u ON us.usuario_uuid = u.uuid
+     WHERE ($<usuarioUuid> IS NULL OR us.usuario_uuid = $<usuarioUuid>)
      ORDER BY us.created_at DESC
-     LIMIT 100`
+     LIMIT 100`,
+    { usuarioUuid }
   );
 };
 
@@ -2562,6 +2655,110 @@ controller.cancelUpload = async (sessionUuid, usuarioUuid) => {
     // a limpeza do parcial acontece na propria requisicao que falhou. A sessao
     // cobre o caminho do PLUGIN, onde quem copia os bytes e o cliente e o
     // servidor nunca escreveu nada para limpar.
+  });
+};
+
+/**
+ * Devolve 24 horas de prazo a uma sessao de envio, sem mexer no rascunho.
+ *
+ * A SAIDA que faltava ao lado da guarda de expiracao do `confirmUpload`. O prazo
+ * e de 24 horas contadas do `prepare-upload`, e quem copia os bytes neste
+ * caminho e o plugin, por SMB: uma carga de centenas de GB atravessa o prazo com
+ * facilidade (o proprio codigo registra um lote de 362 GB que levou de 1h20 a 3h
+ * em condicao boa). Ate 2026-09-05 o unico caminho depois do vencimento era
+ * refazer o prepare-upload e TRANSFERIR TUDO DE NOVO, jogando fora byte que ja
+ * estava no lugar certo e deixando o que fora copiado orfao no volume, que hoje
+ * ninguem recolhe.
+ *
+ * DUAS SESSOES SE RENOVAM, e a segunda e o caso comum:
+ *
+ *   1. a `pending` ainda aberta, renovada antes de o prazo acabar;
+ *   2. a `failed` que o `confirm-upload` fechou POR VENCIMENTO, reconhecida pelo
+ *      `MSG_SESSAO_VENCIDA` que ele mesmo gravou. Sem ela a rota 404 justamente
+ *      no caso que a criou: quem descobre o vencimento e o confirm, e o confirm
+ *      fecha a sessao antes de responder o 400 que manda renovar.
+ *
+ * A que falhou por CHECKSUM (ou por erro de gravacao) NAO se renova: ali o
+ * problema e o byte, e nao o relogio. Renovar so devolveria o mesmo diagnostico.
+ *
+ * O QUE ELA NAO FAZ, e e deliberado: nao reconfere se o `destination_path`
+ * reservado continua livre. Renovar devolve o PRAZO; quem confere o destino
+ * continua sendo o `confirm-upload`, que rele cada arquivo e casa o checksum
+ * declarado. Destino que mudou de dono se descobre la, com a mensagem de sempre.
+ *
+ * NAO AUDITA, pela mesma regra do `prepare-upload` e do `cancel-upload`: sessao
+ * que nao virou arquivo nao mudou o acervo, `acervo.upload_session` nao tem
+ * entrada em `auditoria/mapa/acervo.js`, e a trilha do que entrou nasce no
+ * `confirm-upload`.
+ *
+ * @param {string} sessionUuid
+ * @param {string} usuarioUuid - o dono, tirado do TOKEN
+ * @returns {Promise<{session_uuid:string, expiration_time:Date}>}
+ */
+controller.renovarUpload = async (sessionUuid, usuarioUuid) => {
+  return db.conn.tx(async t => {
+    const session = await t.oneOrNone(
+      `SELECT id, uuid_session, usuario_uuid, payload FROM acervo.upload_session
+        WHERE uuid_session = $1
+          AND (status = 'pending' OR (status = 'failed' AND error_message = $2))`,
+      [sessionUuid, MSG_SESSAO_VENCIDA]
+    );
+
+    if (!session) {
+      throw new AppError(
+        'Sessão de upload não encontrada, já processada ou fechada por outro motivo',
+        httpCode.NotFound
+      );
+    }
+
+    // O mesmo recorte do `cancelUpload` ao lado: o dono, ou o administrador
+    // global. Gerente do acervo NAO entra: renovar prazo de sessao alheia e
+    // mexer no envio de outra pessoa, e nao ler o que ela esta fazendo.
+    if (session.usuario_uuid !== usuarioUuid) {
+      const usuario = await t.oneOrNone(
+        'SELECT administrador FROM dgeo.usuario WHERE uuid = $1',
+        [usuarioUuid]
+      );
+      if (!usuario || !usuario.administrador) {
+        throw new AppError(
+          'Apenas o criador da sessão ou um administrador pode renová-la',
+          httpCode.Forbidden
+        );
+      }
+    }
+
+    // O RASCUNHO VOLTA A `pending`, arquivo por arquivo. A sessao fechada por
+    // vencimento carrega cada arquivo marcado como falho (e o que faz a tela de
+    // uploads com problema dizer o que estava sendo enviado); renovada, ela sai
+    // daquela tela e volta para a lista de sessoes abertas, e um arquivo `failed`
+    // dentro de uma sessao `pending` seria estado que nao se le. O desfecho real
+    // de cada arquivo e reescrito pelo proximo confirm, que rele todos.
+    const payload = session.payload || {};
+    for (const arquivo of arquivosDoRascunho(payload)) {
+      arquivo.status = 'pending';
+      arquivo.error_message = null;
+    }
+
+    // NOW() do BANCO, e nao um Date do Node: `expiration_time` e comparada com o
+    // relogio do servidor de banco em `cleanup_expired_uploads()`, e o default da
+    // coluna e `CURRENT_TIMESTAMP + INTERVAL '24 hours'`. Sao as mesmas 24 horas
+    // que o `prepare-upload` concede, contadas de agora.
+    const renovada = await t.one(
+      `UPDATE acervo.upload_session
+          SET expiration_time = NOW() + INTERVAL '24 hours',
+              status = 'pending',
+              error_message = NULL,
+              completed_at = NULL,
+              payload = $2
+        WHERE id = $1
+        RETURNING uuid_session, expiration_time`,
+      [session.id, payload]
+    );
+
+    return {
+      session_uuid: renovada.uuid_session,
+      expiration_time: renovada.expiration_time
+    };
   });
 };
 

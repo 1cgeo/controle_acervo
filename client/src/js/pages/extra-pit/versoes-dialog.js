@@ -9,7 +9,7 @@ import {
   desassociarVersaoExtraPit,
   codigoMetaPit,
 } from '@services/plataforma-service.js';
-import { isAdmin } from '@store/auth-store.js';
+import { temPerfil } from '@store/auth-store.js';
 import './versoes.css';
 
 /**
@@ -39,7 +39,12 @@ import './versoes.css';
  * @param {Function} [options.onChanged] - chamada quando um vínculo muda
  */
 export function openVersoesDialog({ demanda, onChanged = null } = {}) {
-  const podeEscrever = isAdmin();
+  // OPERADOR DO PIT, e não administrador. `POST` e `DELETE`
+  // /metas/extra/:id/versoes desceram para `verifyPerfil('operador','pit')` na
+  // 1.35.0 (`pit_route.js:305-313`): ligar a folha que materializa a demanda é
+  // a outra metade de cadastrá-la, e a demanda sem folha ligada não conta nada
+  // na grade do PIT. Mesma régua de `list.js`.
+  const podeEscrever = temPerfil('operador', 'pit');
   let fechado = false;
   // Verdadeiro assim que um vínculo muda, e é o que decide recarregar a lista de
   // trás: `quantidade_materializada` é calculada na leitura, então a coluna "Qtd

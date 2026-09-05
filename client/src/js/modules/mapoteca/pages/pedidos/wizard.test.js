@@ -19,6 +19,7 @@ vi.mock('@modules/mapoteca/services/acervo-service.js', async () => {
 
 import { renderPedidoWizard } from '@modules/mapoteca/pages/pedidos/wizard.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
+import * as plataforma from '@services/plataforma-service.js';
 import {
   guardarListaDePedidos, listaDePedidos, esquecerListaDePedidos,
 } from '@modules/mapoteca/pages/pedidos/ultima-lista.js';
@@ -246,6 +247,29 @@ describe('wizard: a volta para a lista, antes e depois de gravar', () => {
       .find(b => b.textContent === 'Voltar para pedidos').click();
 
     expect(location.hash).toBe('#/mapoteca/pedidos');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// AS METAS DO PIT SAO ACESSORIAS, aqui pela mesma razao do detalhe do pedido:
+// `GET /pit/metas` e de OUTRO modulo, e nada mais do pedido novo depende do PIT.
+// Dentro do `Promise.all` dos lookups, um 500 do PIT devolvia um bloco de erro
+// no lugar da tela inteira de criar pedido.
+describe('o wizard sobrevive à queda do PIT', () => {
+  beforeEach(() => {
+    svc.getClientes.mockResolvedValue(CLIENTES);
+    svc.getDominioSituacaoPedido.mockResolvedValue(SITUACOES);
+    svc.getDominioCanalRecebimento.mockResolvedValue(CANAIS);
+  });
+
+  test('com GET /metas em 500, a tela monta e abre no passo 1', async () => {
+    plataforma.getMetasPit.mockRejectedValue(new Error('pit fora'));
+    const { container, cleanup } = await montar();
+
+    expect(container.querySelector('.page__title').textContent).toBe('Novo pedido');
+    expect(painelAtivo(container).textContent).toContain('Dados básicos');
+    expect(container.textContent).not.toContain('Erro ao carregar os dados do formulário');
 
     if (typeof cleanup === 'function') cleanup();
   });

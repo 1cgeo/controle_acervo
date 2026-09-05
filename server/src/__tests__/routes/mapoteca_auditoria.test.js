@@ -417,6 +417,78 @@ describe('Rastreabilidade da mapoteca - pedido', () => {
     expect(Number(impressoesExcluidas[0].entidade_id)).toBe(pedidoId)
   })
 
+  // O ANEXO E A ETIQUETA CAEM PELA MESMA CASCATA DA IMPRESSAO, e por muito
+  // tempo cairam sem um unico evento.
+  //
+  // O historico do pedido mostrava o DIEx e a etiqueta NASCENDO e nunca
+  // morrendo: quem lesse `GET /api/auditoria/mapoteca/pedido/N` concluiria que
+  // os dois documentos continuam por ai. A trilha ficava coerente pelo DELETE
+  // individual do anexo e furada pelo DELETE do pedido, que e justamente o
+  // caminho que leva os dois de uma vez.
+  it('DELETE /pedido registra tambem o anexo e a etiqueta que cairam por cascata', async () => {
+    const clienteId = await criaCliente()
+    const pedidoId = await criaPedido(clienteId)
+
+    const anexado = await request(app)
+      .post(`/api/mapoteca/pedido/${pedidoId}/anexos`)
+      .set('Authorization', generateAdminToken())
+      .field('tipo_anexo_id', 1)
+      .field('descricao', 'DIEx de solicitação')
+      .attach('arquivo', Buffer.from('%PDF-1.4\n1 0 obj\n<< >>\nendobj\n%%EOF\n'), {
+        filename: 'diex_140.pdf',
+        contentType: 'application/pdf'
+      })
+    expect(anexado.status).toBe(201)
+    const anexoId = Number(anexado.body.dados[0].id)
+
+    const etiquetada = await request(app)
+      .put(`/api/mapoteca/pedido/${pedidoId}/etiqueta`)
+      .set('Authorization', generateAdminToken())
+      .send({
+        destinatario: '4º Centro de Geoinformação',
+        aos_cuidados: 'Cap Ronaldo',
+        endereco: 'Avenida Marechal Bittencourt, 97\nManaus - AM',
+        cep: '69029-160'
+      })
+    expect(etiquetada.status).toBe(200)
+
+    const res = await request(app)
+      .delete('/api/mapoteca/pedido')
+      .set('Authorization', generateAdminToken())
+      .send({ pedido_ids: [pedidoId] })
+    expect(res.status).toBe(200)
+
+    // As duas linhas sumiram de verdade, e e por isso que o evento e a unica
+    // prova do que havia nelas.
+    expect(await conn.oneOrNone(
+      'SELECT id FROM mapoteca.anexo_pedido WHERE id = $1', [anexoId]
+    )).toBeNull()
+    expect(await conn.oneOrNone(
+      'SELECT id FROM mapoteca.etiqueta_envio WHERE pedido_id = $1', [pedidoId]
+    )).toBeNull()
+
+    const linhas = await auditoria(pedidoId)
+
+    const anexoExcluido = eventosDe(linhas, 'mapoteca.anexo_pedido', 'D')
+    expect(anexoExcluido).toHaveLength(1)
+    expect(Number(anexoExcluido[0].entidade_id)).toBe(pedidoId)
+    expect(Number(anexoExcluido[0].registro_id)).toBe(anexoId)
+    expect(anexoExcluido[0].usuario_uuid).toBe(ADMIN_UUID)
+    // dados_antes PREENCHIDO: sem ele a exclusao nao diz o que se perdeu.
+    expect(anexoExcluido[0].dados_antes.nome_original).toBe('diex_140.pdf')
+    // O BYTEA continua fora do rastro tambem por este caminho: a leitura da
+    // cascata usa a MESMA lista de colunas do anexo_pedido_ctrl.
+    expect(anexoExcluido[0].dados_antes.conteudo).toBeUndefined()
+
+    const etiquetaExcluida = eventosDe(linhas, 'mapoteca.etiqueta_envio', 'D')
+    expect(etiquetaExcluida).toHaveLength(1)
+    expect(Number(etiquetaExcluida[0].entidade_id)).toBe(pedidoId)
+    expect(etiquetaExcluida[0].usuario_uuid).toBe(ADMIN_UUID)
+    expect(etiquetaExcluida[0].dados_antes.destinatario).toBe('4º Centro de Geoinformação')
+    expect(etiquetaExcluida[0].dados_antes.cep).toBe('69029-160')
+    expect(etiquetaExcluida[0].dados_depois).toBeNull()
+  })
+
   it('POST /produto_pedido registra o item no historico do pedido', async () => {
     const clienteId = await criaCliente()
     const pedidoId = await criaPedido(clienteId)

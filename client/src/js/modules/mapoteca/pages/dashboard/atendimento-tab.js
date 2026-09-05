@@ -6,6 +6,8 @@ import { createLineChart } from '@components/charts/line-chart.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { showError } from '@utils/toast.js';
 import * as mapotecaService from '@modules/mapoteca/services/mapoteca-service.js';
+import { ehDeAlgumPerfil } from '@store/auth-store.js';
+import { PERFIS_DA_LISTA_DE_PEDIDOS } from '@modules/mapoteca/index.js';
 import { mesLabel } from './utils.js';
 
 /**
@@ -26,6 +28,12 @@ import { mesLabel } from './utils.js';
 export async function renderAtendimentoTab(container, getAno) {
   let disposed = false;
   let ano = getAno();
+
+  // A ficha do cliente ('/clientes/:id') declara a MESMA lista da lista de
+  // pedidos, e o operador nao esta nela: para ele, o Top 10 era uma coluna
+  // inteira de nomes clicaveis que terminavam em '#/unauthorized'. O nome fica;
+  // o link, nao.
+  const podeAbrirClientes = ehDeAlgumPerfil(PERFIS_DA_LISTA_DE_PEDIDOS, 'mapoteca');
 
   const cardTempoMedio = createStatsCard({
     title: 'Tempo Médio de Atendimento',
@@ -58,7 +66,9 @@ export async function renderAtendimentoTab(container, getAno) {
         key: 'nome',
         label: 'Cliente',
         sortable: true,
-        render: (row) => el('a', { href: `#/mapoteca/clientes/${row.id}`, textContent: row.nome || '-' }),
+        render: (row) => (podeAbrirClientes
+          ? el('a', { href: `#/mapoteca/clientes/${row.id}`, textContent: row.nome || '-' })
+          : (row.nome || '-')),
       },
       { key: 'tipo_cliente', label: 'Tipo' },
       { key: 'total_pedidos', label: 'Pedidos', sortable: true, render: (row) => formatNumber(row.total_pedidos) },

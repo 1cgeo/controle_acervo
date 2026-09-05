@@ -181,16 +181,20 @@ class FileTransferThread(QThread):
 
         source_path = self.source_path.replace("\\", "/")
         script_path = os.path.join(os.path.dirname(__file__), 'getFileBySMB.py')
+        # A SENHA VAI PELO AMBIENTE, E NUNCA NA LINHA DE COMANDO. Argumento de
+        # processo é legível por qualquer usuário da máquina (`ps aux`,
+        # /proc/<pid>/cmdline), e o `getFileBySMB.py` roda num processo separado.
+        # Pelo ambiente, só o dono do processo e o root leem.
         command = [
             'python3',
             script_path,
             f"smb:{source_path}",
             self.destination_path,
             user,
-            passwd,
             domain
         ]
-        return self.run_system_command(command)
+        ambiente = dict(os.environ, SMB_PASSWD=passwd)
+        return self.run_system_command(command, ambiente)
 
     def _copy_file_with_progress(self, source_path, dest_path):
         """Copia arquivo com atualização de progresso. Retorna (sucesso, erro|None)."""
@@ -227,15 +231,22 @@ class FileTransferThread(QThread):
             return False, "Transferência cancelada."
         return True, None
 
-    def run_system_command(self, command):
+    def run_system_command(self, command, ambiente=None):
         """Executa o comando de cópia SMB (lista de argumentos).
 
         Retorna (sucesso, mensagem_erro|None). Com `check=True`, código de
         retorno diferente de zero vira CalledProcessError.
+
+        NADA DE CREDENCIAL NO LOG. O comando carrega o usuário e o domínio, e o
+        `str(CalledProcessError)` repete a linha de comando inteira: registrar
+        qualquer um dos dois grava credencial num arquivo de log que sobrevive à
+        sessão. O que vai para o log é a ORIGEM e o código de retorno.
         """
+        origem = self.source_path
         try:
-            subprocess.run(command, check=True, capture_output=True, text=True)
-            logging.info(f"Comando executado com sucesso: {' '.join(command)}")
+            subprocess.run(command, check=True, capture_output=True, text=True,
+                           env=ambiente)
+            logging.info(f"Cópia SMB concluída: {origem}")
             # Progresso 100% para indicar sucesso
             self.progress_update.emit(100, 100)
             return True, None
@@ -244,8 +255,10 @@ class FileTransferThread(QThread):
             # getFileBySMB.py escreve mensagens claras em stderr (biblioteca
             # ausente, credenciais incompletas, erro de transferência). Elas vão
             # para a UI no lugar do genérico "Falha na transferência".
-            msg = (e.stderr or '').strip() or str(e)
-            logging.error(f"Erro ao executar comando: {str(e)}, saída: {e.stderr}")
+            msg = (e.stderr or '').strip() or f"Comando falhou (código {e.returncode})"
+            logging.error(
+                f"Cópia SMB falhou (código {e.returncode}) para {origem}: {msg}"
+            )
             return False, msg
         except FileNotFoundError:
             msg = ("Interpretador 'python3' não encontrado. Instale o Python 3 "
@@ -254,5 +267,5 @@ class FileTransferThread(QThread):
             return False, msg
         except Exception as e:
             msg = str(e)
-            logging.error(f"Exceção ao executar comando: {msg}")
+            logging.error(f"Exceção ao copiar por SMB {origem}: {msg}")
             return False, msg

@@ -451,6 +451,18 @@ const TIPO_FASE = {
 }
 
 // dominio.tipo_pre_requisito
+// Situacao do ponto de controle (`dominio.tipo_situacao_ponto`, ver
+// `er/ponto_controle.sql`): 1 Nao medido, 2 Aguardando revisao, 3 Aprovado,
+// 4 Reprovado. So o Aprovado entra no acervo e no painel; trocar 3 por 4
+// deixaria entrar exatamente o oposto, sem erro nenhum. Antes de 2026-09-05 o
+// 3 era declarado a mao em dois controladores, que podiam divergir em silencio.
+const SITUACAO_PONTO_CONTROLE = {
+  NAO_MEDIDO: 1,
+  AGUARDANDO_REVISAO: 2,
+  APROVADO: 3,
+  REPROVADO: 4
+}
+
 const TIPO_PRE_REQUISITO = {
   REGIAO_CONCLUIDA: 1,
   REGIAO_NAO_EM_EXECUCAO: 2
@@ -600,6 +612,7 @@ module.exports = {
   CATEGORIA_CAMPO,
   TIPO_FASE,
   TIPO_PRE_REQUISITO,
+  SITUACAO_PONTO_CONTROLE,
   TIPO_ETAPA,
   TIPO_EXIBICAO,
   TIPO_RESTRICAO,

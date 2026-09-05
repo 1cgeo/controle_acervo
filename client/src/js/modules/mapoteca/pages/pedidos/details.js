@@ -222,7 +222,13 @@ export async function renderPedidoDetails(container, { params }) {
       const anoPedido = new Date(`${pedido.data_pedido}T00:00:00`).getFullYear();
       [clientes, situacoes, canais, formasEntrega, metas] = await Promise.all([
         getClientes(), getDominioSituacaoPedido(), getDominioCanalRecebimento(),
-        getDominioFormaEntrega(), getMetasPit(anoPedido),
+        getDominioFormaEntrega(),
+        // AS METAS CARREGAM SOZINHAS. Elas sao de OUTRO modulo (GET /pit/metas),
+        // e nada mais do pedido depende do PIT: dentro do `Promise.all` a queda
+        // do PIT impedia corrigir o endereco de entrega de um pedido que nem e
+        // do PIT. O combo abre vazio, que e a mesma escolha ja registrada em
+        // `metasDoPedido()`, trinta linhas abaixo.
+        getMetasPit(anoPedido).catch(() => []),
       ]);
     } catch (err) {
       showError(err.message || 'Erro ao carregar os dados do formulário');
@@ -453,6 +459,25 @@ export async function renderPedidoDetails(container, { params }) {
     let mutated = false;
 
     /**
+     * Relê o histórico depois de uma escrita que JÁ deu certo.
+     *
+     * SEPARADA DA ESCRITA, e com mensagem própria. As duas ações desta janela
+     * (corrigir a data, excluir a sessão) liam de volta DENTRO do mesmo `try` da
+     * gravação: uma falha na releitura caía no `catch` dela e anunciava "Erro ao
+     * excluir o registro de impressão" logo depois do "excluído com sucesso".
+     * Quem lesse as duas frases repetia a ação já feita, e a segunda tentativa
+     * ou some com outra sessão ou volta 404.
+     */
+    async function recarregarHistorico() {
+      try {
+        pintarHistorico(await getImpressaoItem(row.id));
+      } catch (err) {
+        showError(err.message || 'A gravação deu certo, mas não foi possível'
+          + ' atualizar o histórico. Feche e abra de novo.');
+      }
+    }
+
+    /**
      * Corrige a DATA de uma sessão de impressão já gravada.
      *
      * A INTERAÇÃO QUE FALTAVA. PUT /mapoteca/impressao/:id/data existe no
@@ -526,17 +551,21 @@ export async function renderPedidoDetails(container, { params }) {
 
               salvando = true;
               try {
-                await corrigirDataImpressao(registro.id, { data_impressao: data, motivo });
-                showSuccess('Data da impressão corrigida');
-                mutated = true;
-                close();
-                pintarHistorico(await getImpressaoItem(row.id));
+                // Meio-dia local, pelo mesmo motivo de `dialog-impressao.js`: o dia
+                // pelado virava a vespera em UTC-3.
+                await corrigirDataImpressao(registro.id, { data_impressao: `${data}T12:00:00`, motivo });
               } catch (err) {
                 // O formulário FICA ABERTO com o que a pessoa escreveu: fechar
                 // no erro faria digitar o motivo de novo.
                 salvando = false;
                 showError(err.message || 'Erro ao corrigir a data da impressão');
+                return;
               }
+              showSuccess('Data da impressão corrigida');
+              mutated = true;
+              close();
+              // Fora do `try` acima: falhar aqui não é falhar a correção.
+              await recarregarHistorico();
             },
           },
         ],
@@ -554,12 +583,14 @@ export async function renderPedidoDetails(container, { params }) {
 
       try {
         await deleteImpressoes([registro.id]);
-        showSuccess('Registro de impressão excluído com sucesso');
-        mutated = true;
-        pintarHistorico(await getImpressaoItem(row.id));
       } catch (err) {
         showError(err.message || 'Erro ao excluir o registro de impressão');
+        return;
       }
+      showSuccess('Registro de impressão excluído com sucesso');
+      mutated = true;
+      // Fora do `try` acima: falhar aqui não é falhar a exclusão.
+      await recarregarHistorico();
     }
 
     const resumo = {

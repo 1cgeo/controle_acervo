@@ -92,6 +92,24 @@ const enviarArquivoDoVolume = async (req, res, arquivo) => {
   }
 
   const tamanho = info.size
+
+  // ARQUIVO DE 0 BYTE É RECUSA, e a recusa mora AQUI, junto da conferência
+  // acima e antes de qualquer cabeçalho. Sem `Range`, `fim = tamanho - 1` daria
+  // `-1`, e `createReadStream(..., { end: -1 })` LANÇA SÍNCRONO
+  // (`ERR_OUT_OF_RANGE`). O lanço acontece depois de `Content-Disposition:
+  // attachment` já ter sido escrito no `res`: o Express responde o JSON de 500
+  // (porque `headersSent` ainda é falso), mas com o cabeçalho de anexo em pé, e
+  // o navegador SALVA um arquivo com o texto do erro dentro, com o nome do
+  // arquivo do acervo. Um stub de 0 byte nasce fácil (cópia SMB interrompida,
+  // envio de arquivo vazio), e o que o usuário precisa ler é que o arquivo está
+  // registrado e vazio, não um download que parece ter dado certo.
+  if (tamanho === 0) {
+    throw new AppError(
+      `O arquivo está registrado mas está vazio no volume: ${arquivo.nome}`,
+      httpCode.NotFound
+    )
+  }
+
   const faixa = faixaPedida(req.headers && req.headers.range, tamanho)
 
   if (faixa === 'invalida') {

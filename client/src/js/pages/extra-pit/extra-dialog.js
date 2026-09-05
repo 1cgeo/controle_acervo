@@ -124,7 +124,11 @@ export function openExtraPitDialog({ demanda = null, ano = null, onSaved = null 
       {
         label: 'Salvar',
         variant: 'primary',
-        onClick: async ({ close }) => {
+        // `setOcupado` segura o diálogo enquanto a gravação corre. Sem ele,
+        // Escape e clique no fundo fechavam o formulário com a requisição em
+        // voo, e a recusa do servidor chegava a uma tela sem campo nenhum para
+        // corrigir -- é a mesma trava que o formulário da meta já tem.
+        onClick: async ({ close, setOcupado }) => {
           if (saving) return;
 
           demandanteField.setError(null);
@@ -161,6 +165,7 @@ export function openExtraPitDialog({ demanda = null, ano = null, onSaved = null 
           };
 
           saving = true;
+          setOcupado(true);
           try {
             if (isEdit) {
               await updateExtraPit(demanda.id, payload);
@@ -169,9 +174,12 @@ export function openExtraPitDialog({ demanda = null, ano = null, onSaved = null 
               await createExtraPit(payload);
               showSuccess('Demanda Extra-PIT criada com sucesso');
             }
+            setOcupado(false);
             close();
             if (onSaved) onSaved();
           } catch (err) {
+            // O diálogo FICA ABERTO: o que a pessoa digitou continua na tela.
+            setOcupado(false);
             showError(err.message || 'Erro ao salvar a demanda Extra-PIT');
           } finally {
             saving = false;

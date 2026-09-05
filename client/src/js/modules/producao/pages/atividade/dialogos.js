@@ -50,9 +50,15 @@ const MINIMO_DESCRICAO = 5;
  * mandar `observacao_atividade: ''` transformaria uma finalização sem
  * observação num 400.
  *
- * @param {{atividade:Object, onFinalizado:Function}} opcoes
+ * `onFechado` É O QUE FECHA A PORTA DO DUPLO CLIQUE, e as três funções deste
+ * arquivo o aceitam. O `openModal` empilha de propósito (no acervo a ficha abre
+ * modal sobre modal), então dois cliques no botão da tela abrem DOIS diálogos
+ * idênticos, um por cima do outro. Quem chama usa este aviso para não abrir o
+ * segundo; ver `abrirUm`, em `index.js`.
+ *
+ * @param {{atividade:Object, onFinalizado:Function, onFechado?:Function}} opcoes
  */
-export function abrirFinalizarDialog({ atividade, onFinalizado }) {
+export function abrirFinalizarDialog({ atividade, onFinalizado, onFechado }) {
   const ehRevisao = ETAPAS_DE_REVISAO.includes(Number(atividade.tipo_etapa_id));
 
   const semCorrecao = createCheckboxField({
@@ -100,6 +106,7 @@ export function abrirFinalizarDialog({ atividade, onFinalizado }) {
     title: 'Finalizar atividade',
     width: '560px',
     content: conteudo,
+    onClose: onFechado,
     actions: [
       { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
       {
@@ -146,13 +153,16 @@ export function abrirFinalizarDialog({ atividade, onFinalizado }) {
  * O que ela manda é o `geom` que `/verifica` devolveu -- `ST_AsEWKT` da unidade
  * de trabalho, já com o prefixo `SRID=` que o servidor exige.
  *
- * SEM `geom` NÃO HÁ ENVIO. O botão fica desabilitado e a tela diz por quê, em
- * vez de mandar um corpo que o Joi recusaria com uma mensagem sobre EWKT que
- * não significa nada para quem está apontando um problema.
+ * SEM `geom` NÃO HÁ ENVIO, e o mesmo vale sem o catálogo de tipos: o botão
+ * "Enviar" NEM É OFERECIDO, e o aviso do topo diz por quê. Mandar o corpo faria
+ * o Joi recusar com uma mensagem sobre EWKT que não significa nada para quem
+ * está apontando um problema; e um botão que continua com a cara de botão
+ * ativo, recusando por dentro em silêncio, é pior ainda -- a pessoa clica, nada
+ * acontece, nem toast nem erro de campo, e clica de novo.
  *
- * @param {{atividade:Object, tipos:Array, onReportado:Function}} opcoes
+ * @param {{atividade:Object, tipos:Array, onReportado:Function, onFechado?:Function}} opcoes
  */
-export function abrirProblemaDialog({ atividade, tipos, onReportado }) {
+export function abrirProblemaDialog({ atividade, tipos, onReportado, onFechado }) {
   const semGeometria = !atividade.geom;
   const semTipos = !tipos || !tipos.length;
 
@@ -209,14 +219,16 @@ export function abrirProblemaDialog({ atividade, tipos, onReportado }) {
     title: 'Reportar problema',
     width: '560px',
     content: conteudo,
+    onClose: onFechado,
     actions: [
       { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
-      {
+      // A AÇÃO SÓ EXISTE QUANDO HÁ COMO ENVIAR. Com "Cancelar" sozinho, o
+      // diálogo diz o que é: um aviso de que este caminho não serve para esta
+      // atividade, com o que fazer no lugar dele.
+      ...(semGeometria || semTipos ? [] : [{
         label: 'Enviar',
         variant: 'danger',
         onClick: async ({ close, setOcupado }) => {
-          if (semGeometria || semTipos) return;
-
           const tipoId = tipo.getValue();
           const texto = descricao.getValue();
           tipo.setError(tipoId === null ? 'Escolha o tipo de problema' : null);
@@ -241,7 +253,7 @@ export function abrirProblemaDialog({ atividade, tipos, onReportado }) {
             showError(err.message || 'Não foi possível reportar o problema');
           }
         },
-      },
+      }]),
     ],
   });
 }
@@ -256,9 +268,14 @@ export function abrirProblemaDialog({ atividade, tipos, onReportado }) {
  * e o cliente não manda id nenhum -- mandar um seria deixar a tela decidir uma
  * coisa que ela não tem como saber.
  *
- * @param {{onReportado:Function}} opcoes
+ * DOIS DIÁLOGOS ABERTOS AQUI GRAVAM DOIS APONTAMENTOS, e é o pior caso do
+ * duplo clique nesta tela: os dois `POST` dão certo, porque o servidor só
+ * procura a última atividade finalizada e não recusa o segundo apontamento
+ * sobre ela. Por isso o `onFechado`, e por isso quem chama abre um de cada vez.
+ *
+ * @param {{onReportado:Function, onFechado?:Function}} opcoes
  */
-export function abrirFinalizacaoIncorretaDialog({ onReportado }) {
+export function abrirFinalizacaoIncorretaDialog({ onReportado, onFechado }) {
   const descricao = createTextareaField({
     label: 'Descrição',
     required: true,
@@ -284,6 +301,7 @@ export function abrirFinalizacaoIncorretaDialog({ onReportado }) {
     title: 'Reportar finalização incorreta',
     width: '560px',
     content: conteudo,
+    onClose: onFechado,
     actions: [
       { label: 'Cancelar', variant: 'text', onClick: ({ close }) => close() },
       {

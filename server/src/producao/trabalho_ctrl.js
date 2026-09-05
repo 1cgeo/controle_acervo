@@ -196,6 +196,54 @@ controller.getBlocos = async filtro => {
 
 const COLUNAS_BLOCO = ['nome', 'prioridade', 'lote_id', 'status_execucao_id']
 
+// --- O BLOCO E A UNIDADE DE TRABALHO SAO DO MESMO LOTE ------------------------
+//
+// NADA NO BANCO COBRA ISSO, e a ausencia nao e decisao registrada: `producao.
+// bloco` aponta `acervo.lote`, `producao.unidade_trabalho` aponta o lote E o
+// bloco, e nenhum CHECK amarra os dois. O `chk_bloco_status` olha so o status do
+// lote DO BLOCO, e `atividade_verifica_subfase` compara a etapa com a unidade de
+// trabalho -- nenhum dos dois enxerga o par (lote da UT, lote do bloco).
+//
+// O ESTRAGO E SILENCIOSO, e sao tres de uma vez:
+//
+//   1. `distribuicao/sql/calcula_fila.sql` junta `producao.bloco` por
+//      `ut.bloco_id` e cobra `producao.habilitacao_bloco`. A UT do lote A dentro
+//      de um bloco do lote B e entregue a quem esta habilitado no bloco do lote
+//      B, que nao trabalha no lote A.
+//   2. `acompanhamento.bloco` publica `acervo.lote.nome` do lote DO BLOCO e a
+//      geometria como `ST_Collect(ut.geom)` das UTs dele: a folha do lote A
+//      aparece na ficha do lote B.
+//   3. `chk_lote_status` recusa encerrar o lote enquanto houver bloco dele em
+//      andamento. O lote A passa a poder ser encerrado sem que ninguem enxergue
+//      aquele trabalho, porque o bloco que o segura e do lote B.
+//
+// Por isso as tres portas que podem quebrar o par conferem aqui, e a conferencia
+// e SQL: `lote_id` e BIGINT e o driver o devolve como TEXTO, entao comparar em
+// JavaScript com o numero do corpo daria diferente sempre.
+
+const SQL_BLOCO_DE_OUTRO_LOTE = `
+  SELECT b.id, b.nome, b.lote_id
+    FROM producao.bloco AS b
+   WHERE b.id IN ($<blocoIds:csv>)
+     AND b.lote_id <> $<loteId>
+   ORDER BY b.id`
+
+const exigirBlocoDoLote = async (t, blocoIds, loteId) => {
+  const estranhos = await t.any(SQL_BLOCO_DE_OUTRO_LOTE, { blocoIds, loteId })
+  if (estranhos.length === 0) return
+
+  const citados = estranhos
+    .map(b => `"${b.nome}" (bloco ${b.id}, do lote ${b.lote_id})`)
+    .join('; ')
+
+  throw new AppError(
+    `O bloco de uma unidade de trabalho tem de ser do mesmo lote que ela. ` +
+      `Não é o caso de: ${citados}. A fila entregaria essa unidade a quem está ` +
+      `habilitado no bloco do outro lote`,
+    httpCode.BadRequest
+  )
+}
+
 /**
  * Cria blocos em massa.
  *
@@ -253,6 +301,37 @@ controller.atualizarBlocos = async (blocos, usuarioUuid, contexto) => {
             bloco.id,
             'Bloco'
           )
+
+          // MUDAR O LOTE DO BLOCO ARRASTA AS UNIDADES DE TRABALHO DELE, e sem
+          // esta conferência o arrasto é calado: as UTs continuam com o
+          // `lote_id` antigo e passam a viver num bloco de outro lote. Ver o
+          // bloco "O BLOCO E A UNIDADE DE TRABALHO SAO DO MESMO LOTE" acima.
+          //
+          // SÓ QUANDO O LOTE MUDA DE VERDADE: `camposBloco` é o mesmo na criação e
+          // na atualização, então `lote_id` vem SEMPRE no corpo. Cobrar sem
+          // comparar travaria renomear (ou repriorizar) um bloco que já carrega,
+          // por dado herdado da carga, uma unidade de outro lote -- e a mensagem
+          // falaria de uma mudança de lote que não está acontecendo. A comparação
+          // é em TEXTO porque `lote_id` é BIGINT e o driver o devolve como string.
+          if (String(antes.lote_id) !== String(bloco.lote_id)) {
+            const arrastadas = await t.any(
+              `SELECT ut.id
+                 FROM producao.unidade_trabalho AS ut
+                WHERE ut.bloco_id = $<id> AND ut.lote_id <> $<loteId>
+                ORDER BY ut.id
+                LIMIT 5`,
+              { id: bloco.id, loteId: bloco.lote_id }
+            )
+            if (arrastadas.length > 0) {
+              throw new AppError(
+                `O bloco ${bloco.id} tem unidades de trabalho de outro lote (por ` +
+                  `exemplo a ${arrastadas[0].id}), e mudar o lote dele as deixaria ` +
+                  `num bloco que não é do lote delas. Mova as unidades de trabalho ` +
+                  'antes de mudar o lote do bloco',
+                httpCode.BadRequest
+              )
+            }
+          }
 
           const depois = await t.one(
             `UPDATE producao.bloco SET
@@ -406,6 +485,15 @@ controller.criarUnidadesTrabalho = async (
   return comTraducao(
     () =>
       db.conn.tx(async t => {
+        // O BLOCO DE CADA LINHA TEM DE SER DO LOTE DO CORPO, e a conferencia vem
+        // ANTES da primeira insercao: recusar no meio dependeria do ROLLBACK, e
+        // a carga de um lote inteiro escreve milhares de linhas antes disso.
+        await exigirBlocoDoLote(
+          t,
+          [...new Set(unidadesTrabalho.map(u => u.bloco_id))],
+          loteId
+        )
+
         const criadas = []
 
         for (const subfaseId of subfaseIds) {
@@ -523,6 +611,31 @@ controller.unidadeTrabalhoBloco = async (
   return comTraducao(
     () =>
       db.conn.tx(async t => {
+        // O BLOCO DE DESTINO TEM DE SER DO LOTE DE CADA UNIDADE, e a conferencia
+        // e uma consulta so para a lista inteira. Ver o bloco "O BLOCO E A
+        // UNIDADE DE TRABALHO SAO DO MESMO LOTE".
+        const deOutroLote = await t.any(
+          `SELECT ut.id, ut.lote_id
+             FROM producao.unidade_trabalho AS ut
+             INNER JOIN producao.bloco AS b ON b.id = $<blocoId>
+            WHERE ut.id IN ($<unidadeTrabalhoIds:csv>)
+              AND ut.lote_id <> b.lote_id
+            ORDER BY ut.id
+            LIMIT 5`,
+          { blocoId, unidadeTrabalhoIds }
+        )
+        if (deOutroLote.length > 0) {
+          const citadas = deOutroLote
+            .map(u => `${u.id} (lote ${u.lote_id})`)
+            .join(', ')
+          throw new AppError(
+            `O bloco ${blocoId} não é do lote destas unidades de trabalho: ` +
+              `${citadas}. A fila entregaria essas unidades a quem está ` +
+              'habilitado no bloco do outro lote',
+            httpCode.BadRequest
+          )
+        }
+
         for (const id of unidadeTrabalhoIds) {
           const antes = await auditoriaCtrl.lerAntes(
             t,
@@ -1076,6 +1189,16 @@ const ERROS_ATIVIDADE = {
     'A etapa e a unidade de trabalho não são da mesma subfase e do mesmo lote'
 }
 
+// O QUE FOI PEDIDO E O `RETURNING` NAO ALCANCOU. Os dois `DELETE` de atividade
+// filtram por situacao, entao a lista que sai pode ser menor que a que entrou, e
+// a diferenca e o que a tela precisa nomear para nao sumir com escolha em
+// silencio. Comparacao em TEXTO porque o pedido vem do Joi como numero e a linha
+// vem do driver, e um dia uma das duas pontas muda de tipo sem avisar.
+const naoAlcancados = (pedidos, alcancados) => {
+  const vistos = new Set(alcancados.map(id => String(id)))
+  return pedidos.filter(id => !vistos.has(String(id)))
+}
+
 /**
  * Cria atividades para os pares (unidade de trabalho, etapa) informados.
  *
@@ -1099,15 +1222,30 @@ controller.criarAtividades = async (
   return comTraducao(
     () =>
       db.conn.tx(async t => {
-        const semVersao = await t.any(
-          `SELECT ut.id
+        // A MESMA CONSULTA RESPONDE AS DUAS PERGUNTAS: quais das unidades
+        // pedidas EXISTEM, e quantas versoes do acervo cada uma delas tem. O id
+        // que nao existe simplesmente nao volta -- e antes desta contagem ele
+        // seguia calado ate o fim, onde a rota o descrevia como "ja existem".
+        const encontradas = await t.any(
+          `SELECT ut.id, COUNT(rv.versao_id)::int AS versoes
              FROM producao.unidade_trabalho AS ut
              LEFT JOIN producao.relacionamento_versao AS rv ON rv.ut_id = ut.id
             WHERE ut.id IN ($<unidadeTrabalhoIds:csv>)
             GROUP BY ut.id
-           HAVING COUNT(rv.versao_id) = 0`,
+            ORDER BY ut.id`,
           { unidadeTrabalhoIds }
         )
+
+        const existentes = new Set(encontradas.map(u => Number(u.id)))
+        const inexistentes = unidadeTrabalhoIds.filter(id => !existentes.has(Number(id)))
+        if (inexistentes.length > 0) {
+          throw new AppError(
+            `Unidade de trabalho não encontrada: ${inexistentes.join(', ')}`,
+            httpCode.NotFound
+          )
+        }
+
+        const semVersao = encontradas.filter(u => u.versoes === 0)
         if (semVersao.length > 0) {
           throw new AppError(
             `Uma ou mais unidades de trabalho não têm versão do acervo associada: ${semVersao
@@ -1165,9 +1303,18 @@ controller.criarAtividades = async (
           }
         )
 
+        // ZERO LINHAS TEM DUAS CAUSAS, e a mensagem do SAP so nomeava uma. O
+        // `INNER JOIN ... ON e.subfase_id = ut.subfase_id AND e.lote_id =
+        // ut.lote_id` do INSERT descarta em silencio a etapa que nao e da
+        // subfase e do lote das unidades pedidas -- e quem escolheu as etapas de
+        // uma subfase e as unidades de outra lia "ja existem" e ia procurar
+        // atividade que nao ha. As unidades ja foram conferidas la em cima, e o
+        // que sobra e este par.
         if (criadas.length === 0) {
           throw new AppError(
-            'As atividades não podem ser criadas pois já existem',
+            'Nenhuma atividade foi criada: ou elas já existem, ou as etapas ' +
+              'informadas não são da mesma subfase e do mesmo lote das unidades ' +
+              'de trabalho',
             httpCode.BadRequest
           )
         }
@@ -1360,6 +1507,21 @@ controller.deletarAtividades = async (atividadeIds, usuarioUuid, contexto) => {
           { atividadeIds, naoIniciada: SITUACAO_ATIVIDADE.NAO_INICIADA }
         )
 
+        // ZERO APAGADAS E RECUSA, e nao um 200 comemorando. O `DELETE` filtra
+        // pela situacao Nao iniciada: marcar tres linhas Finalizadas e mandar
+        // apagar respondia `Atividades nao iniciadas excluidas com sucesso` com
+        // `apagadas: 0`, e a pessoa voltava para a grade com as tres linhas no
+        // lugar e nada explicando por que. A irma `criarAtividades`, neste mesmo
+        // arquivo, ja lanca 400 quando nada foi criado -- a assimetria era
+        // esquecimento, e nao estilo.
+        if (apagadas.length === 0) {
+          throw new AppError(
+            'Nenhuma atividade foi apagada: só a atividade Não iniciada pode ser ' +
+              'apagada por esta rota, e nenhuma das informadas está nessa situação',
+            httpCode.BadRequest
+          )
+        }
+
         for (const atividade of apagadas) {
           await auditoriaCtrl.registrar(t, {
             tabela: TABELA_ATIVIDADE,
@@ -1371,7 +1533,13 @@ controller.deletarAtividades = async (atividadeIds, usuarioUuid, contexto) => {
           })
         }
 
-        return { apagadas: apagadas.length }
+        // A EXCLUSAO PARCIAL NOMEIA O QUE FICOU. Marcar cinco e apagar uma
+        // continua sendo sucesso, mas sumir com quatro escolhas em silencio nao
+        // e: a tela precisa poder dizer QUAIS nao sairam.
+        return {
+          apagadas: apagadas.length,
+          ignoradas: naoAlcancados(atividadeIds, apagadas.map(a => a.id))
+        }
       }),
     ERROS_ATIVIDADE
   )
@@ -1416,7 +1584,27 @@ controller.deletarAtividadesUnidadeTrabalho = async (
           })
         }
 
-        return { apagadas: apagadas.length }
+        // AS MESMAS DUAS REGRAS DA IRMA, e pelo mesmo motivo: o filtro por
+        // situacao pode nao alcancar nada, e `apagadas: 0` com mensagem de
+        // sucesso e a resposta que faz a pessoa achar que a tela e que quebrou.
+        // Aqui `ignoradas` lista UNIDADES DE TRABALHO, que e o que a rota
+        // recebe: as que nao tinham nenhuma atividade apagavel.
+        if (apagadas.length === 0) {
+          throw new AppError(
+            'Nenhuma atividade foi apagada: só a atividade Não iniciada ou Não ' +
+              'finalizada pode ser apagada por esta rota, e nenhuma das unidades ' +
+              'de trabalho informadas tem atividade nessa situação',
+            httpCode.BadRequest
+          )
+        }
+
+        return {
+          apagadas: apagadas.length,
+          ignoradas: naoAlcancados(
+            unidadeTrabalhoIds,
+            apagadas.map(a => a.unidade_trabalho_id)
+          )
+        }
       }),
     ERROS_ATIVIDADE
   )

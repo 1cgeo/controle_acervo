@@ -61,6 +61,35 @@ describe('POST /recebimentos', () => {
     expect(mockDb.conn.one).not.toHaveBeenCalled()
   })
 
+  // O DIA DO RECEBIMENTO ENTRA PELA PORTA, e e ele que recorta a 4.6 pelo MES
+  // da edicao. A coluna nasceu em 2026-08-11 e o Joi nao a conhecia, entao o
+  // validador ESTRITO do modulo recusava o campo com 400 e a tela nao tinha como
+  // informar o dia: toda linha nova nascia com o dia NULO, e a edicao de janeiro
+  // listava material recebido em julho.
+  test('aceita data_recebimento, e ela chega crua ao banco', async () => {
+    mockDb.conn.one.mockResolvedValueOnce({ id: 16, ...bodyValido })
+    const res = await request(app)
+      .post('/recebimentos')
+      .send({ ...bodyValido, data_recebimento: '2026-07-31' })
+
+    expect([200, 201]).toContain(res.status)
+    // CRUA, e nao um Date: `Joi.date().iso().raw()` preserva 'YYYY-MM-DD'. Sem
+    // o `.raw()` a coluna DATE guardaria 30/07 em UTC-3.
+    expect(mockDb.conn.one).toHaveBeenCalledWith(
+      expect.stringContaining('data_recebimento'),
+      expect.objectContaining({ dataRecebimento: '2026-07-31' })
+    )
+  })
+
+  test('data_recebimento fora do ISO vira 400, e nao 8 de janeiro', async () => {
+    const res = await request(app)
+      .post('/recebimentos')
+      .send({ ...bodyValido, data_recebimento: '01/08/2026' })
+
+    expect(res.status).toBe(400)
+    expect(mockDb.conn.one).not.toHaveBeenCalled()
+  })
+
   // A NE e obrigatoria: o recebimento nao existe solto.
   test('NE inexistente (FK 23503) vira 400 com mensagem, e nao 500', async () => {
     mockDb.conn.one.mockRejectedValueOnce({ code: '23503' })

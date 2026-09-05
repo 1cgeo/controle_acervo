@@ -312,11 +312,23 @@ function expiracaoDoToken(token) {
 
 /**
  * Guarda a autenticacao depois de um login bem-sucedido.
+ *
+ * O CACHE SAI AQUI TAMBEM, e nao so no `clearAuth`. Encerrar sessao e um fato,
+ * COMECAR outra e outro, e havia um caminho que passava so pelo segundo: quando
+ * o token vence pelo RELOGIO (e nao por um 401 do servidor), quem barra e o
+ * `authLoader`, que manda para '#/login' SEM limpar nada. A aba nao recarrega,
+ * entao o Map em memoria de `services/cache.js` atravessa a troca inteira: a
+ * pessoa seguinte que entrasse na mesma maquina recebia a lista da anterior --
+ * com TTL de 30 minutos nas tabelas de dominio --, sem uma unica chamada ao
+ * servidor. Sessao nova nasce com cache vazio, venha de onde vier.
+ *
  * @param {Object} data - { token, administrador, uuid, perfis, modulos, instituicao }
  * @param {string} username
  */
 export function saveAuth(data, username) {
   const expiry = expiracaoDoToken(data.token);
+
+  clearCache();
 
   localStorage.setItem(AUTH_KEYS.TOKEN, data.token);
   localStorage.setItem(AUTH_KEYS.EXPIRY, expiry.toISOString());

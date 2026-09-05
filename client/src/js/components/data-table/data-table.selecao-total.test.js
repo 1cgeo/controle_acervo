@@ -103,3 +103,55 @@ describe('data-table: selecionar todos contra selecionar a pagina', () => {
     expect(t.getSelected()).toHaveLength(5);
   });
 });
+
+// A CAIXA DO CABECALHO TEM TRES ESTADOS, e nao dois.
+//
+// Com parte da pagina escolhida ela desenhava VAZIA, que e o mesmo desenho de
+// "nada escolhido". O clique que a pessoa da esperando "marcar o resto" marca
+// a pagina inteira (certo), e o clique seguinte desmarca tudo -- inclusive o
+// que ela ja tinha escolhido, uma linha de cada vez, e que era o motivo de ela
+// estar ali. O `el()` ja tratava `indeterminate` como PROPRIEDADE; so nao
+// estava sendo usado.
+describe('data-table: a caixa do cabecalho quando so parte da pagina esta escolhida', () => {
+  const cabecalho = (t) => t.element.querySelector('thead input[type="checkbox"]');
+
+  test('parte escolhida: indeterminada, e nao vazia', () => {
+    const t = montar(linhas(3));
+
+    const primeira = t.element.querySelector('tbody input[type="checkbox"]');
+    primeira.checked = true;
+    primeira.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(t.getSelected()).toHaveLength(1);
+    expect(cabecalho(t).checked).toBe(false);
+    expect(cabecalho(t).indeterminate).toBe(true);
+  });
+
+  test('nada escolhido: vazia, e NAO indeterminada', () => {
+    const t = montar(linhas(3));
+
+    expect(cabecalho(t).checked).toBe(false);
+    expect(cabecalho(t).indeterminate).toBe(false);
+  });
+
+  test('pagina inteira escolhida: marcada, e NAO indeterminada', () => {
+    const t = montar(linhas(3));
+
+    cabecalho(t).checked = true;
+    cabecalho(t).dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(cabecalho(t).checked).toBe(true);
+    expect(cabecalho(t).indeterminate).toBe(false);
+  });
+
+  // A caixa fala da PAGINA. Com 132 linhas e `pageSize` 10, o `selectAll` marca
+  // as 132 e a pagina fica inteira: marcada, e nao indeterminada.
+  test('selectAll deixa a caixa da pagina marcada, sem meio-termo', () => {
+    const t = montar(linhas(132));
+
+    t.selectAll();
+
+    expect(cabecalho(t).checked).toBe(true);
+    expect(cabecalho(t).indeterminate).toBe(false);
+  });
+});

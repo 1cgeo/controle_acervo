@@ -407,7 +407,25 @@ function blocoRelacionamentos(versao, ctx) {
 
     // Com perfil de operador o tipo vira um `<select>`; sem ele continua sendo a
     // marca de leitura que sempre foi.
-    const marca = pode.operador
+    //
+    // O `<select>` SO NASCE SE HOUVER LISTA. `getTiposRelacionamento()` tem
+    // `catch` proprio de proposito (a ficha nao morre por causa do dominio), e
+    // quando ele falha a lista fica vazia: o combo nascia sem NENHUMA opcao, e o
+    // que a relacao e ("Insumo", "Conjunto") sumia da tela justamente para quem
+    // trabalha com ela. Quem so consulta continuava vendo o chip com o nome
+    // certo.
+    const opcoes = tiposRelacionamento || [];
+    const podeTrocar = pode.operador && opcoes.length > 0;
+    // O tipo GRAVADO entra na lista quando ele nao esta nela (codigo retirado do
+    // dominio). Sem isso o `<select>` caia na primeira opcao e a tela AFIRMAVA
+    // um tipo que nao e o do banco. Mesma regra do `montarOpcoesTipo` de
+    // `produto/versao-dialog.js`.
+    const codigos = opcoes.map(t => Number(t.code));
+    const gravado = Number(r.tipo_relacionamento_id);
+    const comGravado = (podeTrocar && Number.isFinite(gravado) && !codigos.includes(gravado))
+      ? [...opcoes, { code: gravado, nome: r.tipo_relacionamento || `Tipo ${gravado}` }]
+      : opcoes;
+    const marca = podeTrocar
       ? el('select', {
         className: 'ficha-relacionamentos__tipo',
         'aria-label': 'Tipo da relação',
@@ -416,10 +434,10 @@ function blocoRelacionamentos(versao, ctx) {
           trocarTipoRelacao(r, e.target.value, e.target, recarregar);
         },
         onClick: (e) => e.stopPropagation(),
-      }, (tiposRelacionamento || []).map(t => el('option', {
+      }, comGravado.map(t => el('option', {
         value: String(t.code),
         textContent: t.nome,
-        selected: Number(t.code) === Number(r.tipo_relacionamento_id) ? 'selected' : null,
+        selected: Number(t.code) === gravado ? 'selected' : null,
       })))
       : chip(r.tipo_relacionamento || nomeTipo(r.tipo_relacionamento_id) || 'Relação', 'secondary');
 
@@ -591,6 +609,11 @@ function blocoVersao(v, maisRecente, registrarUrl, ctx) {
           versaoId: Number(v.versao_id ?? v.id),
           rotuloVersao: v.versao,
           produtoNome: ficha().nome,
+          // O que a versao JA tem. Sem isto, o assistente so comparava a lista
+          // nova entre si e liberava o envio de um `.tif` para uma versao que ja
+          // tem `.tif`: a recusa do servidor chegava depois de os bytes
+          // comecarem a subir, e o envio e tudo ou nada.
+          extensoesExistentes: arquivos.map(a => a.extensao).filter(Boolean),
           onConcluido: recarregar,
         }),
       }, [svgIcon(ICONS.add, 14), arquivos.length ? 'Mais arquivos' : 'Enviar arquivo'])
@@ -1004,6 +1027,14 @@ export function abrirProdutoDialog(produtos, indiceInicial = 0, { onAlterado = n
   }
 
   function pintarFicha(d) {
+    // Toda repintura refaz os paineis de miniatura, e cada um pede a imagem de
+    // novo e registra uma URL de objeto nova. Sem soltar as anteriores AQUI, as
+    // antigas ficavam presas ate o fechamento do modal: uma por versao a cada
+    // gravacao feita de dentro da ficha (`recarregar`) e outra rodada inteira
+    // quando os tipos de relacao chegam. Trocar de produto ja soltava; repintar
+    // o mesmo, nao.
+    soltarMiniaturas();
+
     const versoes = d.versoes || [];
 
     const escala = d.denominador_escala_especial

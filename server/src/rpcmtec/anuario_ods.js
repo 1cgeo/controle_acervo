@@ -225,7 +225,7 @@ const gerarAnuarioOds = (anuario, colunas, linhas) => {
   if (!tituloDaSemente) {
     throw new AppError(
       'A planilha-semente do Anuário não tem a linha de título esperada',
-      httpCode.InternalServerError
+      httpCode.InternalError
     )
   }
   const comTitulo = conteudo.replace(
@@ -260,13 +260,13 @@ const gerarAnuarioOds = (anuario, colunas, linhas) => {
     throw new AppError(
       'A planilha-semente do Anuário não tem todas as linhas esperadas: ' +
       faltantes.join(', '),
-      httpCode.InternalServerError
+      httpCode.InternalError
     )
   }
   if (escritas !== linhas.length) {
     throw new AppError(
       `O Anuário escreveu ${escritas} linhas para ${linhas.length} esperadas`,
-      httpCode.InternalServerError
+      httpCode.InternalError
     )
   }
 

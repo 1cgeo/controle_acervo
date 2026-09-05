@@ -10,6 +10,26 @@ vi.mock('@services/producao-service.js', () => ({
   reportarFinalizacaoIncorreta: vi.fn(),
 }));
 
+// A MONTAGEM DO DIALOGO PODE ESTOURAR, e o caso "a trava tem saida" precisa
+// encenar isso. O `openModal` real continua sendo o de sempre; a bandeira faz
+// UMA chamada falhar, como faria um campo montado a partir de um catalogo
+// malformado.
+const modalCtl = vi.hoisted(() => ({ estourarUmaVez: false }));
+
+vi.mock('@components/modal/modal-base.js', async () => {
+  const real = await vi.importActual('@components/modal/modal-base.js');
+  return {
+    ...real,
+    openModal: (...args) => {
+      if (modalCtl.estourarUmaVez) {
+        modalCtl.estourarUmaVez = false;
+        throw new Error('campo do dialogo malformado');
+      }
+      return real.openModal(...args);
+    },
+  };
+});
+
 vi.mock('@utils/toast.js', () => ({
   showSuccess: vi.fn(),
   showError: vi.fn(),
@@ -81,6 +101,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  modalCtl.estourarUmaVez = false;
   document.querySelectorAll('.modal-overlay').forEach(no => no.remove());
 });
 
@@ -363,7 +384,11 @@ describe('reportar problema', () => {
     cleanup();
   });
 
-  test('sem geometria no pacote, o apontamento nao sai e a tela diz por que', async () => {
+  // O BOTAO NEM E OFERECIDO, e nao apenas recusa por dentro. Um "Enviar" com a
+  // cara de botao ativo que nao faz nada -- nem toast, nem erro de campo, nem
+  // requisicao -- faz a pessoa clicar de novo e de novo; o unico sinal era o
+  // paragrafo do topo, que pode ter rolado para fora da vista.
+  test('sem geometria no pacote, o "Enviar" nao existe e a tela diz por que', async () => {
     servico.verificarAtividade.mockResolvedValue(pacote({ geom: null }));
 
     const container = document.createElement('div');
@@ -373,13 +398,108 @@ describe('reportar problema', () => {
     await flush();
 
     expect(textoDoModal()).toContain('A geometria da unidade de trabalho não veio');
+    expect(botaoDoModal('Enviar')).toBeUndefined();
+    // E "Cancelar" fica, senao o dialogo so se fecharia pelo X.
+    expect(botaoDoModal('Cancelar')).toBeDefined();
+    expect(servico.reportarProblema).not.toHaveBeenCalled();
 
-    document.querySelector('.modal select').value = '1';
-    document.querySelector('.modal textarea').value = 'qualquer descrição';
+    cleanup();
+  });
+
+  // O GEMEO PELO OUTRO LADO: a geometria veio, mas `/tipo_problema` caiu e o
+  // seletor esta vazio. Ate aqui isso so aparecia no texto do aviso.
+  test('sem o catalogo de tipos, o "Enviar" tambem nao existe', async () => {
+    servico.verificarAtividade.mockResolvedValue(pacote());
+    servico.getTiposProblema.mockRejectedValue(new Error('sem catálogo'));
+
+    const container = document.createElement('div');
+    const cleanup = await renderAtividade(container);
+
+    acaoDaFicha(container, 'Reportar problema').click();
+    await flush();
+
+    expect(textoDoModal()).toContain('O catálogo de tipos de problema não carregou');
+    expect(botaoDoModal('Enviar')).toBeUndefined();
+    expect(botaoDoModal('Cancelar')).toBeDefined();
+
+    cleanup();
+  });
+});
+
+describe('um dialogo por vez', () => {
+  // O `openModal` EMPILHA de proposito (no acervo a ficha abre modal sobre
+  // modal), e nesta tela isso vira armadilha: dois cliques no mesmo botao abrem
+  // dois dialogos identicos, um sobre o outro. No "Finalizei sem querer" os DOIS
+  // envios dao certo -- o servidor so procura a ultima atividade finalizada e
+  // nao recusa um segundo apontamento sobre ela --, e ficam duas linhas em
+  // `producao.problema_atividade` dizendo a mesma coisa.
+  test('dois cliques no mesmo botao abrem UM dialogo, e gravam UMA vez', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderAtividade(container);
+
+    const botao = Array.from(container.querySelectorAll('.page__actions .btn'))
+      .find(b => b.textContent.includes('Finalizei sem querer'));
+    botao.click();
+    botao.click();
+    await flush();
+
+    expect(document.querySelectorAll('.modal-overlay')).toHaveLength(1);
+
+    document.querySelector('.modal textarea').value = 'Fechei antes de rodar a validação';
     botaoDoModal('Enviar').click();
     await flush();
 
-    expect(servico.reportarProblema).not.toHaveBeenCalled();
+    expect(servico.reportarFinalizacaoIncorreta).toHaveBeenCalledTimes(1);
+    // E o dialogo nao ficou trancado: fechado o primeiro, o botao volta a abrir.
+    expect(document.querySelectorAll('.modal-overlay')).toHaveLength(0);
+    botao.click();
+    await flush();
+    expect(document.querySelectorAll('.modal-overlay')).toHaveLength(1);
+
+    cleanup();
+  });
+
+  // A TRAVA E UMA SO PARA OS TRES BOTOES, e ela so se solta pelo `onClose` do
+  // modal. Se `abrir` estoura ANTES de o modal existir, a bandeira ficaria presa
+  // em `true` e a tela inteira pararia de abrir dialogo, em silencio, ate a
+  // pessoa recarregar a pagina -- numa tela cuja unica razao de existir e fechar
+  // atividade quando o QGIS nao esta a mao.
+  test('a montagem que estoura nao deixa a trava presa', async () => {
+    const container = document.createElement('div');
+    const cleanup = await renderAtividade(container);
+
+    const botao = Array.from(container.querySelectorAll('.page__actions .btn'))
+      .find(b => b.textContent.includes('Finalizei sem querer'));
+
+    // O erro SOBE, e e o que se quer: o que nao pode e trancar a porta com ele.
+    // Aqui ele e marcado como tratado para nao virar "unhandled error" do jsdom.
+    modalCtl.estourarUmaVez = true;
+    window.addEventListener('error', e => e.preventDefault(), { once: true });
+    botao.click();
+    await flush();
+    expect(document.querySelectorAll('.modal-overlay')).toHaveLength(0);
+
+    // O SEGUNDO CLIQUE AINDA ABRE.
+    botao.click();
+    await flush();
+    expect(document.querySelectorAll('.modal-overlay')).toHaveLength(1);
+
+    cleanup();
+  });
+
+  test('cancelar destranca o botao', async () => {
+    servico.verificarAtividade.mockResolvedValue(pacote());
+    const container = document.createElement('div');
+    const cleanup = await renderAtividade(container);
+
+    acaoDaFicha(container, 'Finalizar atividade').click();
+    await flush();
+    botaoDoModal('Cancelar').click();
+    await flush();
+
+    acaoDaFicha(container, 'Finalizar atividade').click();
+    await flush();
+    expect(document.querySelectorAll('.modal-overlay')).toHaveLength(1);
 
     cleanup();
   });

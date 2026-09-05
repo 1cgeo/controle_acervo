@@ -183,18 +183,39 @@ describe('Schemas de arquivo', () => {
   // O session_uuid e a chave da sessao de upload aberta. Texto que nao e uuid
   // viraria busca que nunca casa: o cliente receberia 404 ("sessao nao existe")
   // onde o certo e 400 ("voce mandou lixo").
-  describe('confirmUpload e cancelUpload', () => {
-    it.each(['confirmUpload', 'cancelUpload'])('%s aceita uuid', (rota) => {
+  describe('confirmUpload, cancelUpload e renovarUpload', () => {
+    const AS_TRES = ['confirmUpload', 'cancelUpload', 'renovarUpload']
+
+    it.each(AS_TRES)('%s aceita uuid', (rota) => {
       aceita(arquivoSchema[rota].validate({
         session_uuid: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'
       }))
     })
 
-    it.each(['confirmUpload', 'cancelUpload'])('%s recusa o que nao e uuid', (rota) => {
+    it.each(AS_TRES)('%s recusa o que nao e uuid', (rota) => {
       recusaPor(
         arquivoSchema[rota].validate({ session_uuid: 'not-uuid' }),
         'session_uuid',
         'string.guid'
+      )
+    })
+
+    it.each(AS_TRES)('%s exige o session_uuid', (rota) => {
+      recusaPor(arquivoSchema[rota].validate({}), 'session_uuid', 'any.required')
+    })
+
+    // O PRAZO NOVO NAO VEM DO CLIENTE. Sao sempre as mesmas 24 horas que o
+    // `prepare-upload` concede, contadas de agora, e o UPDATE as escreve com o
+    // `NOW()` do banco. Aceitar um numero de horas aqui transformaria o prazo em
+    // sugestao, e a sessao poderia reservar destino por um mes.
+    it('renovarUpload nao aceita prazo declarado pelo cliente', () => {
+      recusaPor(
+        arquivoSchema.renovarUpload.validate({
+          session_uuid: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+          horas: 720
+        }),
+        'horas',
+        'object.unknown'
       )
     })
   })
@@ -437,6 +458,95 @@ describe('Schemas de arquivo', () => {
     it('a data de versao volta como a string original', () => {
       const value = aceita(arquivoSchema.uploadWebVersao.validate(versao(arquivoWeb)))
       expect(value.versao.data_edicao).toBe('2026-08-01')
+    })
+
+    // O VINCULO COM O PIT, e este e um CONTROLE NEGATIVO com custo medido.
+    //
+    // A versao REGULAR nasce COM arquivo, e o unico caminho para cria-la pela
+    // tela e este envio. O `versao-dialog` ja oferece "Meta do PIT" e "Mes
+    // previsto" e os manda no corpo; enquanto as chaves nao estavam declaradas
+    // aqui, o `stripUnknown` do `planoDaRequisicao` as descartava em SILENCIO:
+    // 201, folha gravada, e o vinculo com o plano anual perdido. E o mesmo
+    // defeito que o `vinculoComOPit` corrigiu no caminho do plugin.
+    it('aceita meta_pit_id e data_prevista na versao', () => {
+      const corpo = versao(arquivoWeb)
+      corpo.versao.meta_pit_id = 9
+      corpo.versao.data_prevista = '2026-09-01'
+
+      const value = aceita(arquivoSchema.uploadWebVersao.validate(corpo))
+      expect(value.versao.meta_pit_id).toBe(9)
+      // Dia de calendario: volta como a string original, sem virar instante.
+      expect(value.versao.data_prevista).toBe('2026-09-01')
+    })
+
+    it('aceita meta_pit_id e data_prevista no produto novo', () => {
+      const corpo = produto(arquivoWeb)
+      corpo.versao.meta_pit_id = 9
+      corpo.versao.data_prevista = '2026-09-01'
+
+      const value = aceita(arquivoSchema.uploadWebProduto.validate(corpo))
+      expect(value.versao.meta_pit_id).toBe(9)
+      expect(value.versao.data_prevista).toBe('2026-09-01')
+    })
+
+    // O EXTRA-PIT, pela MESMA porta. O formulario oferece "Demanda Extra-PIT"
+    // para qualquer tipo de versao, inclusive a Regular -- que e a que nasce com
+    // arquivo e so se cria por este envio. Enquanto a chave nao era declarada, o
+    // `stripUnknown` a jogava fora: 201, folha gravada, e a demanda perdida.
+    it('aceita demanda_extra_id na versao', () => {
+      const corpo = versao(arquivoWeb)
+      corpo.versao.demanda_extra_id = 42
+
+      const value = aceita(arquivoSchema.uploadWebVersao.validate(corpo))
+      expect(value.versao.demanda_extra_id).toBe(42)
+    })
+
+    it('aceita demanda_extra_id no produto novo', () => {
+      const corpo = produto(arquivoWeb)
+      corpo.versao.demanda_extra_id = 42
+
+      const value = aceita(arquivoSchema.uploadWebProduto.validate(corpo))
+      expect(value.versao.demanda_extra_id).toBe(42)
+    })
+
+    // O MOTIVO da recusa, e nao so que houve recusa: a exclusao espelha o CHECK
+    // `versao_plano_ou_excecao`, que diz que a versao cumpre uma meta do PIT OU
+    // atende uma demanda Extra-PIT, nunca as duas.
+    it('recusa meta_pit_id e demanda_extra_id preenchidos ao mesmo tempo', () => {
+      const corpo = versao(arquivoWeb)
+      corpo.versao.meta_pit_id = 9
+      corpo.versao.demanda_extra_id = 42
+
+      recusaPor(
+        arquivoSchema.uploadWebVersao.validate(corpo),
+        ['versao', 'demanda_extra_id'],
+        'any.only'
+      )
+    })
+
+    // CONTROLE POSITIVO, e o caso COMUM: o formulario manda as duas chaves
+    // SEMPRE, inclusive nulas -- e assim que se desliga a versao de uma meta
+    // escolhida por engano. Um `.oxor` do Joi conta a chave presente e `null`
+    // conta como presente: ele recusaria com 400 todo envio regular pela web.
+    it('aceita meta_pit_id e demanda_extra_id nulos ao mesmo tempo', () => {
+      const corpo = versao(arquivoWeb)
+      corpo.versao.meta_pit_id = null
+      corpo.versao.demanda_extra_id = null
+
+      const value = aceita(arquivoSchema.uploadWebVersao.validate(corpo))
+      expect(value.versao.meta_pit_id).toBeNull()
+      expect(value.versao.demanda_extra_id).toBeNull()
+    })
+
+    // Desligar da meta continua sendo mandar null, como nas rotas irmas.
+    it('aceita null nos dois, que e como se desliga do plano', () => {
+      const corpo = versao(arquivoWeb)
+      corpo.versao.meta_pit_id = null
+      corpo.versao.data_prevista = null
+
+      const value = aceita(arquivoSchema.uploadWebVersao.validate(corpo))
+      expect(value.versao.meta_pit_id).toBeNull()
+      expect(value.versao.data_prevista).toBeNull()
     })
   })
 })

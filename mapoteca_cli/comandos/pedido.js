@@ -65,20 +65,29 @@ async function itens (args, cfg) {
   const pedido = r.dados || {}
   const produtos = Array.isArray(pedido.produtos) ? pedido.produtos : []
 
-  const out = saida.lista(produtos, opcoesSaida(args.flags, obter('item').colunas))
+  const opcoes = opcoesSaida(args.flags, obter('item').colunas)
+  const out = saida.lista(produtos, opcoes)
 
-  const cabecalho = [
+  const cabecalho =
     `pedido ${pedido.id}  ${pedido.cliente_nome || '(sem cliente)'}  ` +
-    `situacao: ${pedido.situacao_pedido_nome || '?'}  prazo: ${esquema.soData(pedido.prazo) || '-'}`,
-    ''
-  ].join('\n')
+    `situacao: ${pedido.situacao_pedido_nome || '?'}  prazo: ${esquema.soData(pedido.prazo) || '-'}`
 
   const imp = pedido.impressao || {}
   const rodape = produtos.length
-    ? `\nimpressao: ${imp.itens_concluidos || 0} de ${imp.total_itens || 0} itens concluidos`
+    ? `impressao: ${imp.itens_concluidos || 0} de ${imp.total_itens || 0} itens concluidos`
     : ''
 
-  return { texto: cabecalho + out.texto + rodape, avisos: out.avisos }
+  // Com `--json` o stdout e so o JSON. O cabecalho vinha ANTES do array e o
+  // rodape depois dele, e os dois juntos faziam `JSON.parse` recusar a saida da
+  // rota que mais se encadeia (ler os itens de um pedido para depois move-los).
+  // Eles descem para os AVISOS, que ja saem em stderr.
+  if (opcoes.formato === 'json') {
+    return { texto: out.texto, avisos: [cabecalho, ...(rodape ? [rodape] : []), ...out.avisos] }
+  }
+  return {
+    texto: [cabecalho, '', out.texto].join('\n') + (rodape ? `\n${rodape}` : ''),
+    avisos: out.avisos
+  }
 }
 
 // ---------------------------------------------------------------------------

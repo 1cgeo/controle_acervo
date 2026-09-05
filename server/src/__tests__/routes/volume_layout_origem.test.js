@@ -11,7 +11,7 @@
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { cleanTestData } = require('../helpers/db')
-const { generateAdminToken } = require('../helpers/auth')
+const { generateAdminToken, generateUserToken } = require('../helpers/auth')
 
 let app
 
@@ -119,5 +119,33 @@ describe('acervo.volume_armazenamento.layout_origem', () => {
     ])
 
     expect((await acharPorCaminho('/data/convenio-clear')).layout_origem).toBe(false)
+  })
+})
+
+// A REGUA DA CASA: `consulta` LE as telas do modulo, `operador` LANCA. As duas
+// listas de volume cobravam `operador`, e quem so consulta tomava 403 ao abrir a
+// tela. O `projeto_route.js`, do mesmo modulo, ja usa `consulta` nos dois GET
+// equivalentes.
+describe('as leituras de volume sao de CONSULTA', () => {
+  const comConsulta = (caminho) =>
+    request(app).get(caminho).set('Authorization', generateUserToken())
+
+  it('perfil de consulta le a lista de volumes', async () => {
+    expect((await comConsulta('/api/volumes/volume_armazenamento')).status).toBe(200)
+  })
+
+  it('perfil de consulta le a lista de volume_tipo_produto', async () => {
+    expect((await comConsulta('/api/volumes/volume_tipo_produto')).status).toBe(200)
+  })
+
+  // CONTROLE NEGATIVO: a ESCRITA continua acima da consulta. Sem ele, baixar as
+  // duas leituras poderia arrastar as escritas junto sem ninguem notar.
+  it('perfil de consulta NAO cria volume', async () => {
+    const res = await request(app)
+      .post('/api/volumes/volume_armazenamento')
+      .set('Authorization', generateUserToken())
+      .send({ volume_armazenamento: [{ nome: 'X', volume: '/data/x', capacidade_gb: 1 }] })
+
+    expect(res.status).toBe(403)
   })
 })

@@ -48,8 +48,11 @@ async function pendentes (args, cfg) {
     linhas = linhas.filter(l => l.dias_ate_prazo !== null && l.dias_ate_prazo <= dias)
   }
 
+  // O FORMATO resolvido, e nao a flag: `--formato json` chega no mesmo lugar
+  // que `--json`, e o rodape colado quebraria o parse dos dois jeitos.
+  const formato = flags.json ? 'json' : (flags.formato || 'tsv')
   const out = saida.lista(linhas, {
-    formato: flags.json ? 'json' : (flags.formato || 'tsv'),
+    formato,
     campos: argsLib.lista(flags.campos),
     padrao: [
       'id', 'data_pedido', 'prazo', 'dias_ate_prazo', 'atrasado',
@@ -59,17 +62,20 @@ async function pendentes (args, cfg) {
 
   const atrasados = linhas.filter(l => l.atrasado === true).length
   const semPrazo = linhas.filter(l => l.prazo === null).length
-  const rodape = `\n${linhas.length} pedido(s) em aberto; ${atrasados} atrasado(s), ` +
+  const resumo = `${linhas.length} pedido(s) em aberto; ${atrasados} atrasado(s), ` +
     `${semPrazo} sem prazo registrado.`
 
-  return {
-    texto: out.texto + rodape,
-    avisos: [
-      ...out.avisos,
-      'Esta visao traz apenas pedidos de cliente MILITAR e exclui concluidos e cancelados ' +
-      '(e o recorte que o servidor faz). Pedido civil ou de LAI nao aparece aqui.'
-    ]
-  }
+  const avisos = [
+    ...out.avisos,
+    'Esta visao traz apenas pedidos de cliente MILITAR e exclui concluidos e cancelados ' +
+    '(e o recorte que o servidor faz). Pedido civil ou de LAI nao aparece aqui.'
+  ]
+
+  // Com `--json` o stdout e so o JSON, e o resumo desce para os AVISOS, que ja
+  // saem em stderr. Colado no fim do array ele quebrava o `JSON.parse` de quem
+  // encadeia, que e exatamente para quem o `--json` existe.
+  if (formato === 'json') return { texto: out.texto, avisos: [resumo, ...avisos] }
+  return { texto: `${out.texto}\n${resumo}`, avisos }
 }
 
 // ---------------------------------------------------------------------------

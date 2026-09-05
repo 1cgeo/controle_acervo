@@ -61,17 +61,29 @@ export function agruparPitPorProjeto(linhas) {
 /**
  * O mesmo agrupamento para o detalhe por subfase, que não tem meta nem projeto.
  *
- * A CHAVE É O PAR (lote, subfase), e não a subfase sozinha: o mesmo nome de
- * subfase existe em lotes diferentes, e juntá-los somaria trabalho de lotes que
- * não se falam.
+ * A CHAVE É O PAR DE IDs (`lote_id`, `subfase_id`), E NUNCA O PAR DE RÓTULOS.
+ * Nenhum dos dois nomes é único: `acervo.lote` só é UNIQUE em `(projeto_id,
+ * pit)`, então dois projetos têm lotes homônimos; e `producao.subfase` é UNIQUE
+ * em `(nome, fase_id)`, então "Edição" existe na linha da Carta Topográfica e na
+ * do CDGV. Agrupar por rótulo somaria numa linha só o trabalho de lotes que não
+ * se falam, e a seção "Por lote" logo acima, que agrupa por `lote_id`, mostraria
+ * os mesmos números repartidos: as duas metades da tela discordariam sem que
+ * nada acusasse. É a mesma correção que `linhaDoTempo` já recebeu no servidor
+ * ("A SÉRIE É A CHAVE, E NUNCA O RÓTULO").
+ *
+ * `lote` e `subfase` continuam vindo na resposta e são o que a tabela escreve:
+ * eles são RÓTULOS, e o que sai da chave é só o papel de identificador que
+ * nunca foi deles.
  */
 export function agruparPitPorSubfase(linhas) {
   const mapa = new Map();
 
   for (const linha of linhas || []) {
-    const chave = `${linha.lote}\u0000${linha.subfase}`;
+    const chave = `${linha.lote_id}\u0000${linha.subfase_id}`;
     if (!mapa.has(chave)) {
       mapa.set(chave, {
+        lote_id: linha.lote_id,
+        subfase_id: linha.subfase_id,
         lote: linha.lote,
         subfase: linha.subfase,
         meses: new Array(12).fill(null),
@@ -247,6 +259,13 @@ export function renderPitProducao(container) {
   const vazio = (texto) => el('p', { className: 'pit-producao__vazio', textContent: texto });
 
   // --- Cargas ---------------------------------------------------------------
+  //
+  // O ANO PEDIDO É LIDO ANTES DO `await` E CONFERIDO DEPOIS. As duas seções são
+  // consultas pesadas de anos inteiros, e trocar o ano duas vezes seguidas no
+  // filtro dispara duas cargas: se a do primeiro ano chegar depois, ela pinta a
+  // grade DELA sob um filtro que já diz outro ano, e nada na tabela repete o ano
+  // para desmentir. A resposta que não é mais a pedida é DESCARTADA, inteira --
+  // inclusive no `catch`, senão o erro de um ano some a grade do outro.
 
   async function carregarPorLote() {
     const ano = filtroAno.getAno();
@@ -254,7 +273,7 @@ export function renderPitProducao(container) {
     areaLote.appendChild(vazio('Carregando...'));
     try {
       const linhas = await getPitProducao(ano);
-      if (disposed) return;
+      if (disposed || ano !== filtroAno.getAno()) return;
       const grupos = agruparPitPorProjeto(linhas);
       clearChildren(areaLote);
       if (!grupos.length) {
@@ -266,7 +285,7 @@ export function renderPitProducao(container) {
       }
       for (const grupo of grupos) areaLote.appendChild(tabelaDoProjeto(grupo));
     } catch (err) {
-      if (disposed) return;
+      if (disposed || ano !== filtroAno.getAno()) return;
       clearChildren(areaLote);
       areaLote.appendChild(estadoErro(err, carregarPorLote));
     }
@@ -278,7 +297,7 @@ export function renderPitProducao(container) {
     areaSubfase.appendChild(vazio('Carregando...'));
     try {
       const linhas = await getPitSubfaseProducao(ano);
-      if (disposed) return;
+      if (disposed || ano !== filtroAno.getAno()) return;
       const agrupadas = agruparPitPorSubfase(linhas);
       clearChildren(areaSubfase);
       if (!agrupadas.length) {
@@ -289,7 +308,7 @@ export function renderPitProducao(container) {
       }
       areaSubfase.appendChild(tabelaDeSubfases(agrupadas));
     } catch (err) {
-      if (disposed) return;
+      if (disposed || ano !== filtroAno.getAno()) return;
       clearChildren(areaSubfase);
       areaSubfase.appendChild(estadoErro(err, carregarPorSubfase));
     }

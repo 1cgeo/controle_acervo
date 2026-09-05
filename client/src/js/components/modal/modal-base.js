@@ -26,6 +26,27 @@ const FOCUSABLE_SELECTOR =
 const pilha = [];
 
 /**
+ * Fecha TODA a pilha. E do router, na troca de rota.
+ *
+ * O overlay mora em `document.body`, e nao em `#app`: nem a limpeza da pagina
+ * (`#currentCleanup`) nem o `clearLayout()` o alcancavam. Um modal aberto
+ * sobrevivia a navegacao e ficava por cima da tela seguinte, com a armadilha de
+ * foco ativa. O pior caminho e a sessao vencendo com o modal aberto: o 401 leva
+ * ao `#/login`, o modal continua na frente e o Tab nao sai de dentro dele, entao
+ * nao ha como digitar o usuario nem clicar em "Sair". Sobrava o F5.
+ *
+ * NAO passa pela guarda de descarte (`podeFechar`), de proposito: a navegacao ja
+ * aconteceu, e perguntar "descartar?" aqui travaria a fila do router esperando
+ * uma resposta sobre uma tela que ja nao esta mais no ar.
+ */
+export function fecharTodosOsModais() {
+  // Copia: `close()` tira o dialogo da pilha durante a iteracao.
+  for (const dialog of [...pilha]) {
+    if (typeof dialog.__fechar === 'function') dialog.__fechar();
+  }
+}
+
+/**
  * Open an accessible modal dialog (role="dialog", ESC closes, focus trap).
  *
  * OCUPADO: o modal que esta GRAVANDO nao se fecha.
@@ -239,6 +260,8 @@ export function openModal({
   }
 
   document.addEventListener('keydown', onKeyDown, true);
+  // Porta de saida para o `fecharTodosOsModais`, que so conhece a pilha.
+  dialog.__fechar = close;
   pilha.push(dialog);
   document.body.appendChild(overlay);
 

@@ -94,15 +94,37 @@ const normalizar = (v) => String(v ?? '')
  * parou quando a edição começou" -- e essa leitura some quando trinta subfases
  * de seis lotes ficam empilhadas numa lista só.
  *
+ * OS DOIS FILTROS VIVEM NA URL, e não em variáveis desta função. Sair da tela
+ * para conferir outra coisa e voltar devolvia o lote em "Todos" e a busca em
+ * branco, e sem nada na barra de endereço também não havia como mandar o
+ * recorte para outra pessoa. A escrita é por `history.replaceState`: trocar o
+ * hash faria o roteador remontar a tela a cada tecla digitada. O que vale o
+ * padrão não entra na query, então a tela pelada continua sendo
+ * '#/producao/atividade_subfase'.
+ *
  * @param {HTMLElement} container
+ * @param {{params?:Object, query?:URLSearchParams}} [ctx]
  * @returns {Function} cleanup
  */
-export async function renderAtividadeSubfase(container) {
+export async function renderAtividadeSubfase(container, ctx = {}) {
   let disposed = false;
 
+  const consulta = (ctx && ctx.query) || new URLSearchParams();
+
   let series = [];
-  const filtros = { lote: null, busca: '' };
+  const filtros = {
+    lote: consulta.get('lote') || null,
+    busca: consulta.get('busca') || '',
+  };
   let debounce = null;
+
+  function sincronizarUrl() {
+    const params = new URLSearchParams();
+    if (filtros.lote) params.set('lote', String(filtros.lote));
+    if (filtros.busca) params.set('busca', filtros.busca);
+    const texto = params.toString();
+    history.replaceState(null, '', `#/producao/atividade_subfase${texto ? `?${texto}` : ''}`);
+  }
 
   const loteFilter = createSelectField({
     label: 'Lote',
@@ -115,6 +137,7 @@ export async function renderAtividadeSubfase(container) {
   const buscaFilter = createTextField({
     label: 'Buscar subfase',
     placeholder: 'Nome da subfase',
+    value: filtros.busca,
     onInput: (v) => {
       filtros.busca = v;
       if (debounce) clearTimeout(debounce);
@@ -122,11 +145,11 @@ export async function renderAtividadeSubfase(container) {
     },
   });
 
-  const legenda = el('div', { className: 'linha-tempo__legenda' }, [
-    el('span', { className: 'linha-tempo__amostra' }),
+  const legenda = el('div', { className: 'tempo-subfase__legenda' }, [
+    el('span', { className: 'tempo-subfase__amostra' }),
     el('span', { textContent: 'dias com atividade aberta na subfase' }),
     el('span', {
-      className: 'linha-tempo__legenda-nota',
+      className: 'tempo-subfase__legenda-nota',
       textContent: 'O período é o ano corrente, do dia 1º de janeiro até hoje.',
     }),
   ]);
@@ -206,7 +229,7 @@ export async function renderAtividadeSubfase(container) {
         const ultimoDia = new Date(f.fimExclusivo.getTime() - DIA_MS);
         const dias = Math.max(1, Math.round((f.fimExclusivo - f.inicio) / DIA_MS));
         return el('span', {
-          className: 'linha-tempo__barra',
+          className: 'tempo-subfase__barra',
           style: {
             left: `${Math.max(0, esquerda)}%`,
             // Faixa de um dia num ano inteiro dá menos de meio por cento, e
@@ -219,13 +242,13 @@ export async function renderAtividadeSubfase(container) {
         });
       });
 
-    return el('div', { className: 'linha-tempo__linha' }, [
+    return el('div', { className: 'tempo-subfase__linha' }, [
       el('div', {
-        className: 'linha-tempo__rotulo',
+        className: 'tempo-subfase__rotulo',
         textContent: rotulo,
         title: rotulo,
       }),
-      el('div', { className: 'linha-tempo__trilho' }, barras),
+      el('div', { className: 'tempo-subfase__trilho' }, barras),
     ]);
   }
 
@@ -237,13 +260,13 @@ export async function renderAtividadeSubfase(container) {
       if (vistos.has(i.subfase)) repetidos.add(i.subfase);
       vistos.add(i.subfase);
     }
-    return el('section', { className: 'linha-tempo__quadro' }, [
-      el('h2', { className: 'linha-tempo__lote', textContent: lote }),
-      el('div', { className: 'linha-tempo__eixo' }, [
-        el('div', { className: 'linha-tempo__rotulo' }),
-        el('div', { className: 'linha-tempo__trilho linha-tempo__trilho--eixo' },
+    return el('section', { className: 'tempo-subfase__quadro' }, [
+      el('h2', { className: 'tempo-subfase__lote', textContent: lote }),
+      el('div', { className: 'tempo-subfase__eixo' }, [
+        el('div', { className: 'tempo-subfase__rotulo' }),
+        el('div', { className: 'tempo-subfase__trilho tempo-subfase__trilho--eixo' },
           marcas.map(m => el('span', {
-            className: 'linha-tempo__marca',
+            className: 'tempo-subfase__marca',
             style: { left: `${m.posicao}%` },
             textContent: m.rotulo,
           }))),
@@ -263,12 +286,13 @@ export async function renderAtividadeSubfase(container) {
   };
 
   function desenhar() {
+    sincronizarUrl();
     clearChildren(area);
 
     const visiveis = series.filter(passaNoFiltro).filter(i => i.__faixas.length);
     if (!visiveis.length) {
       area.appendChild(el('p', {
-        className: 'linha-tempo__vazio',
+        className: 'tempo-subfase__vazio',
         textContent: series.length
           ? 'Nenhuma subfase para estes filtros.'
           : 'Nenhuma atividade lançada no ano corrente.',
@@ -282,7 +306,7 @@ export async function renderAtividadeSubfase(container) {
     const { min, max } = dominio(visiveis);
     if (!min || !max || max <= min) {
       area.appendChild(el('p', {
-        className: 'linha-tempo__vazio',
+        className: 'tempo-subfase__vazio',
         textContent: 'As faixas de atividade não formam um período desenhável.',
       }));
       return;
@@ -314,7 +338,7 @@ export async function renderAtividadeSubfase(container) {
 
   async function carregar() {
     clearChildren(area);
-    area.appendChild(el('p', { className: 'linha-tempo__vazio', textContent: 'Carregando…' }));
+    area.appendChild(el('p', { className: 'tempo-subfase__vazio', textContent: 'Carregando…' }));
     try {
       const dados = await getAtividadeSubfase();
       if (disposed) return;
@@ -325,9 +349,16 @@ export async function renderAtividadeSubfase(container) {
       for (const s of series) {
         if (s.lote_id != null) lotes.set(String(s.lote_id), s.lote);
       }
+      // O LOTE DA URL QUE NÃO EXISTE NOS DADOS CAI FORA: um `?lote=` de um
+      // recorte que acabou deixaria a tela vazia com o seletor dizendo "Todos".
+      if (filtros.lote !== null && !lotes.has(String(filtros.lote))) filtros.lote = null;
+
       loteFilter.setOptions([...lotes.entries()]
         .sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'pt-BR'))
         .map(([value, label]) => ({ value, label })));
+      // DEPOIS do `setOptions`, que guarda a seleção que o `select` tinha -- e na
+      // montagem ela é vazia, porque a opção do valor da URL ainda não existia.
+      loteFilter.setValue(filtros.lote);
       desenhar();
     } catch (err) {
       if (disposed) return;

@@ -116,7 +116,7 @@ export async function openProdutoPedidoDialog({
     loteBar.classList.toggle('hidden', n === 0);
     loteBtn.textContent = n === 1 ? 'Adicionar 1 item' : `Adicionar ${n} itens`;
     loteResumo.textContent = n
-      ? 'A quantidade e a mídia de "Dados do item" valem para todos.'
+      ? 'O que estiver em "Dados do item" vale para todos os marcados.'
       : '';
   }
 
@@ -195,6 +195,13 @@ export async function openProdutoPedidoDialog({
         // se desenha a partir do `display`.
         const tipoMidiaSel = tiposMidia.find(t => t.code === midiaField.getValue());
         itens.push({
+          // O LOTE MANDA OS MESMOS CAMPOS QUE UM ITEM SO. A meta do PIT do item,
+          // a observacao e a producao especifica estao na MESMA secao "Dados do
+          // item" que a quantidade e a midia, e o
+          // `models.produtoPedidoLote` do servidor aceita as tres. Ficavam de
+          // fora do corpo: quem marcasse "produção específica", escrevesse uma
+          // observacao ou declarasse a meta do tyvek e adicionasse quatro folhas
+          // de uma vez perdia as tres, com 200 e sem aviso nenhum.
           payload: {
             uuid_versao: versao.uuid_versao,
             quantidade,
@@ -202,6 +209,11 @@ export async function openProdutoPedidoDialog({
             ...(midiaFornecidaField.getValue() != null
               ? { tipo_midia_fornecida_id: midiaFornecidaField.getValue() }
               : {}),
+            observacao: observacaoField.getValue() || null,
+            producao_especifica: producaoField.getValue(),
+            // Fora do PIT vai NULA, e nao omitida, pela mesma razao do caminho de
+            // um item so: item de pedido que nao e do PIT nao declara meta.
+            meta_pit_id: pedidoEhDoPit ? metaItemField.getValue() : null,
           },
           display: {
             produto_id: detalhe.id,

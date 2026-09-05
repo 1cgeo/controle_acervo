@@ -33,6 +33,7 @@ controller.listar = async (filtros = {}) => {
     `SELECT rm.id, rm.nota_empenho_id,
             ne.numero AS nota_empenho_numero,
             rm.material, rm.prazo_entrega, rm.situacao, rm.ano_referencia,
+            rm.data_recebimento,
             rm.data_cadastramento,
             u.nome AS usuario_cadastramento_nome
      FROM orcamento.recebimento_material AS rm
@@ -52,6 +53,7 @@ controller.getPorId = async id => {
     `SELECT rm.id, rm.nota_empenho_id,
             ne.numero AS nota_empenho_numero,
             rm.material, rm.prazo_entrega, rm.situacao, rm.ano_referencia,
+            rm.data_recebimento,
             rm.data_cadastramento, rm.usuario_cadastramento_uuid,
             rm.data_modificacao, rm.usuario_modificacao_uuid
      FROM orcamento.recebimento_material AS rm
@@ -73,10 +75,10 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
       const criado = await t.one(
         `INSERT INTO orcamento.recebimento_material
           (nota_empenho_id, material, prazo_entrega, situacao, ano_referencia,
-           usuario_cadastramento_uuid)
+           data_recebimento, usuario_cadastramento_uuid)
          VALUES
           ($<notaEmpenhoId>, $<material>, $<prazoEntrega>, $<situacao>, $<anoReferencia>,
-           $<usuarioUuid>)
+           $<dataRecebimento>, $<usuarioUuid>)
          RETURNING *`,
         {
           notaEmpenhoId: dados.nota_empenho_id,
@@ -84,6 +86,7 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
           prazoEntrega: dados.prazo_entrega || null,
           situacao: dados.situacao || null,
           anoReferencia: dados.ano_referencia != null ? dados.ano_referencia : null,
+          dataRecebimento: dados.data_recebimento || null,
           usuarioUuid
         }
       )
@@ -117,6 +120,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
            nota_empenho_id = $<notaEmpenhoId>, material = $<material>,
            prazo_entrega = $<prazoEntrega>, situacao = $<situacao>,
            ano_referencia = $<anoReferencia>,
+           data_recebimento = $<dataRecebimento>,
            data_modificacao = $<dataModificacao>,
            usuario_modificacao_uuid = $<usuarioUuid>
          WHERE id = $<id>
@@ -128,6 +132,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
           prazoEntrega: dados.prazo_entrega || null,
           situacao: dados.situacao || null,
           anoReferencia: dados.ano_referencia != null ? dados.ano_referencia : null,
+          dataRecebimento: dados.data_recebimento || null,
           dataModificacao: new Date(),
           usuarioUuid
         }

@@ -327,6 +327,19 @@ async function executar (args, cfg, injetadas) {
         http.autenticada(cfg, 'GET', '/usuarios/dominio/modulo'),
         http.autenticada(cfg, 'GET', '/usuarios/dominio/tipo_perfil')
       ])
+      // Com `--json` os tres dominios saem num objeto so. Antes saiam tres
+      // arrays JSON separados por rotulos em prosa, e `JSON.parse` recusava a
+      // saida inteira; a chave de cada um e o nome da tabela de dominio.
+      if (opcoesSaida.formato === 'json') {
+        return {
+          texto: JSON.stringify({
+            tipo_posto_grad: postos.dados || [],
+            modulo: modulos.dados || [],
+            tipo_perfil: niveis.dados || []
+          }, null, 2)
+        }
+      }
+
       const linhas = [
         'tipo_posto_grad_id  (campo do corpo de criar/editar)',
         saida.lista(postos.dados, { formato: opcoesSaida.formato, padrao: ['code', 'nome_abrev', 'nome'] }).texto,
@@ -754,11 +767,41 @@ async function executar (args, cfg, injetadas) {
     }
 
     case 'trocar-senha': {
-      const atual = argsLib.exigir(flags, 'senha-atual', 'a senha VIGENTE (o servidor a exige)')
-      const nova = argsLib.exigir(flags, 'senha-nova', 'a senha nova')
+      // A senha NAO entra na linha de comando. Ali ela fica para sempre no
+      // historico do shell (`~/.bash_history`, o `ConsoleHost_history.txt` do
+      // PSReadLine) e aparece no `ps` para qualquer outra sessao da maquina
+      // enquanto a chamada dura. A ajuda deste proprio CLI ja diz isso 35 linhas
+      // abaixo ("AMBIENTE, nunca ponha senha na linha de comando"), e o
+      // `scripts/copiar_usuarios_auth.js` recusa credencial por argumento pela
+      // mesma razao. As flags continuam funcionando como ULTIMO recurso, e com
+      // aviso: quebra-las derrubaria quem ja as usa em rotina.
+      const porFlag = (nome) => {
+        const valor = flags[nome]
+        if (valor === undefined || valor === true || valor === '') return null
+        if (Array.isArray(valor)) throw new Error(`--${nome} foi passada mais de uma vez; use uma so.`)
+        return String(valor)
+      }
+      const atual = porFlag('senha-atual') || process.env.SCA_SENHA_ATUAL || null
+      const nova = porFlag('senha-nova') || process.env.SCA_SENHA_NOVA || null
+      if (!atual || !nova) {
+        const erro = new Error(
+          'Faltam as senhas. Prefira o AMBIENTE, que as mantem fora do historico do shell:\n' +
+          '  SCA_SENHA_ATUAL=<a vigente> SCA_SENHA_NOVA=<a nova> efetivo usuario trocar-senha\n' +
+          'As flags --senha-atual e --senha-nova ainda funcionam, e sao o ultimo recurso.'
+        )
+        erro.jaFormatado = true
+        throw erro
+      }
       const { corpo, avisos } = validar(
         modulo.updateSenhaPropria, { senha_atual: atual, senha_nova: nova }, acao
       )
+      if (porFlag('senha-atual') || porFlag('senha-nova')) {
+        avisos.push(
+          'A senha veio por ARGUMENTO: ela fica no historico do shell e e visivel no `ps` ' +
+          'para as outras sessoes da maquina enquanto a chamada dura. ' +
+          'Prefira SCA_SENHA_ATUAL e SCA_SENHA_NOVA.'
+        )
+      }
 
       if (flags['dry-run']) {
         return {

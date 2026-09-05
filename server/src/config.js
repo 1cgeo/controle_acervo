@@ -290,7 +290,7 @@ dotenv.config({
 // CALADO uma funcionalidade inteira: o que uma instalação sem a migração perde é
 // uma garantia sobre o DADO dela, e migrar para ganhá-la é escolha de quem opera
 // o banco.
-const VERSION = '3.13.0'
+const VERSION = '3.14.0'
 const MIN_DATABASE_VERSION = '3.2.0'
 
 /**

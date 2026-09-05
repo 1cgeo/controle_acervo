@@ -683,12 +683,27 @@ controller.apagarImagem = async (imagemId, usuarioUuid, contexto) => {
  * O `LEFT JOIN` e o que faz um track de um ponto so (que a view descarta pelo
  * HAVING) ainda aparecer na lista, sem geometria: ele existe, foi cadastrado, e
  * some-lo da tabela seria esconder um lancamento.
+ *
+ * `pontos` CONTA `campo.track_ponto`, E NAO A VIEW, e a diferenca nao e
+ * cosmetica. A view descarta o track de um ponto so pelo HAVING, e ate a 3.14.0
+ * ela descartava tambem o ponto SEM HORA: o trajeto importado de GeoJSON nunca
+ * tem hora (`campo-trajetos.js` monta `momento: null` em todos os pontos), o
+ * track entrava com 6.500 pontos e a tabela dizia "0 pontos" logo depois de o
+ * servidor responder "Trajeto importado com sucesso". A contagem diz o que
+ * EXISTE, e a diferenca continua valendo para o track de um ponto so.
+ *
+ * A GEOMETRIA CONTINUA VINDO DA VIEW, e desde a 3.14.0 ela desenha tambem o
+ * track sem hora, ordenado pelo `id` quando nao ha `momento`
+ * (`migrations/2026-09-05_o_trajeto_sem_hora_tambem_se_desenha.sql`). Contra um
+ * banco anterior a essa versao a linha desse track ainda vem nula, e a lista o
+ * mostra sem botao de mapa -- o que e a leitura correta do que aquele banco tem.
  */
 controller.listarTracks = async campoId => {
   return db.conn.any(
     `SELECT tk.id, tk.campo_id, tk.chefe_vtr, tk.motorista, tk.placa_vtr, tk.dia,
             tl.momento_inicio, tl.momento_fim,
-            COALESCE(tl.pontos, 0)::int AS pontos,
+            (SELECT count(*) FROM campo.track_ponto AS tp
+              WHERE tp.track_id = tk.id)::int AS pontos,
             CASE WHEN tl.geom IS NULL THEN NULL
                  ELSE ST_AsGeoJSON(ST_Force2D(tl.geom))
             END AS geometria

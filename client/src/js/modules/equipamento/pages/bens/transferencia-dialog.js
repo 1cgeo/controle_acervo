@@ -1,6 +1,6 @@
 import { el } from '@utils/dom.js';
 import { paraId } from '@utils/format.js';
-import { showSuccess } from '@utils/toast.js';
+import { showSuccess, showWarning } from '@utils/toast.js';
 import { openModal } from '@components/modal/modal-base.js';
 import {
   createTextField,
@@ -14,6 +14,7 @@ import {
   updateTransferencia,
 } from '@modules/equipamento/services/equipamento-service.js';
 import { gravarNoModal } from '@modules/equipamento/dialogo-comum.js';
+import { SITUACAO_TRANSFERENCIA, TIPO_TRANSFERENCIA } from '@modules/equipamento/situacao.js';
 
 /**
  * Lançamento de TRANSFERÊNCIA e de DESCARGA (do GERENTE).
@@ -111,6 +112,26 @@ export function abrirTransferenciaDialog({
     el('div', { className: 'form-grid__full' }, [descricaoField.element]),
   ]);
 
+  /**
+   * A TRANSFERÊNCIA NÃO TIRA O BEM DE CARGA, e o cabeçalho deste diálogo diz que
+   * tira.
+   *
+   * `equipamento.situacao_em(dia)` só olha afastamento, manutenção,
+   * indisponibilidade e `e.ativo`: a tabela `equipamento.transferencia` não entra
+   * na função, e o servidor não toca em `ativo` ao gravar uma. Concluída a
+   * descarga, o chip do cabeçalho continuava "Disponível", o cartão "Em carga"
+   * continuava "Sim" e o bem continuava aparecendo em "Somente ativos", sem nada
+   * na tela dizer que faltava um passo. Dar baixa é editar o equipamento e
+   * desmarcar "Ativo"; fazer o servidor virar o `ativo` sozinho seria mudança de
+   * REGRA, e regra se decide com o chefe.
+   */
+  function avisarQueNaoDaBaixa(tipoId, situacaoId) {
+    const saiDaCarga = tipoId === TIPO_TRANSFERENCIA.DESCARGA
+      || tipoId === TIPO_TRANSFERENCIA.CESSAO;
+    if (!saiDaCarga || situacaoId !== SITUACAO_TRANSFERENCIA.CONCLUIDA) return;
+    showWarning('O bem CONTINUA em carga: dar baixa é editar o equipamento e desmarcar "Ativo".');
+  }
+
   openModal({
     title: edicao ? 'Editar transferência' : 'Nova transferência',
     content,
@@ -159,6 +180,7 @@ export function abrirTransferenciaDialog({
                 await createTransferencia(body);
                 showSuccess('Transferência registrada com sucesso');
               }
+              avisarQueNaoDaBaixa(tipoId, situacaoId);
             },
             close,
             setOcupado,

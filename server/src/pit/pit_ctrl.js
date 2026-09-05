@@ -741,8 +741,15 @@ controller.deletar = async (id, revisaoId, usuarioUuid, contexto) => {
 
     // AS DECLARAÇÕES DO ITEM, que são as revisões em que ele aparece. A tabela é
     // esparsa: cada linha aqui é uma revisão que disse alguma coisa sobre ele.
+    //
+    // A LINHA INTEIRA, e nao so `revisao_id` e `codigo`: ela cai por
+    // `ON DELETE CASCADE` junto com o item, e e ela que guarda o que a DSG
+    // declarou (descricao, quantidade prevista, prazo, demandante). Sem o
+    // evento logo abaixo, apagar o item levaria essa declaracao em silencio,
+    // que e o mesmo defeito que `arquivoCtrl.auditarCascata` existe para
+    // impedir no orcamento.
     const declaracoes = await t.any(
-      `SELECT mr.revisao_id, r.codigo
+      `SELECT mr.*, r.codigo
        FROM pit.meta_item_revisao mr
        INNER JOIN pit.revisao r ON r.id = mr.revisao_id
        WHERE mr.meta_item_id = $<id>
@@ -814,6 +821,33 @@ controller.deletar = async (id, revisaoId, usuarioUuid, contexto) => {
         `Item do PIT possui ${lancamentos} lançamento(s) de execução. Exclua os lançamentos antes de excluir o item.`,
         httpCode.Conflict
       )
+    }
+
+    // A DECLARACAO CAI POR CASCATA, e o rastro dela e ESTE evento. Ela sai sem
+    // DELETE nenhum aqui (`pit.meta_item_revisao.meta_item_id` e
+    // ON DELETE CASCADE), e sem esta linha o que a DSG prometeu naquele item
+    // sumiria sem registro. Registrado ANTES do DELETE, para a linha lida ser a
+    // que existia.
+    //
+    // `codigo` FICA DE FORA DO `antes`, e essa é a razão do destructuring. Ele
+    // vem do `INNER JOIN pit.revisao` da leitura acima e NÃO é coluna de
+    // `pit.meta_item_revisao`; `auditoria/sanitizar.js` copia toda chave da
+    // linha para `dados_antes` e `auditoria/diff.js` lista toda chave não-nula
+    // em `campos_alterados`, então ele entraria no rastro como uma coluna que a
+    // tabela não tem -- e `auditoria/renderizar.js` a exibiria no fim da lista
+    // com o próprio nome, pedindo que alguém a declarasse no mapa. Ele continua
+    // servindo ao `motivo`, que é onde ele diz alguma coisa.
+    for (const declaracao of declaracoes) {
+      const { codigo, ...linhaDaDeclaracao } = declaracao
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'pit.meta_item_revisao',
+        registroId: declaracao.id,
+        operacao: 'D',
+        antes: linhaDaDeclaracao,
+        usuarioUuid,
+        contexto,
+        motivo: `Caiu junto com o item, apagado a partir da revisão ${codigo}.`
+      })
     }
 
     await t.none('DELETE FROM pit.meta_item WHERE id = $<id>', { id })

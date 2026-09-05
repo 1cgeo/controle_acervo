@@ -574,6 +574,24 @@ export function enviarArquivosEmVersao(dados, arquivos, onProgress) {
   );
 }
 
+/**
+ * O TETO do envio pelo navegador, em GB.
+ *
+ * O limite e do servidor (`UPLOAD_WEB_MAX_GB`, 2 GB por padrao), e ate esta rota
+ * existir ele nao chegava ate a tela: o assistente so podia falar em "alguns
+ * GB", e quem escolhia um arquivo de 6 GB descobria a recusa depois de esperar o
+ * envio. Com o numero em maos, o assistente marca o arquivo e trava o avanco
+ * ANTES do primeiro byte.
+ *
+ * SEM CACHE: e uma requisicao por abertura do assistente, contra um valor que so
+ * muda quando o servidor reinicia. Guardar traria de volta o risco de servir o
+ * teto antigo, e guardar a FALHA seria pior ainda -- a tela cai em silencio para
+ * o resto da sessao.
+ *
+ * @returns {Promise<{max_gb:number}>}
+ */
+export const getTetoUploadWeb = () => apiGet('/arquivo/upload-web/teto');
+
 // ---- Auditoria dos invariantes logicos ----
 //
 // SEM CACHE, ao contrario do dashboard: auditoria e medicao do AGORA, e quem

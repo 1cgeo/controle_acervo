@@ -14,8 +14,13 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
   deleteDfd: vi.fn(() => Promise.resolve()),
 }));
 
+const toast = vi.hoisted(() => ({
+  showSuccess: vi.fn(), showError: vi.fn(), showInfo: vi.fn(), showWarning: vi.fn(),
+}));
+vi.mock('@utils/toast.js', () => toast);
+
 import { renderDfdList } from '@modules/orcamento/pages/dfd/list.js';
-import { getDfds } from '@modules/orcamento/services/orcamento-service.js';
+import { getDfds, getTipoItemDfd } from '@modules/orcamento/services/orcamento-service.js';
 
 // A tela abre sempre no ano ATUAL e não guarda a escolha.
 const ANO_ATUAL = new Date().getFullYear();
@@ -52,6 +57,30 @@ describe('renderDfdList', () => {
 
     expect(getDfds).toHaveBeenLastCalledWith(2025);
     expect(container.querySelector('.page__title').textContent).toBe('DFD 2025');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // O DOMINIO CAI SOZINHO. Ele serve ao DIALOGO (o combo "Tipo do item" do
+  // editor de itens), e nao a lista: junto num `Promise.all`, a falha dele
+  // deixava a tela do PCA INTEIRO em branco, com uma mensagem que nem falava de
+  // DFD. E o caso que o CLAUDE.md registra com este nome.
+  test('o domínio fora do ar deixa a lista de DFD de pé, com o aviso do que ficou vazio', async () => {
+    getDfds.mockResolvedValueOnce([
+      { id: 1, numero: '103/2025', objeto: 'Suprimentos', valor_estimado: '100.00', consta_pca: true },
+      { id: 2, numero: '104/2025', objeto: 'Plotters', valor_estimado: '200.00', consta_pca: false },
+    ]);
+    getTipoItemDfd.mockRejectedValueOnce(new Error('domínio fora do ar'));
+
+    const container = document.createElement('div');
+    const cleanup = await renderDfdList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+    await flush();
+
+    expect(container.querySelectorAll('.data-table tbody tr')).toHaveLength(2);
+    expect(container.querySelector('.dashboard-erro')).toBeNull();
+    expect(toast.showError).toHaveBeenCalledTimes(1);
+    expect(toast.showError.mock.calls[0][0]).toContain('Tipo do item');
 
     if (typeof cleanup === 'function') cleanup();
   });

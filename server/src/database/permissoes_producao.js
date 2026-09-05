@@ -743,14 +743,49 @@ permissoes.revogarAcesso = async ({ atividadeId, usuarioUuid, quemPediu, context
     const login = guardado ? guardado.login : nomeDoPapel(dado.login)
     const senha = gerarSenha()
 
-    if (await papelExiste(conn, login)) {
-      await trocarSenha(conn, login, senha)
-    } else {
-      // O papel nao existe: nao ha o que revogar, e criar um so para revoga-lo
-      // seria teatro. A linha e reescrita assim mesmo, para o proximo pedido
-      // partir de um estado conhecido.
-      await criarPapel(conn, login, senha)
+    if (!(await papelExiste(conn, login))) {
+      // O PAPEL NAO EXISTE: NAO HA O QUE REVOGAR, e criar um so para revoga-lo
+      // seria teatro -- e teatro CARO. `criarPapel` emite
+      // `CREATE USER ... WITH LOGIN PASSWORD ... VALID UNTIL now() + 5 dias`, e
+      // o `REVOKE CONNECT` que viria em seguida nao tira o `CONNECT` que o
+      // Postgres concede a PUBLIC por padrao: o efeito liquido de uma REVOGACAO
+      // seria um papel NOVO, com senha valida por cinco dias e capaz de abrir
+      // sessao no banco de edicao -- exatamente o estado que o cabecalho desta
+      // funcao chama de pior ("sem permissao em camada nenhuma, mas dentro").
+      // O caminho e alcancavel sem esforco: banco de edicao restaurado de
+      // backup (os papeis efemeros nao voltam) ou papel vencido e removido a
+      // mao.
+      //
+      // A LINHA GUARDADA SAI, e e o unico efeito que resta: a senha ali dentro
+      // nao abre mais nada, e deixa-la faria o proximo pedido partir de um
+      // estado que o banco de edicao nao tem. E o mesmo desfecho de
+      // `revogarUsuarioDoBanco` quando o papel nao existe.
+      await db.conn.tx(async t => {
+        await t.none(
+          `DELETE FROM producao.login_temporario
+           WHERE usuario_uuid = $<usuarioUuid> AND configuracao = $<configuracao>`,
+          { usuarioUuid, configuracao }
+        )
+
+        await auditoriaCtrl.registrarOperacao(t, {
+          tabela: 'producao.acesso_banco_producao',
+          resultado: {
+            operacao: 'Revogação',
+            login,
+            usuario_uuid: usuarioUuid,
+            atividade_id: atividadeId,
+            dado_producao_id: dado.dado_producao_id,
+            papel_existia: false
+          },
+          usuarioUuid: pediu,
+          contexto
+        })
+      })
+
+      return { login, revogou: false }
     }
+
+    await trocarSenha(conn, login, senha)
 
     const revogou = await revogarPapel(conn, login)
 

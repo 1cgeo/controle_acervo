@@ -283,6 +283,14 @@ async function executar (args, cfg) {
   }
 
   if (operacao.envelope === 'mensagem' || r.dados === undefined || r.dados === null) {
+    // Com `--json` o stdout INTEIRO tem de ser JSON: a prosa do servidor sai
+    // como campo de um objeto, e nao solta, senao `JSON.parse` a recusa.
+    if (opcoesSaida.formato === 'json') {
+      return {
+        texto: JSON.stringify({ message: r.message || 'ok', dados: r.dados === undefined ? null : r.dados }, null, 2),
+        avisos
+      }
+    }
     return { texto: r.message || 'ok', avisos }
   }
 

@@ -62,11 +62,18 @@ const MODULOS = [
 
 const INSTITUICAO = { nome: '1º Centro de Geoinformação', sigla: '1º CGEO' }
 
+// O `carimbo` e a coluna `left(md5(senha), 8)` que o login le na MESMA consulta
+// do hash desde 2026-09-05. Aqui ele e um dublê com a forma certa (oito
+// caracteres hexadecimais); quem o CALCULA e o PostgreSQL, e o caso "o token
+// leva o carimbo" prova que a consulta o pede.
+const CARIMBO = '3f2504e0'
+
 const usuario = (extra = {}) => ({
   id: 7,
   uuid: 'uuid-7',
   administrador: false,
   senha: HASH,
+  carimbo: CARIMBO,
   ...extra
 })
 
@@ -121,6 +128,48 @@ describe('login_ctrl.login', () => {
     expect(mockT.any).toHaveBeenCalledWith(
       expect.stringContaining('dominio.modulo')
     )
+  })
+
+  // ---------------------------------------------------------------------------
+  // O CARIMBO DA SENHA (2026-09-05)
+  // ---------------------------------------------------------------------------
+  //
+  // Ate esta data o token nao carregava nada ligado a senha, e trocar a senha
+  // NAO derrubava a sessao aberta noutra maquina: ela valia pelas oito horas do
+  // `JWT_EXPIRACAO`, e o reset feito pelo administrador tambem nao expulsava
+  // ninguem. O `carimbo` e o que amarra o token ao hash vigente; as sete guardas
+  // o releem do banco a cada requisicao (`unit/login/carimbo_da_senha.test.js`).
+  test('o token leva o carimbo da senha, com oito caracteres', async () => {
+    const dados = await ctrl.login('fulano', SENHA_CERTA, 'sca_web')
+    const decoded = jwt.verify(dados.token, JWT_SECRET)
+
+    expect(decoded.carimbo).toBe(CARIMBO)
+    expect(decoded.carimbo).toHaveLength(8)
+    // E ele NAO sai na resposta: quem o le e a guarda, dentro do token.
+    expect(dados.carimbo).toBeUndefined()
+  })
+
+  // O NUMERO E DO POSTGRESQL, e nao deste dublê: o login pede a coluna na MESMA
+  // consulta que ja lia o hash, com a expressao que as guardas conferem. Sem
+  // esta metade, o caso acima provaria so que um campo do mock atravessa.
+  test('o carimbo vem da consulta do login, sem ida a mais ao banco', async () => {
+    await ctrl.login('fulano', SENHA_CERTA, 'sca_web')
+
+    const doUsuario = mockT.oneOrNone.mock.calls
+      .map(([sql]) => String(sql))
+      .filter(sql => /FROM dgeo\.usuario/.test(sql))
+
+    expect(doUsuario).toHaveLength(1)
+    expect(doUsuario[0]).toContain('left(md5(senha), 8) AS carimbo')
+  })
+
+  // O HASH NAO SAI DO BANCO: o que viaja e o resumo de oito caracteres.
+  test('o hash bcrypt nao entra no token nem na resposta', async () => {
+    const dados = await ctrl.login('fulano', SENHA_CERTA, 'sca_web')
+    const decoded = jwt.verify(dados.token, JWT_SECRET)
+
+    expect(JSON.stringify(decoded)).not.toContain(HASH)
+    expect(JSON.stringify(dados)).not.toContain(HASH)
   })
 
   test('perfis e modulos ficam FORA do token', async () => {

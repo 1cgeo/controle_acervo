@@ -41,7 +41,7 @@
 
 const express = require('express')
 
-const { schemaValidation, asyncHandler, httpCode, AppError } = require('../utils')
+const { schemaValidation, asyncHandler, httpCode, AppError, enviarArquivo } = require('../utils')
 const { domainConstants: { TIPO_CAPACITACAO } } = require('../utils')
 const { verifyAdmin, verifyGerente, verifyPerfil } = require('../login')
 
@@ -139,8 +139,15 @@ router.get(
 // de `mapoteca/relatorio_ctrl`, que é onde a impressão é registrada, e o arquivo
 // sai da planilha-semente (ver rpcmtec/rtm_ods.js).
 //
-// A aba é do ANO inteiro, e não do mês: ela é o detalhamento da Meta 4 do PIT,
-// e quem a cola no RTM cola o ano corrente. Por isso o `mes` é ignorado aqui.
+// A aba é ACUMULADA NO ANO até o mês escolhido, e é o único download desta tela
+// que acumula: os outros são do MÊS. Ela é o detalhamento da Meta 4 do PIT, e
+// quem a cola no RTM cola o ano até ali.
+//
+// O `mes` NÃO é decorativo, então: ele recorta o acumulado e entra no nome do
+// arquivo. Este cabeçalho dizia o contrário ("por isso o `mes` é ignorado
+// aqui"), contra os dois comentários de dentro do handler, que estão certos.
+// Quem lesse o de cima e "consertasse" o nome do arquivo faria a Divisão mandar
+// para a DSG dois arquivos de 2026 com o mesmo nome e conteúdos diferentes.
 // ---------------------------------------------------------------------------
 
 router.get(
@@ -387,10 +394,18 @@ router.get(
     const arquivo = await edicaoCtrl.getAnexoParaDownload(req.params.anexoId)
 
     res.setHeader('Content-Type', arquivo.mimetype || 'application/octet-stream')
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(arquivo.nome_original)}"`
-    )
+    // `disposicao()` de `utils/enviar_arquivo.js`, que é a função da casa para
+    // isto e manda os DOIS parâmetros. Só `filename*` (RFC 6266) resolve o
+    // acento -- com `filename="..."` percent-encoded dentro, o encoding chega
+    // LITERAL ao disco, e "RPCMTec Julho 2026 assinado.pdf" era salvo como
+    // "RPCMTec%20Julho%202026%20assinado.pdf" --, mas só ele deixa cliente antigo
+    // baixar "download" sem extensão. O `filename` ASCII é a reserva.
+    res.setHeader('Content-Disposition', enviarArquivo.disposicao(arquivo.nome_original))
+    // O TAMANHO SE DECLARA, como nas três rotas de download vizinhas deste
+    // arquivo. Sem ele a resposta sai em chunked, e quem baixa o PDF assinado
+    // (que vai a 20 MB pelo teto do upload) vê "tamanho desconhecido" e nenhuma
+    // estimativa de tempo.
+    res.setHeader('Content-Length', String(arquivo.conteudo.length))
     return res.end(arquivo.conteudo)
   })
 )

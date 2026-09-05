@@ -48,6 +48,27 @@ const EXECUCAO = ['operador', 'gerente'];
 const LEITURA = ['consulta', 'gerente'];
 const TODOS = ['consulta', 'operador', 'gerente'];
 
+/**
+ * Quem abre a LISTA e o DETALHE do pedido -- e, com a mesma lista, a de
+ * clientes.
+ *
+ * É o proprio LEITURA das rotas '/pedidos', '/pedidos/:id', '/clientes' e
+ * '/clientes/:id', exportado para as TELAS decidirem se mostram um caminho
+ * para lá. O OPERADOR fica de fora dela de propósito: na mapoteca ele não é
+ * "consulta com mais poder", tem telas próprias.
+ *
+ * Ela mora AQUI, e não na tela que a usa, porque três telas a leem: a fila de
+ * atendimento e as abas Pedidos e Atendimento do dashboard, todas abertas pelo
+ * operador. Antes de 2026-09-05 morava em `pages/atendimento/index.js`, e a
+ * tela de atendimento escondeu os cinco caminhos dela enquanto o dashboard
+ * seguia oferecendo dois links que sempre terminavam em '#/unauthorized'. Um
+ * link que sempre falha é pior que link nenhum.
+ *
+ * `index.test.js` do módulo compara esta lista com a das quatro rotas, para
+ * elas não divergirem em silêncio.
+ */
+export const PERFIS_DA_LISTA_DE_PEDIDOS = LEITURA;
+
 export default {
   id: 'mapoteca',
   icon: ICONS.print,

@@ -70,6 +70,19 @@ export async function renderBusca(container, ctx) {
   // 'nenhum' | 'mapa' | 'desenho'
   let modoArea = 'nenhum';
   let areaDesenhada = null;
+  /**
+   * Caixa que veio no LINK, como [minx, miny, maxx, maxy].
+   *
+   * `sincronizarUrl` sempre ESCREVEU o `bbox` do modo "so na area do mapa", e a
+   * tela nunca o LIA de volta: o endereco copiado e mandado por DIEx abria sem
+   * recorte nenhum e devolvia o acervo inteiro, com o mesmo endereco na barra.
+   * Quem recebeu o link via um resultado que nao era o do remetente.
+   *
+   * Vale so ate o mapa saber a propria area visivel: `areaVisivel()` devolve
+   * null enquanto ele nao terminou de montar, e a primeira busca sai antes
+   * disso. E a mesma solucao do `bboxDoLink` da tela de ponto de controle.
+   */
+  let bboxDoLink = null;
   // Lugar destacado no mapa, como 'estado:43' ou 'municipio:4314902'. Guarda a
   // CHAVE, e nao a geometria: serve para saber quando o destaque mudou e para
   // descartar a resposta de um pedido que ja ficou velho.
@@ -98,8 +111,16 @@ export async function renderBusca(container, ctx) {
     termoInput,
   ]);
 
-  /** Lista de codigos que veio na URL, como '1,3'. */
-  const daUrl = (campo) => (query.get(campo) || '').split(',').filter(v => v !== '');
+  /**
+   * Lista de codigos que veio na URL, nas DUAS formas que o servidor aceita:
+   * `?tipo_produto_id=1,3` e `?tipo_produto_id=1&tipo_produto_id=3` (as tres
+   * formas estao em `server/src/utils/lista_schema.js`). Com `query.get`, a
+   * segunda forma perdia tudo depois da primeira ocorrencia em silencio -- e a
+   * primeira busca ainda reescrevia a barra de endereco sem o que foi perdido.
+   */
+  const daUrl = (campo) => query.getAll(campo)
+    .flatMap(v => String(v).split(','))
+    .filter(v => v !== '');
 
   // Os filtros de dominio marcam VARIAS opcoes. Antes eram
   // `<select>` de escolha unica, e perguntar "o que existe em 25k e em 50k"
@@ -200,6 +221,9 @@ export async function renderBusca(container, ctx) {
     className: 'form-field__checkbox',
     type: 'checkbox',
     onChange: (e) => {
+      // A caixa do link vale so ate alguem mexer no interruptor: dali em diante
+      // quem manda no recorte e a area visivel do mapa que a pessoa esta vendo.
+      bboxDoLink = null;
       if (e.target.checked) {
         modoArea = 'mapa';
         areaDesenhada = null;
@@ -526,7 +550,7 @@ export async function renderBusca(container, ctx) {
     if (modoArea === 'desenho' && areaDesenhada) {
       return { geometria: JSON.stringify(areaDesenhada), bbox: null };
     }
-    if (modoArea === 'mapa') return { geometria: null, bbox: mapa.areaVisivel() };
+    if (modoArea === 'mapa') return { geometria: null, bbox: mapa.areaVisivel() || bboxDoLink };
     return { geometria: null, bbox: null };
   }
 
@@ -620,6 +644,23 @@ export async function renderBusca(container, ctx) {
         getBuscaFacetas(f).catch(() => null),
       ]);
       if (disposed || meuToken !== requisicao) return;
+
+      // PAGINA FORA DO INTERVALO. Dois caminhos chegam aqui: o link guardado com
+      // `page=7` que envelheceu, e a exclusao da ultima linha feita na propria
+      // ficha (`onAlterado` recarrega SEM reiniciar a pagina, de proposito).
+      // Sem o corte, o contador anuncia "41 produtos encontrados" ao lado de uma
+      // lista que diz "Nenhum produto encontrado com estes filtros", e a
+      // paginacao mostra "Página 7 de 2" com "Próxima" desabilitado: tres frases
+      // que se contradizem, e nenhuma delas diz o que fazer.
+      //
+      // Cair para a ULTIMA pagina valida e o que o `data-table` ja faz na
+      // chegada das linhas; aqui quem pagina e o servidor, e o corte tem de
+      // refazer a pergunta.
+      const paginasDoTotal = Math.max(1, Math.ceil((resposta.total || 0) / POR_PAGINA));
+      if (pagina > paginasDoTotal) {
+        pagina = paginasDoTotal;
+        return buscar({ enquadrar, recarregarMapa, manterVista });
+      }
 
       renderResultados(resposta.dados || []);
       // Pergunta NOVA volta ao topo; recarga depois de uma gravacao, nao. Quem
@@ -906,6 +947,7 @@ export async function renderBusca(container, ctx) {
     areaCheck.checked = false;
     modoArea = 'nenhum';
     areaDesenhada = null;
+    bboxDoLink = null;
     mapa.limparArea();
     atualizarChipArea();
     buscar({ reiniciarPagina: true });
@@ -951,14 +993,22 @@ export async function renderBusca(container, ctx) {
     // Estado e municipio vem PRONTOS do servidor, com a contagem, e nao de um
     // dominio local: sao 5.572 municipios, e mandar a lista inteira ao
     // navegador para filtrar aqui seria pagar 25 MB por combo.
+    //
+    // A CONTAGEM VAI JUNTO, como nos tres de cima. O servidor sempre mandou o
+    // `produtos` de cada estado e de cada municipio, e a tela jogava fora: as
+    // duas listas eram as unicas sem numero ao lado, e o estado que o
+    // cruzamento zerou deixava de aparecer com "(0)", que e como esta tela
+    // avisa que o filtro marcado nao cruza com o resto.
     const comCodigo = itens => (itens || []).map(i => ({ ...i, code: i.id }));
     estadoFiltro.preencher(
       comCodigo(f.estados).map(e => ({ ...e, nome: `${e.nome} (${e.sigla})` })),
-      'Todos os estados'
+      'Todos os estados',
+      mapaDeContagem(comCodigo(f.estados))
     );
     municipioFiltro.preencher(
       comCodigo(f.municipios),
-      estadoFiltro.valores().length ? 'Todos os municípios' : 'Escolha o estado'
+      estadoFiltro.valores().length ? 'Todos os municípios' : 'Escolha o estado',
+      mapaDeContagem(comCodigo(f.municipios))
     );
 
     atualizarSubtipos();
@@ -1068,6 +1118,38 @@ export async function renderBusca(container, ctx) {
       }
     } catch {
       // Geometria ilegivel no link: a busca segue sem recorte.
+    }
+  }
+
+  // Caixa que veio no link, quando ele NAO trouxe area desenhada. Os dois modos
+  // sao exclusivos (ver a decisao 3 no topo), e o desenho e o mais especifico:
+  // com os dois no endereco, ganha o poligono.
+  if (modoArea === 'nenhum' && query.get('bbox')) {
+    const numeros = query.get('bbox').split(',').map(Number);
+    // A FORMA da caixa se confere AQUI, e nao no servidor. Quatro numeros
+    // finitos nao bastam: `bbox=,,,` vira [0,0,0,0] e um link truncado ou
+    // editado troca os cantos. Os dois passavam, marcavam "So na area do mapa" e
+    // iam para o servidor, que respondia 400 ("bbox precisa ter minLon < maxLon
+    // e minLat < maxLat"); a tela mostrava essa frase com o interruptor marcado,
+    // sugerindo que o recorte era o problema sem dizer que ele veio do link.
+    const valida = numeros.length === 4
+      && numeros.every(Number.isFinite)
+      && numeros[0] < numeros[2] && numeros[1] < numeros[3]
+      && numeros[0] >= -180 && numeros[2] <= 180
+      && numeros[1] >= -90 && numeros[3] <= 90;
+    if (valida) {
+      bboxDoLink = numeros;
+      modoArea = 'mapa';
+      areaCheck.checked = true;
+      // Leva a camera ate a caixa do link, senao o mapa abriria no
+      // enquadramento padrao ao lado de uma lista recortada por outra area.
+      // `enquadrar` marca o movimento como programatico, entao ele nao dispara
+      // uma busca por conta propria.
+      mapa.enquadrar(numeros);
+    } else {
+      // O mesmo aviso da tela de ponto de controle, palavra por palavra: as duas
+      // andam juntas, e ate esta linha so uma delas dizia alguma coisa.
+      showError('A área do link não pôde ser lida. A busca seguiu sem ela.');
     }
   }
 

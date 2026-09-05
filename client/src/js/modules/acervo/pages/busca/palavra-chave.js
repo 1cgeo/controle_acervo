@@ -67,8 +67,12 @@ export function criarCampoPalavraChave({ valorInicial = '', onEscolher }) {
     },
   });
 
+  // Nasce visivel quando o campo ja vem preenchido (a palavra-chave do link):
+  // com a classe `hidden` fixa, quem abria `#/acervo/busca?palavra_chave=CDGV`
+  // via a etiqueta aplicada e nenhum jeito de tira-la sem apagar letra a letra,
+  // porque o × so aparecia na primeira tecla digitada.
   const limparBtn = el('button', {
-    className: 'busca-palavras__limpar hidden',
+    className: `busca-palavras__limpar${String(valorInicial).trim() ? '' : ' hidden'}`,
     type: 'button',
     'aria-label': 'Limpar a palavra-chave',
     onClick: () => {

@@ -258,6 +258,33 @@ describe('campo: imagem', () => {
     aceita(campoSchema.imagem.validate({ ...IMAGEM, mime_type: null }))
   })
 
+  // O `mime_type` VEM DO CORPO DO PEDIDO, e a rota de arquivo o declara como
+  // `Content-Type` na ORIGEM da própria aplicação. Enquanto ele era
+  // `Joi.string().max(100)`, um operador do módulo `pit` podia gravar uma
+  // página com script e fazê-la ser servida como HTML: o CSP está desligado por
+  // decisão, e o `nosniff` do helmet impede ADIVINHAR o tipo, não impede honrar
+  // o que foi declarado.
+  it('recusa mime_type fora da lista de permitidos', () => {
+    recusaPor(
+      campoSchema.imagem.validate({ ...IMAGEM, mime_type: 'text/html' }),
+      'mime_type', 'any.only'
+    )
+  })
+
+  // SVG fica de FORA de propósito: ele é imagem e executa script.
+  it('recusa image/svg+xml, que executa script', () => {
+    recusaPor(
+      campoSchema.imagem.validate({ ...IMAGEM, mime_type: 'image/svg+xml' }),
+      'mime_type', 'any.only'
+    )
+  })
+
+  // O CONTROLE: os tipos que a tela manda de verdade continuam entrando, e
+  // `image/gif` entre eles, porque a carga do SAP o adivinha pelo número mágico.
+  it.each(campoSchema.MIME_IMAGEM_PERMITIDOS)('aceita %s', (mime) => {
+    aceita(campoSchema.imagem.validate({ ...IMAGEM, mime_type: mime }))
+  })
+
   it('exige o conteúdo', () => {
     recusaPor(
       campoSchema.imagem.validate({ ...IMAGEM, conteudo_base64: undefined }),

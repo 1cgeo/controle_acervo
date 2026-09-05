@@ -99,6 +99,10 @@ const impressaoGravada = async (numero, conteudo = {}) => {
   mockDb.conn.oneOrNone.mockResolvedValueOnce(edicaoAberta)
   mockDb.conn.any.mockResolvedValueOnce([])
   mockDb.conn.any.mockResolvedValueOnce([])
+  // A releitura TRAVADA da edicao, dentro da transacao do `revisar`: o `montar`
+  // acima roda fora dela, e entre os dois cabe um fechamento inteiro. Ver
+  // `unit/rpcmtec_edicao_fechada.test.js`, quarto describe.
+  mockDb.conn.oneOrNone.mockResolvedValueOnce(edicaoAberta)
   mockDb.conn.oneOrNone.mockResolvedValueOnce(null)
   mockDb.conn.one.mockResolvedValueOnce({
     id: 7, edicao_id: 1, numero, impressao: 'x', data_revisao: new Date(), usuario_uuid: 'u'

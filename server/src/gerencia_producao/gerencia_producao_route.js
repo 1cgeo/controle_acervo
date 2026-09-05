@@ -514,15 +514,24 @@ router.post(
   verifyPerfil('gerente', 'producao'),
   schemaValidation({ body: gerenciaProducaoSchema.filaPrioritaria }),
   asyncHandler(async (req, res, next) => {
-    await gerenciaProducaoCtrl.criaFilaPrioritaria(
+    const dados = await gerenciaProducaoCtrl.criaFilaPrioritaria(
       req.body.atividade_ids,
       req.body.usuario_uuid,
       req.body.prioridade,
       req.usuarioUuid,
       req.contexto
     )
+    // A FRASE MUDA QUANDO O FURO É PARCIAL. Só entra na fila a atividade 'Não
+    // iniciada', e o gerente que selecionou cinco na tela não tem como saber
+    // que duas já estavam em execução: 201 com "criadas com sucesso" e três
+    // linhas é indistinguível do desfecho certo.
     return res.sendJsonAndLog(
-      true, 'Entradas da fila prioritária criadas com sucesso', httpCode.Created
+      true,
+      dados.nao_incluidas.length > 0
+        ? `Entradas da fila prioritária criadas com sucesso. ${dados.nao_incluidas.length} atividade(s) não entraram por já estarem iniciadas`
+        : 'Entradas da fila prioritária criadas com sucesso',
+      httpCode.Created,
+      dados
     )
   })
 )
@@ -571,15 +580,21 @@ router.post(
   verifyPerfil('gerente', 'producao'),
   schemaValidation({ body: gerenciaProducaoSchema.filaPrioritariaGrupo }),
   asyncHandler(async (req, res, next) => {
-    await gerenciaProducaoCtrl.criaFilaPrioritariaGrupo(
+    const dados = await gerenciaProducaoCtrl.criaFilaPrioritariaGrupo(
       req.body.atividade_ids,
       req.body.habilitacao_id,
       req.body.prioridade,
       req.usuarioUuid,
       req.contexto
     )
+    // O mesmo recado da fila de pessoa: o furo parcial tem de aparecer.
     return res.sendJsonAndLog(
-      true, 'Entradas da fila prioritária de grupo criadas com sucesso', httpCode.Created
+      true,
+      dados.nao_incluidas.length > 0
+        ? `Entradas da fila prioritária de grupo criadas com sucesso. ${dados.nao_incluidas.length} atividade(s) não entraram por já estarem iniciadas`
+        : 'Entradas da fila prioritária de grupo criadas com sucesso',
+      httpCode.Created,
+      dados
     )
   })
 )

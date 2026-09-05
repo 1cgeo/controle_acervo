@@ -188,9 +188,11 @@ describe('openVersoesDialog', () => {
   });
 
   // Quem só lê alcança a lista, e não os botões de escrita: a rota de leitura é
-  // `verifyLogin`, e as de escrita são `verifyAdmin`. Oferecer o botão a quem o
-  // servidor vai recusar entrega um 403 no lugar de uma tela.
-  test('quem nao e administrador ve as ligadas, sem ligar nem desligar', async () => {
+  // `verifyAcesso`, e as de escrita são `verifyPerfil('operador','pit')`.
+  // Oferecer o botão a quem o servidor vai recusar entrega um 403 no lugar de
+  // uma tela. Aqui a pessoa é gerente da MAPOTECA: perfil de sobra em outro
+  // módulo, e nenhum no PIT.
+  test('quem nao tem perfil no PIT ve as ligadas, sem ligar nem desligar', async () => {
     logar({ perfis: { mapoteca: 3 } });
     getVersoesExtraPit.mockResolvedValueOnce([LIVRE]);
 
@@ -202,6 +204,38 @@ describe('openVersoesDialog', () => {
     // Nem a busca de candidatas é oferecida, e o servidor nem é consultado.
     expect(getVersoesCandidatasExtraPit).not.toHaveBeenCalled();
     expect(document.querySelector('.form-field__input')).toBeNull();
+  });
+
+  // O OPERADOR DO PIT LIGA A FOLHA, e este caso é o que impede a volta do
+  // `isAdmin()`. `POST` e `DELETE /metas/extra/:id/versoes` cobram
+  // `verifyPerfil('operador','pit')` desde a 1.35.0; com o administrador, quem
+  // cadastra a demanda (`list.js`, mesmo `temPerfil`) não conseguia dizer QUAIS
+  // folhas a cumprem, e a demanda contava zero na grade do PIT.
+  test('o operador do PIT liga e desliga, e o consulta do PIT nao', async () => {
+    logar({ perfis: { pit: 2 } });
+    getVersoesExtraPit.mockResolvedValueOnce([LIVRE]);
+    getVersoesCandidatasExtraPit.mockResolvedValueOnce([]);
+
+    openVersoesDialog({ demanda: DEMANDA });
+    await flush();
+
+    expect(document.body.textContent).toContain('Ligar outra versão');
+    expect(getVersoesCandidatasExtraPit).toHaveBeenCalled();
+    expect(botaoDe(acharItem('2966-1-NE'), 'Desligar')).not.toBeUndefined();
+
+    // CONTROLE NEGATIVO: um nível abaixo, no mesmo módulo, só lê.
+    document.querySelector('.modal__close')?.click();
+    await flush();
+    vi.clearAllMocks();
+    logar({ perfis: { pit: 1 } });
+    getVersoesExtraPit.mockResolvedValueOnce([LIVRE]);
+
+    openVersoesDialog({ demanda: DEMANDA });
+    await flush();
+
+    expect(document.body.textContent).not.toContain('Ligar outra versão');
+    expect(getVersoesCandidatasExtraPit).not.toHaveBeenCalled();
+    expect(botaoDe(acharItem('2966-1-NE'), 'Desligar')).toBeUndefined();
   });
 
   // O vínculo mudou, então a tela de trás precisa reler: a coluna "No acervo" é

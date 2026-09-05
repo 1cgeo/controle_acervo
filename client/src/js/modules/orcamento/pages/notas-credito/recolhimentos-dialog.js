@@ -2,6 +2,7 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { openModal } from '@components/modal/modal-base.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
+import { mostrarErro } from '@components/estado-erro.js';
 import { showSuccess, showError } from '@utils/toast.js';
 import { formatCurrency, formatDate, toNumber } from '@utils/format.js';
 import { permissoes } from '@store/auth-store.js';
@@ -116,14 +117,33 @@ export async function openRecolhimentosDialog({ nc, onChanged = null } = {}) {
     }),
   }, [svgIcon(ICONS.add, 16), ' Novo recolhimento']);
 
+  // A tabela vive num nó próprio para o estado de ERRO poder tomar o lugar dela
+  // e devolvê-lo depois, sem recriar a tabela. É o mesmo arranjo das listas do
+  // módulo. Ver `falhaNaCarga`.
+  const areaTabela = el('div', {}, [table.element]);
+
   const content = el('div', {}, [
     el('div', {
       className: 'page__actions',
       style: { marginBottom: 'var(--space-md, 16px)' },
     }, pode.operador ? [novoBtn] : []),
-    table.element,
+    areaTabela,
     rodape,
   ]);
+
+  /**
+   * Estado de ERRO no lugar da tabela.
+   *
+   * Zerar as linhas fazia a tabela escrever "Nenhum recolhimento lançado para
+   * esta nota de crédito": a falha da consulta lia-se como NC sem devolução
+   * nenhuma, e as duas pedem ações opostas -- uma pede tentar de novo, a outra
+   * pede lançar. Pior aqui do que numa lista qualquer: o total ao lado já dizia
+   * '-', e a tela afirmava duas coisas diferentes sobre o mesmo fato.
+   */
+  function falhaNaCarga(err) {
+    areaTabela.replaceChildren(table.element);
+    mostrarErro(areaTabela, err, () => recarregar());
+  }
 
   /**
    * Carrega a lista e refaz o total.
@@ -138,6 +158,9 @@ export async function openRecolhimentosDialog({ nc, onChanged = null } = {}) {
    *   custaria uma releitura da lista inteira de NCs a cada clique no ícone.
    */
   async function recarregar(mudou = false) {
+    // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
+    if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
+
     table.update({ loading: true });
     try {
       const linhas = await getRecolhimentos({ nota_credito_id: nc.id }) || [];
@@ -146,7 +169,8 @@ export async function openRecolhimentosDialog({ nc, onChanged = null } = {}) {
       table.update({ rows: linhas, loading: false });
     } catch (err) {
       totalValue.textContent = '-';
-      table.update({ rows: [], loading: false });
+      table.update({ loading: false });
+      falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar os recolhimentos');
     }
     if (mudou && onChanged) onChanged();

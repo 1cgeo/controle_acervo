@@ -188,6 +188,21 @@ describe('ficha da NC: o que o perfil de consulta passa a ver', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
+  // "VOLTAR" LEVA O ANO DA NC. A lista abre sempre no ano corrente, entao sair
+  // da ficha de uma NC de 2025 devolvia a lista de 2026, onde ela nem aparece.
+  test('"Voltar" leva o ano da NC, e não o ano corrente', async () => {
+    getNotaCredito.mockImplementation(() => Promise.resolve({ ...NC, ano: 2025 }));
+    const { container, cleanup } = await montar();
+
+    location.hash = '/orcamento/notas_credito/7';
+    [...container.querySelectorAll('.page__header .btn')]
+      .find(b => b.textContent.includes('Voltar')).click();
+
+    expect(location.hash).toBe('#/orcamento/notas_credito?ano=2025');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
   // O SALDO E O EMPENHADO VEM DO SERVIDOR, pela listagem do ano: `GET
   // /notas_credito/:id` nao os traz, e refazer a conta na tela abriria a porta
   // para a ficha prometer credito que o servidor recusa.

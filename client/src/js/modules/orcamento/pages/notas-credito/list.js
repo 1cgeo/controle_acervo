@@ -63,11 +63,31 @@ function prazoVencido(nc) {
  * Lista de Notas de Credito (#/notas-credito). Filtros no topo: ano da tela e
  * classificacao (PDR / Extra-PDR).
  * @param {HTMLElement} container
- * @param {{params:Object, query:URLSearchParams}} _ctx
+ * @param {{params:Object, query:URLSearchParams}} ctx - `?ano=` abre a lista naquele ano
  * @returns {Function} cleanup
  */
-export async function renderNotasCreditoList(container, _ctx) {
+export async function renderNotasCreditoList(container, ctx) {
+  // O ANO VIAJA NA URL (`?ano=`), e por isso a tela o LE do `ctx.query`.
+  //
+  // Nao contradiz a regra do `criarFiltroAno` (o ano e DA TELA e nao guarda
+  // nada): quem o carrega e a URL daquela navegacao, que a pessoa ve na barra de
+  // endereco. Sem isto, o link de uma pendencia do painel de 2025 e o "Voltar"
+  // de um registro de 2025 caiam numa lista aberta em 2026, onde o que se foi
+  // buscar nao existe.
+  const anoDaUrl = () => {
+    const n = parseInt(((ctx && ctx.query) || new URLSearchParams()).get('ano'), 10);
+    return Number.isFinite(n) ? n : null;
+  };
   let disposed = false;
+
+  // O NUMERO DA REQUISICAO, que decide quem pinta.
+  //
+  // `disposed` so protege a SAIDA da pagina. Numa rede lenta, trocar o filtro
+  // duas vezes dispara duas cargas, e quem PINTA e a que chegar por ultimo: a
+  // resposta antiga pintava por cima da nova, com o seletor mostrando um recorte
+  // e a tabela mostrando outro. Aqui so a ULTIMA pedida pinta, no acerto e no
+  // erro.
+  let requisicao = 0;
   let filtroClassificacao = null;
   const pode = permissoes('orcamento');
 
@@ -82,6 +102,7 @@ export async function renderNotasCreditoList(container, _ctx) {
   // abrir um exercicio novo passa por escolher um ano ainda vazio.
   const filtroAno = criarFiltroAno({
     carregarAnos: getAnos,
+    anoInicial: anoDaUrl(),
     permitirOutroAno: true,
     onChange: () => load(),
   });
@@ -394,6 +415,7 @@ export async function renderNotasCreditoList(container, _ctx) {
   }
 
   async function load() {
+    const minha = ++requisicao;
     // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
     if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
 
@@ -403,12 +425,12 @@ export async function renderNotasCreditoList(container, _ctx) {
         ano: filtroAno.getAno(),
         classificacao_id: filtroClassificacao ?? undefined,
       });
-      if (disposed) return;
+      if (disposed || minha !== requisicao) return;
       const ncs = dados || [];
       renderSummary(ncs);
       table.update({ rows: ncs, loading: false });
     } catch (err) {
-      if (disposed) return;
+      if (disposed || minha !== requisicao) return;
       limparSummary();
       table.update({ loading: false });
       falhaNaCarga(err);

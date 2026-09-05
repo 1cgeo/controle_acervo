@@ -55,7 +55,7 @@ class Main(QObject):
             "Este plugin é a ferramenta de quem imprime, e exige o perfil "
             "OPERADOR no módulo Mapoteca.\n\n"
             "Seu usuário não tem esse perfil. Peça ao gerente da mapoteca para "
-            "concedê-lo, ou consulte os pedidos pela interface web do SCA."
+            "concedê-lo, ou consulte os pedidos pela interface web do SAP."
         )
         return False
 

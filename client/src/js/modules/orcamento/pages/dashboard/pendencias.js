@@ -101,7 +101,11 @@ export function montarPendencias(pendencias, ano) {
         total: Number(medida.total) || 0,
         tom: neutra ? 'neutro' : 'alerta',
         nota: neutra ? NOTA_CARGA_HISTORICA : '',
-        rota: p.rota || null,
+        // O ANO VIAJA NO LINK. A lista de destino abre no ano corrente, entao a
+        // pendencia de 2025 apontava para uma tela de 2026 onde aquelas 51 NCs
+        // nem existem: o painel apontava um defeito e o link levava a uma tela
+        // que o negava. As seis listas do orcamento leem `?ano=` da URL.
+        rota: p.rota ? `${p.rota}?ano=${ano}` : null,
         destino: p.destino || null,
       };
     })
@@ -133,8 +137,9 @@ function linha(p) {
       className: CHIP_DO_TOM[p.tom],
       textContent: p.total > 0 ? `${p.n} de ${p.total}` : String(p.n),
     }),
-    // O link leva a TELA, e nao a um recorte dela: nenhuma lista do orcamento
-    // aceita filtro por URL hoje. Prometer "ja filtrada" no rotulo seria mentir.
+    // O link leva a TELA NO ANO DO PAINEL (`?ano=`), e nao a um recorte por
+    // pendencia: nenhuma lista do orcamento aceita filtrar POR PENDENCIA na URL,
+    // e prometer "ja filtrada" no rotulo seria mentir.
     p.rota
       ? el('a', {
         href: p.rota,

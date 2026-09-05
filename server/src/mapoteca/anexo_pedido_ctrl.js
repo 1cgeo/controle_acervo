@@ -161,4 +161,10 @@ controller.deletar = async (id, usuarioUuid, contexto) => {
   })
 }
 
+// EXPORTADA porque a exclusão do PEDIDO também precisa dela: `deletePedidos`
+// lê os anexos que vão cair por ON DELETE CASCADE para auditá-los, e tem de ler
+// as MESMAS colunas que este arquivo lê (o BYTEA de fora). Duas listas seriam
+// duas trilhas com formatos diferentes para a mesma tabela.
+controller.COLUNAS_AUDITAVEIS = COLUNAS_AUDITAVEIS
+
 module.exports = controller

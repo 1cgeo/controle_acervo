@@ -751,6 +751,18 @@
 
 .grade-pit__celula--futuro:hover { outline: none; }
 
+/* O ANO ENCERRADO. Nao e o mes que falta chegar nem a coluna que a origem
+   calcula: aqui a grade INTEIRA daquele ano parou de receber lancamento, e so
+   reabrir o exercicio a devolve. Por isso a marca e a mais apagada das tres, e
+   cobre as 12 colunas de todas as linhas do ano. */
+.grade-pit__celula--encerrada {
+  cursor: not-allowed;
+  color: var(--text-disabled);
+  background-color: color-mix(in srgb, var(--border-color) 40%, transparent);
+}
+
+.grade-pit__celula--encerrada:hover { outline: none; }
+
 /* A ETIQUETA DE ORIGEM, na linha da meta. Ela responde de uma vez o que a
    celula responderia doze vezes: nesta coluna, esta linha e minha ou do
    sistema? */

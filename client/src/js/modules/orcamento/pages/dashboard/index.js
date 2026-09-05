@@ -47,6 +47,10 @@ export async function renderDashboard(container, _ctx) {
 
   const store = criarSecao3Store({ getAno: filtroAno.getAno });
 
+  // Verdadeiro enquanto o mês na tela for o que a TROCA DE ANO escolheu, e não o
+  // que a pessoa escolheu. Ver `trocarAno`.
+  let mesVeioDoAno = false;
+
   // O MES PELO MESMO COMPONENTE DO ANO. Antes era um `<select>` solto com
   // `<span>Mês:</span>` ao lado, rótulo INLINE onde o do Ano fica ACIMA: dois
   // padrões de campo na mesma linha, alinhados no olho por um `flex-end`.
@@ -58,6 +62,9 @@ export async function renderDashboard(container, _ctx) {
     )),
     value: String(store.getMes()),
     onChange: (valor) => {
+      // Escolha da PESSOA: dali em diante o mês é dela, e voltar ao ano corrente
+      // não o desfaz.
+      mesVeioDoAno = false;
       store.setMes(parseInt(valor, 10));
       abas.refreshActive();
       atualizarPendencias();
@@ -83,12 +90,33 @@ export async function renderDashboard(container, _ctx) {
   // Trocar o ano da tela invalida a execucao guardada e recarrega a aba que
   // estiver aberta. As outras buscam sozinhas quando forem montadas.
   function trocarAno() {
-    // Exercicio fechado abre fechado. O mes nasce com o mes de hoje, entao ir
-    // para um ano anterior mostrava o ano encerrado cortado no mes corrente, e
-    // o usuario lia um total menor que o real sem nada avisar.
-    if (filtroAno.getAno() < new Date().getFullYear()) {
+    // Exercicio que NAO E O CORRENTE abre fechado, isto e, em dezembro. O mes
+    // nasce com o mes de hoje, entao ir para um ano anterior mostrava o ano
+    // encerrado cortado no mes corrente, e o usuario lia um total menor que o
+    // real sem nada avisar.
+    //
+    // O ANO FUTURO ENTRA NA MESMA REGRA, e por isso a comparacao e `!==` e nao
+    // `<`: `permitirOutroAno` existe para o exercicio que ainda nao comecou, e
+    // ali o mes de hoje corta a execucao no mesmo lugar. Em 05/09/2026 o painel
+    // de 2027 recortava em 30/09/2027, escondendo a NC emitida em novembro do
+    // recebido, do recolhido e do saldo, enquanto o "Previsto" (que vem do PDR e
+    // nao tem recorte de mes) saia inteiro: previsto cheio contra execucao
+    // cortada, sem nada dizer.
+    //
+    // E A VOLTA DESFAZ A IDA. Sem isto, quem olhava 2025 e voltava para o ano
+    // corrente ficava com "Dezembro" no seletor: o painel do ano em curso passava
+    // a se ler como exercicio fechado, e o mes que a tela dizia nao era o mes em
+    // que se estava. So o mes que a PROPRIA troca de ano escolheu se desfaz; o
+    // que a pessoa escolheu a mao fica, porque ele e uma pergunta dela.
+    const mesDeHoje = new Date().getMonth() + 1;
+    if (filtroAno.getAno() !== new Date().getFullYear()) {
       store.setMes(12);
       filtroMes.setValue('12');
+      mesVeioDoAno = true;
+    } else if (mesVeioDoAno) {
+      store.setMes(mesDeHoje);
+      filtroMes.setValue(String(mesDeHoje));
+      mesVeioDoAno = false;
     }
     store.invalidar();
     abas.refreshActive();

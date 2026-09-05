@@ -30,6 +30,31 @@ const entrarComo = (instituicao) =>
 const botao = (rotulo) => [...document.querySelectorAll('.modal__footer button')]
   .find(b => b.textContent.trim() === rotulo);
 
+/**
+ * Dubla `focus` e `print` da janela do iframe de impressao.
+ *
+ * O jsdom nao implementa nenhuma das duas: chamadas, elas escrevem dois
+ * "Error: Not implemented" no stderr do `vitest run` sem reprovar caso nenhum.
+ * Duas pilhas de erro numa suite verde treinam quem le a saida a ignorar erro,
+ * e e ali que o erro de verdade se esconde.
+ *
+ * A troca acontece ENTRE o `appendChild` e o evento `load`: a janela do iframe
+ * nasce ao ser anexado, e o `load` do srcdoc so dispara no tique seguinte. Por
+ * isso este auxiliar se chama LOGO DEPOIS do clique e ANTES do `flush`.
+ *
+ * @returns {{focus:Function, print:Function}|null} os dublês, para o caso que
+ *   quiser provar que a impressao foi pedida
+ */
+const dublarImpressao = () => {
+  const frame = [...document.querySelectorAll('iframe')]
+    .find(f => f.getAttribute('aria-hidden') === 'true');
+  if (!frame || !frame.contentWindow) return null;
+  const dubles = { focus: vi.fn(), print: vi.fn() };
+  frame.contentWindow.focus = dubles.focus;
+  frame.contentWindow.print = dubles.print;
+  return dubles;
+};
+
 beforeEach(() => {
   // A sessao padrao e a desta instalacao. O remetente sai DELA desde 2026-08-09,
   // e nao de um nome escrito no codigo.
@@ -366,6 +391,9 @@ describe('openEtiquetaEnvioDialog - trava do botao Imprimir', () => {
     await flush();
 
     botao('Imprimir').click();
+    // Antes do flush: e a janela do iframe que recebe os dublês, e o `load` que
+    // chama `focus` e `print` so dispara no tique seguinte.
+    const dubles = dublarImpressao();
     await flush();
 
     // Previa + iframe da impressao.
@@ -374,6 +402,10 @@ describe('openEtiquetaEnvioDialog - trava do botao Imprimir', () => {
     const impressao = iframes.find(f => f.getAttribute('aria-hidden') === 'true');
     expect(impressao.srcdoc).toContain('Rua Cleveland, 250');
     expect(impressao.srcdoc).toContain('Pedido AB12-CD34-EF56');
+    // E a impressao foi MESMO pedida: sem isto, um `imprimirHtml` que so
+    // montasse o iframe e nunca chamasse `print` passaria neste caso.
+    expect(dubles.print).toHaveBeenCalled();
+    expect(dubles.focus).toHaveBeenCalled();
   });
 
   // A previa acompanha a EDICAO, e nao o que esta salvo: ela existe para a

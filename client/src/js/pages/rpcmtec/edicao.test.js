@@ -485,9 +485,9 @@ describe('renderRpcmtecEdicao', () => {
   // -------------------------------------------------------------------------
   // A CAIXA QUE ESCONDE O QUE JA FOI CONFERIDO
   //
-  // A edicao tem 34 blocos. Conferidos 30, a tela continuava com os 34 e achar
-  // os quatro que faltam era rolar o documento inteiro. A caixa deixa na tela
-  // so o que pede olho.
+  // A edicao tem 33 blocos (`BLOCOS.length`, em `rpcmtec_estrutura.js`).
+  // Conferidos 30, a tela continuava com os 33 e achar os tres que faltam era
+  // rolar o documento inteiro. A caixa deixa na tela so o que pede olho.
   //
   // O QUE ELA NAO ESCONDE e o que faz ela valer: a marca DESATUALIZADA (o
   // conteudo mudou depois da conferencia) e a subsecao nunca conferida.
@@ -676,6 +676,10 @@ describe('renderRpcmtecEdicao', () => {
 // de a pessoa ter digitado a subseção inteira.
 // ---------------------------------------------------------------------------
 describe('RPCMTec: o gerente lê tudo e edita só o módulo dele', () => {
+  const FEITA_GERENTE = {
+    por: 'Cap Fulano', em: '2026-08-06T14:32:00.000Z', desatualizada: false,
+  };
+
   const logarGerenteDe = (modulo) => {
     localStorage.clear();
     saveAuth(
@@ -742,6 +746,41 @@ describe('RPCMTec: o gerente lê tudo e edita só o módulo dele', () => {
       expect(subsecao(container, numero)).toBeTruthy();
     }
     expect(botaoPor(container, 'Anuário (ODS)')).toBeTruthy();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A CAIXA DE CONFERENCIA SEGUE A MESMA REGUA DOS BOTOES DE EDICAO. O servidor
+  // cobra `verifyGerente` MAIS `verifyModuloSubsecao()` no
+  // `PUT /rpcmtec/:id/subsecao/:numero/revisao`, e a caixa era desenhada nas 33:
+  // o gerente marcava a de outro modulo, tomava 403 e via a caixa desmarcar
+  // sozinha. Fora do modulo dele ele LE quem conferiu, que e o que a marca
+  // conta.
+  test('a caixa de conferência é só do módulo do gerente, e fora dele vira leitura', async () => {
+    getDocumento.mockImplementation(() => Promise.resolve(doc({
+      revisoes: { '6.1': FEITA_GERENTE },
+    })));
+    logarGerenteDe('mapoteca');
+    const { container, cleanup } = await montar();
+
+    // A unica caixa clicavel e a da 3.1, que e da mapoteca.
+    const caixas = [...container.querySelectorAll('.rpcm-revisao__caixa')];
+    expect(caixas).toHaveLength(1);
+    expect(subsecao(container, '3.1').querySelector('.rpcm-revisao__caixa')).toBe(caixas[0]);
+    expect(subsecao(container, '6.1').querySelector('.rpcm-revisao__caixa')).toBeNull();
+
+    // E a 6.1, ja conferida, continua contando QUEM conferiu.
+    expect(subsecao(container, '6.1').textContent).toContain('Conferida por Cap Fulano');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // CONTROLE NEGATIVO do caso acima: o administrador continua com as quatro.
+  test('o administrador confere qualquer subseção', async () => {
+    saveAuth({ token: 't', administrador: true, uuid: 'u', perfis: {}, modulos: [] }, 'x');
+    const { container, cleanup } = await montar();
+
+    expect(container.querySelectorAll('.rpcm-revisao__caixa')).toHaveLength(4);
 
     if (typeof cleanup === 'function') cleanup();
   });

@@ -126,7 +126,8 @@ describe('registrar impressao em LOTE', () => {
     expect(registros).toHaveLength(3);
     for (const r of registros) {
       expect(r.observacao).toBe('Plotter 2');
-      expect(r.data_impressao).toBe('2026-08-01');
+      // Meio-dia local, pelo mesmo motivo do dialogo de um item so.
+      expect(r.data_impressao).toBe('2026-08-01T12:00:00');
     }
   });
 

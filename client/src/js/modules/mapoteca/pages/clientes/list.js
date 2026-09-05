@@ -70,9 +70,23 @@ export async function renderClientesList(container, _ctx) {
     const selecionados = table.getSelected();
     if (!selecionados.length) return;
 
+    // A CONFIRMACAO NOMEIA QUEM VAI SAIR, ate tres e "e mais N".
+    //
+    // A tabela e paginada e a selecao atravessa a paginacao (por `rowKey`): quem
+    // marcou linhas na primeira pagina e rolou nao se lembra do que marcou, e a
+    // contagem sozinha nao devolve isso. A exclusao de UM cliente, ao lado, ja
+    // nomeia; a acao mais perigosa das duas era a que dizia menos, e ela e
+    // irreversivel. A amostra e montada como a dos parecidos do dialogo de
+    // cliente.
+    const mostrados = selecionados.slice(0, 3);
+    const resto = selecionados.length - mostrados.length;
+    const nomes = mostrados.map(c => c.nome).join('; ')
+      + (resto > 0 ? ` e mais ${resto}` : '');
+
     const confirmado = await confirmDialog({
       title: 'Excluir clientes',
-      message: `Excluir ${selecionados.length} cliente(s) selecionado(s)? Esta ação não pode ser desfeita.`,
+      message: `Excluir ${selecionados.length} cliente(s)? ${nomes}. `
+        + 'Esta ação não pode ser desfeita.',
       confirmLabel: 'Excluir',
       danger: true,
     });

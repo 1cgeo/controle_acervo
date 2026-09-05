@@ -127,6 +127,9 @@ const FORA_DO_ESCOPO = new Map([
   ['POST /prepare-upload/product', 'reserva destino; o evento nasce no confirm-upload'],
   ['POST /prepare-upload/replace-files', 'reserva destino; o evento nasce no confirm-upload'],
   ['POST /cancel-upload', 'sessao que nao virou arquivo nao mudou o acervo'],
+  // Renovar o prazo da sessao (2026-09-05) e o mesmo caso do prepare: mexe so em
+  // `acervo.upload_session`, que nao e acervo; o evento continua nascendo no confirm.
+  ['POST /renovar-upload', 'estende o prazo da reserva; o evento nasce no confirm-upload'],
   ['POST /prepare-upload/missao (ponto_controle)', 'reserva destino; o evento nasce no confirm-upload'],
   ['POST /cancel-upload (ponto_controle)', 'sessao que nao virou ponto nao mudou nada'],
   // Download. E registro de ACESSO a arquivo, nao alteracao de acervo, e
@@ -135,7 +138,14 @@ const FORA_DO_ESCOPO = new Map([
   ['POST /prepare-download/arquivos', 'acesso a arquivo; acervo.download ja e o historico'],
   ['POST /prepare-download/produtos', 'acesso a arquivo; acervo.download ja e o historico'],
   ['POST /confirm-download', 'acesso a arquivo; acervo.download ja e o historico'],
-  ['POST /cleanup-expired-downloads', 'marca token expirado; nao altera acervo nem arquivo']
+  ['POST /cleanup-expired-downloads', 'marca token expirado; nao altera acervo nem arquivo'],
+  // Envio manual de miniatura. `acervo.miniatura_versao` e CACHE DERIVADO, e nao
+  // esta no mapa de auditoria: a varredura (POST /miniaturas/varrer) regrava
+  // linha ali sem registrar nada por linha, entao um evento so nesta porta daria
+  // um historico que mente por omissao. A origem da imagem se le no proprio
+  // `arquivo_id`: nulo e fornecida, preenchido e gerada daquele arquivo. O
+  // motivo esta escrito tambem em `acervo_ctrl.enviarMiniatura`.
+  ['POST /versao/:versao_id/miniatura', 'miniatura_versao e cache derivado, fora do mapa de auditoria']
 ])
 
 const METODOS_DE_ESCRITA = ['post', 'put', 'patch', 'delete']

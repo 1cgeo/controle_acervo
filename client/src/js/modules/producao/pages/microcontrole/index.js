@@ -136,6 +136,18 @@ export function renderMicrocontrole(container) {
     dataFim: campoFim.getValue(),
   });
 
+  /**
+   * O FILTRO PEDIDO, EM TEXTO, para conferir depois do `await`.
+   *
+   * As duas consultas do microcontrole varrem períodos inteiros e não respondem
+   * no mesmo tempo. Clicando "Aplicar" duas vezes com períodos diferentes, a
+   * resposta do primeiro pode chegar depois: sem esta conferência ela pintaria
+   * as tabelas DELA sob um filtro que já diz outro período, e o resumo ("N
+   * operação(ões) ... no período filtrado") afirmaria o número de um mês sobre
+   * as datas de outro. A resposta que não é mais a pedida é descartada.
+   */
+  const assinaturaDoFiltro = () => JSON.stringify(filtroAtual());
+
   // --- Feição ----------------------------------------------------------------
 
   const resumoFeicao = el('p', { className: 'microcontrole__nota' });
@@ -339,9 +351,10 @@ export function renderMicrocontrole(container) {
     tabelaDia.update({ loading: true });
     resumoFeicao.textContent = '';
 
+    const pedido = assinaturaDoFiltro();
     try {
       const dados = await getResumoFeicao(filtroAtual());
-      if (disposed) return;
+      if (disposed || pedido !== assinaturaDoFiltro()) return;
 
       const porOperador = (dados && dados.por_operador) || [];
       const porCamada = (dados && dados.por_camada) || [];
@@ -368,7 +381,7 @@ export function renderMicrocontrole(container) {
       );
       carregarAproveitamento();
     } catch (err) {
-      if (disposed) return;
+      if (disposed || pedido !== assinaturaDoFiltro()) return;
       // O ERRO FICA NA SEÇÃO DELE, e as três tabelas somem juntas: elas são
       // recortes da MESMA resposta. Mostrar tabela vazia ao lado do aviso faria
       // "não consegui perguntar" se ler como "ninguém desenhou nada".
@@ -390,9 +403,10 @@ export function renderMicrocontrole(container) {
     resumoTela.textContent = '';
     avisoTruncado.textContent = '';
 
+    const pedido = assinaturaDoFiltro();
     try {
       const colecao = await getCoberturaTela(filtroAtual());
-      if (disposed) return;
+      if (disposed || pedido !== assinaturaDoFiltro()) return;
 
       const linhas = amostrasPorOperador(colecao);
       const total = ((colecao && colecao.features) || []).length;
@@ -406,7 +420,7 @@ export function renderMicrocontrole(container) {
       // não fez.
       avisoTruncado.textContent = (colecao && colecao.aviso) || '';
     } catch (err) {
-      if (disposed) return;
+      if (disposed || pedido !== assinaturaDoFiltro()) return;
       resumoTela.textContent = '';
       clearChildren(areaCobertura);
       areaCobertura.appendChild(estadoErro(err, carregarCobertura));
@@ -431,13 +445,18 @@ export function renderMicrocontrole(container) {
 
     tabelaAproveitamento.update({ loading: true });
 
+    // O PEDIDO AQUI É O OPERADOR MAIS O PERÍODO: trocar o operador no seletor
+    // dispara outra carga, e a do anterior chegando depois encheria a tabela com
+    // o trabalho de outra pessoa sob o nome escolhido.
+    const pedido = `${usuarioUuid}\u0000${assinaturaDoFiltro()}`;
+    const mesmoPedido = () => pedido === `${campoOperador.getValue()}\u0000${assinaturaDoFiltro()}`;
     try {
       const { dataInicio, dataFim } = filtroAtual();
       const linhas = await getAproveitamentoTela({ usuarioUuid, dataInicio, dataFim });
-      if (disposed) return;
+      if (disposed || !mesmoPedido()) return;
       tabelaAproveitamento.update({ rows: linhas || [], loading: false });
     } catch (err) {
-      if (disposed) return;
+      if (disposed || !mesmoPedido()) return;
       clearChildren(areaAproveitamento);
       areaAproveitamento.appendChild(estadoErro(err, carregarAproveitamento));
     }
@@ -445,13 +464,49 @@ export function renderMicrocontrole(container) {
 
   // --- O filtro dispara as duas seções ---------------------------------------
 
+  /**
+   * O PERÍODO INVERTIDO É RECUSADO AQUI, e o motivo é o silêncio do outro lado.
+   *
+   * O Joi do servidor valida cada data sozinha e não compara as duas: "de 08/09
+   * até 08/08" é uma consulta VÁLIDA que não casa linha nenhuma. A tela
+   * responderia "0 operação(ões) de feição, 0 operador(es), 0 camada(s)" e
+   * "Nenhuma amostra de tela no período", que são as frases de quem não
+   * trabalhou -- e o que houve foi um filtro digitado ao contrário. As duas
+   * datas se comparam como TEXTO porque 'AAAA-MM-DD' já ordena assim, e virá-las
+   * em `Date` traria de volta o fuso que o `diaLocal` acima existe para evitar.
+   *
+   * @returns {boolean}
+   */
+  function periodoValido() {
+    const inicio = campoInicio.getValue();
+    const fim = campoFim.getValue();
+    const invertido = Boolean(inicio && fim && inicio > fim);
+    campoFim.setError(invertido
+      ? 'A data final é anterior à inicial: a medição sairia vazia.'
+      : null);
+    return !invertido;
+  }
+
   function aplicar(evento) {
     if (evento) evento.preventDefault();
+    // O que já está na tela FICA. Ele é o resultado do último período válido, e
+    // apagá-lo junto com o aviso deixaria a pessoa sem o número que ela tinha.
+    if (!periodoValido()) return;
     carregarFeicao();
     carregarCobertura();
   }
 
   filtro.addEventListener('submit', aplicar);
+
+  // O ERRO DO PERÍODO SOME AO CORRIGIR A DATA, e não só no próximo "Aplicar".
+  // `periodoValido()` só roda no `submit`, então "A data final é anterior à
+  // inicial" ficava sob um par de datas que já estava certo, até a pessoa
+  // clicar de novo -- e quem lê o erro ANTES de clicar conclui que corrigir não
+  // adiantou. Limpar é seguro porque `campoFim` não carrega outro erro: o do
+  // lote mora em `campoLote`.
+  const limparErroDePeriodo = () => campoFim.setError(null);
+  campoInicio.input.addEventListener('input', limparErroDePeriodo);
+  campoFim.input.addEventListener('input', limparErroDePeriodo);
 
   carregarLotes();
   aplicar();
@@ -459,6 +514,8 @@ export function renderMicrocontrole(container) {
   return () => {
     disposed = true;
     filtro.removeEventListener('submit', aplicar);
+    campoInicio.input.removeEventListener('input', limparErroDePeriodo);
+    campoFim.input.removeEventListener('input', limparErroDePeriodo);
     if (tabelaOperador._cleanup) tabelaOperador._cleanup();
     if (tabelaCamada._cleanup) tabelaCamada._cleanup();
     if (tabelaDia._cleanup) tabelaDia._cleanup();

@@ -39,8 +39,17 @@ const dia = Joi.date().iso().raw()
 // O ASSINANTE é o uuid do cadastro, e não um nome digitado: o bloco de
 // assinatura do PDF sai de `dgeo.usuario`. É ANULÁVEL na criação porque quem vai
 // assinar nem sempre se sabe no dia 1º, e o fechamento o cobra.
+
+// O ANO TEM LIMITES, e eles são os mesmos que a tela já usa. A coluna é
+// `SMALLINT` (`er/rpcmtec.sql`), então `{ ano: 40000 }` passava pelo Joi, chegava
+// ao INSERT e voltava como 500 com o `22003 smallint out of range` cru: o
+// `tratarErroEdicao` só traduz o 23505 da UNIQUE. Entrada de gente merece 400, e
+// aqui a régua vale também para o CLI.
+const ANO_MINIMO = 2000
+const ANO_MAXIMO = 2100
+
 const camposBase = {
-  ano: Joi.number().integer().strict().required(),
+  ano: Joi.number().integer().strict().min(ANO_MINIMO).max(ANO_MAXIMO).required(),
   mes: Joi.number().integer().min(1).max(12).required(),
   assinante_uuid: Joi.string().uuid().allow(null, ''),
   // `allow(null, '')`, como o vizinho de cima e como TODO campo `dia` deste
@@ -56,7 +65,23 @@ const camposBase = {
 }
 
 models.criar = Joi.object().keys({ ...camposBase })
-models.atualizar = Joi.object().keys({ ...camposBase })
+
+// O "eu sei o que estou fazendo" da TROCA DE PERÍODO, no molde do
+// `ciente_revisao` do fechamento e do `confirmar_remocao` da importação da 5.1.
+//
+// Trocar o mês de uma edição ABERTA que já tem subseção digitada preenchida
+// refaz as calculadas (elas saem do banco a cada montagem) e MANTÉM as digitadas
+// como estão: o texto que descreve julho passa a sair sob o rótulo de agosto, e
+// nada acusa. É o mesmo estrago que a rota de copiar o mês anterior produzia, e
+// que foi podada em 2026-08-06 por essa razão. Sem esta chave a rota responde
+// 409 dizendo quantas subseções estão preenchidas; com ela, troca.
+//
+// `default(false)` para o chamador antigo, que não a conhece, receber o aviso em
+// vez de trocar calado. Ela NÃO existe na criação: não há período anterior.
+models.atualizar = Joi.object().keys({
+  ...camposBase,
+  confirmar_troca_de_periodo: Joi.boolean().default(false)
+})
 
 // --- Subseção digitada ------------------------------------------------------
 
@@ -152,7 +177,9 @@ models.capacitacaoQuery = Joi.object().keys({
 })
 
 const capacitacao = {
-  ano: Joi.number().integer().strict().required(),
+  // Os mesmos limites da edição, e pelo mesmo motivo: `rpcmtec.capacitacao.ano`
+  // também é `SMALLINT`.
+  ano: Joi.number().integer().strict().min(ANO_MINIMO).max(ANO_MAXIMO).required(),
   nome: Joi.string().max(255).required(),
   // `tipo_id` NÃO ESTÁ AQUI, e é regra, não esquecimento. Ele é fixado pela
   // ROTA, no servidor, e mandá-lo no corpo não muda nada: o `stripUnknown` do
@@ -178,7 +205,15 @@ const capacitacao = {
   // `unique()` porque a tabela tem a UNIQUE (capacitacao, usuario): mandar o
   // mesmo duas vezes chegaria ao 409 do banco, e a lista vem de uma tela de
   // seleção onde repetir não faz sentido.
-  militares: Joi.array().items(Joi.string().uuid()).unique().default([]),
+  //
+  // SEM `.default([])`, pela mesma razão de `meta_pit_id` e `data_prevista` logo
+  // abaixo: a chave AUSENTE preserva a lista gravada, e a lista VAZIA a apaga.
+  // O default injetava `[]`, então "ausente" nunca chegava ao controlador e o
+  // `gravarMilitares` fazia o DELETE de qualquer jeito. Quem corrigisse pelo CLI
+  // o nome de uma capacitação, mandando o corpo sem `militares`, perdia os oito
+  // instrutores dela -- com um evento de auditoria dizendo que a lista mudou. A
+  // tela web sempre manda a lista, e por isso nunca caiu nisso.
+  militares: Joi.array().items(Joi.string().uuid()).unique(),
   plano_codigo: Joi.string().max(255).allow(null, ''),
   documento: Joi.string().max(255).allow(null, ''),
   // Meta do PIT que esta capacitação cumpre. ANULÁVEL, e a maioria

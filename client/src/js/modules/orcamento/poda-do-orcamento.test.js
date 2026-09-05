@@ -291,8 +291,13 @@ describe('o ano de referencia do recebimento ganhou coluna', () => {
       { id: 1, material: 'Plotter A0', ano_referencia: null },
     ]);
 
-    const celula = [...tabelaDeRecebimentos(container).querySelectorAll('tbody td')]
-      .find(td => td.querySelector('span[title]'));
+    // A celula sai pelo INDICE DA COLUNA, e nao pelo primeiro `span[title]` da
+    // linha: a coluna "Data do recebimento", que entrou em 2026-09-05, tambem
+    // esmaece o vazio com um `title`, e vem antes desta.
+    const tabela = tabelaDeRecebimentos(container);
+    const coluna = cabecalhos(tabela).indexOf('Ano de referência (4.6)');
+    expect(coluna).toBeGreaterThan(-1);
+    const celula = [...tabela.querySelectorAll('tbody td')][coluna];
     expect(celula.textContent).toBe('2026');
     expect(celula.querySelector('span').title).toContain('ano do empenho');
 

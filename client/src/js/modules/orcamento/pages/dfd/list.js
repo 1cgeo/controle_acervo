@@ -40,11 +40,31 @@ function valorMaisComum(linhas, campo) {
  * Lista de DFD (#/dfd). Documento de Formalizacao da Demanda, com itens.
  * O conjunto de DFDs do ano da tela e o "PCA do ano".
  * @param {HTMLElement} container
- * @param {{params:Object, query:URLSearchParams}} _ctx
+ * @param {{params:Object, query:URLSearchParams}} ctx - `?ano=` abre a lista naquele ano
  * @returns {Function} cleanup
  */
-export async function renderDfdList(container, _ctx) {
+export async function renderDfdList(container, ctx) {
+  // O ANO VIAJA NA URL (`?ano=`), e por isso a tela o LE do `ctx.query`.
+  //
+  // Nao contradiz a regra do `criarFiltroAno` (o ano e DA TELA e nao guarda
+  // nada): quem o carrega e a URL daquela navegacao, que a pessoa ve na barra de
+  // endereco. Sem isto, o link de uma pendencia do painel de 2025 e o "Voltar"
+  // de um registro de 2025 caiam numa lista aberta em 2026, onde o que se foi
+  // buscar nao existe.
+  const anoDaUrl = () => {
+    const n = parseInt(((ctx && ctx.query) || new URLSearchParams()).get('ano'), 10);
+    return Number.isFinite(n) ? n : null;
+  };
   let disposed = false;
+
+  // O NUMERO DA REQUISICAO, que decide quem pinta.
+  //
+  // `disposed` so protege a SAIDA da pagina. Numa rede lenta, trocar o filtro
+  // duas vezes dispara duas cargas, e quem PINTA e a que chegar por ultimo: a
+  // resposta antiga pintava por cima da nova, com o seletor mostrando um recorte
+  // e a tabela mostrando outro. Aqui so a ULTIMA pedida pinta, no acerto e no
+  // erro.
+  let requisicao = 0;
   // Criar e editar DFD sao operador; excluir e gerente. Baixar o anexo e
   // consulta e fica para todo mundo.
   const pode = permissoes('orcamento');
@@ -61,6 +81,7 @@ export async function renderDfdList(container, _ctx) {
   // montar o PCA do exercicio seguinte comeca num ano vazio.
   const filtroAno = criarFiltroAno({
     carregarAnos: svc.getAnos,
+    anoInicial: anoDaUrl(),
     permitirOutroAno: true,
     onChange: () => load(),
   });
@@ -199,32 +220,53 @@ export async function renderDfdList(container, _ctx) {
   }
 
   async function load() {
+    const minha = ++requisicao;
     // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
     if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
 
     const ano = filtroAno.getAno();
     title.textContent = `DFD ${ano}`;
     table.update({ loading: true });
+    // O DOMINIO CARREGA SOZINHO, com o proprio `catch`. Junto num `Promise.all`,
+    // a falha dele derrubava a tela do PCA INTEIRO por um catalogo de duas
+    // linhas que so o DIALOGO usa, e a mensagem que sobrava na tela nem falava
+    // de DFD. E a armadilha que o CLAUDE.md registra com este nome.
+    carregarTipoItem();
     try {
-      const [dfds, tipoItem] = await Promise.all([
-        svc.getDfds(ano),
-        svc.getTipoItemDfd(),
-      ]);
-      if (disposed) return;
-      dominios = { tipoItem };
+      const dfds = await svc.getDfds(ano);
+      if (disposed || minha !== requisicao) return;
       padroes = {
         area_requisitante: valorMaisComum(dfds, 'area_requisitante'),
       };
       atualizarResumo(dfds);
       table.update({ rows: dfds, loading: false });
     } catch (err) {
-      if (disposed) return;
+      if (disposed || minha !== requisicao) return;
       // O resumo TAMBEM cai. Sem isto a tela mantinha "PCA 2026: 8 DFDs" sobre
       // uma tabela vazia, depois de a carga falhar.
       resumo.textContent = '';
       table.update({ loading: false });
       falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar DFD');
+    }
+  }
+
+  /**
+   * O dominio `tipo_item_dfd`, que serve ao DIALOGO e nao a lista.
+   *
+   * A falha dele deixa o combo "Tipo do item" do editor de itens vazio, e diz
+   * isso; ela nao pode deixar a tela do PCA em branco.
+   */
+  async function carregarTipoItem() {
+    try {
+      const tipoItem = await svc.getTipoItemDfd();
+      if (disposed) return;
+      dominios = { tipoItem: tipoItem || [] };
+    } catch (err) {
+      if (disposed) return;
+      dominios = { tipoItem: [] };
+      showError(`${err.message || 'Erro ao carregar o domínio de tipo de item'}. `
+        + 'O combo "Tipo do item" do editor de itens ficou vazio.');
     }
   }
 

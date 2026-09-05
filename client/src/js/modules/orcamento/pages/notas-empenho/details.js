@@ -52,6 +52,13 @@ function textoRateio(a) {
   return `${a.nota_credito_numero ?? `NC ${a.nota_credito_id}`}: ${formatCurrency(a.valor)}`;
 }
 
+/** O destino de uma NC: a ficha dela, e a lista so quando o id nao veio. */
+function rotaDaNc(ncId) {
+  return ncId != null
+    ? `#/orcamento/notas_credito/${ncId}`
+    : '#/orcamento/notas_credito';
+}
+
 
 /**
  * Pagina de detalhes de uma Nota de Empenho (#/notas_empenho/:id).
@@ -75,6 +82,8 @@ function textoRateio(a) {
 export async function renderNotaEmpenhoDetails(container, { params }) {
   const notaEmpenhoId = Number(params.id);
   let disposed = false;
+  // O ano da NE carregada. Ver `rotaDaLista`.
+  let anoDaNota = null;
   // Verdadeiro depois que o esqueleto entra na tela. Separa a PRIMEIRA carga
   // (que ainda nao tem o que preservar) das recargas de gravacao.
   let montado = false;
@@ -230,6 +239,18 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
       label: 'Situação',
       value: recebimento?.situacao ?? '',
     });
+    // O DIA em que o material chegou. A coluna nasceu em 2026-08-11 e ficou
+    // INERTE por falta deste campo: toda linha nova nascia com o dia NULO, e a
+    // regra do relatorio ("nulo continua aparecendo",
+    // `rm.data_recebimento IS NULL OR <= cutoff`) fazia a edicao de JANEIRO
+    // listar material recebido em julho, que e exatamente o que a migracao
+    // existia para consertar. O ANO DE REFERENCIA e outra coisa: ele diz em qual
+    // RPCMTec o item aparece; este aqui diz em qual EDICAO do ano.
+    const dataRecebField = createDateField({
+      label: 'Data do recebimento',
+      value: recebimento?.data_recebimento ?? '',
+      helpText: 'Dia em que o material chegou. A 4.6 do RPCMTec recorta por ele: em branco, o item continua aparecendo em todas as edições do ano.',
+    });
     const anoRefField = createNumberField({
       label: 'Ano de referência (4.6)',
       step: 1,
@@ -240,6 +261,7 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
     const content = el('div', { className: 'form-grid' }, [
       el('div', { className: 'form-grid__full' }, [materialField.element]),
       prazoField.element,
+      dataRecebField.element,
       anoRefField.element,
       el('div', { className: 'form-grid__full' }, [situacaoField.element]),
     ]);
@@ -273,6 +295,9 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
               prazo_entrega: prazoField.getValue() || null,
               situacao: situacaoField.getValue() || null,
               ano_referencia: anoRefField.getValue(),
+              // `createDateField` devolve 'YYYY-MM-DD' ou string vazia, e o Joi
+              // e `Joi.date().iso().raw().allow(null)`: a vazia vira null.
+              data_recebimento: dataRecebField.getValue() || null,
             };
 
             saving = true;
@@ -325,12 +350,20 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
 
   const titulo = el('h1', { className: 'page__title' });
 
+  // "VOLTAR" LEVA O ANO DA NE. A lista abre sempre no ano corrente, entao sair
+  // da ficha de uma NE de 2025 devolvia a lista de 2026, onde ela nem aparece.
+  // O ano so existe depois que a NE carrega, e por isso a rota se monta no
+  // CLIQUE, e nao na montagem do cabecalho.
+  const rotaDaLista = () => (anoDaNota != null
+    ? `/orcamento/notas_empenho?ano=${anoDaNota}`
+    : '/orcamento/notas_empenho');
+
   const cabecalho = el('div', { className: 'page__header' }, [
     el('div', {}, [
       el('button', {
         className: 'btn btn--text btn--sm',
         type: 'button',
-        onClick: () => { location.hash = '/orcamento/notas_empenho'; },
+        onClick: () => { location.hash = rotaDaLista(); },
       }, [svgIcon(ICONS.arrowBack, 16), 'Voltar']),
       titulo,
     ]),
@@ -368,6 +401,10 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
   // Os dois nós abaixo nascem UMA vez e só têm o texto reescrito a cada recarga,
   // como o resto da ficha. Recriá-los a cada gravação tiraria o foco de quem
   // estivesse sobre eles.
+  // O LINK LEVA A FICHA DAQUELA NC, e nao a lista. A lista abre SEMPRE no ano
+  // corrente (o filtro de ano de cada tela nasce em `new Date().getFullYear()`),
+  // entao a NE de um exercicio anterior mandava quem clicasse para uma lista onde
+  // a NC nem aparece. O destino so cai na lista quando o id nao veio na resposta.
   const linkNc = el('a', { href: '#/orcamento/notas_credito' });
   const botaoAnexoNc = el('button', {
     className: 'btn btn--text btn--sm',
@@ -509,6 +546,22 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
         render: (row) => row.situacao || '-',
       },
       {
+        // O DIA do recebimento, que recorta a 4.6 do RPCMTec pelo MÊS da edição.
+        // Em branco a célula diz o que isso significa, e não '-': o item sem dia
+        // continua aparecendo em TODAS as edições do ano.
+        key: 'data_recebimento',
+        label: 'Data do recebimento',
+        sortable: true,
+        sortValue: (row) => row.data_recebimento || null,
+        render: (row) => (row.data_recebimento
+          ? formatDate(row.data_recebimento)
+          : el('span', {
+            style: { color: 'var(--text-secondary)' },
+            textContent: '-',
+            title: 'Sem dia: o item aparece em todas as edições do ano',
+          })),
+      },
+      {
         // O CAMPO ERA GRAVÁVEL E INVISÍVEL: o diálogo o oferece desde sempre e
         // nenhuma coluna o mostrava, então quem lançava não via o que lançou.
         //
@@ -599,10 +652,14 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
       const numero = rateio.length
         ? (rateio[0].nota_credito_numero ?? `NC ${rateio[0].nota_credito_id}`)
         : nota.nota_credito_numero;
+      const ncId = rateio.length
+        ? rateio[0].nota_credito_id
+        : nota.nota_credito_id;
       // Trocar o filho da linha solta o nó da lista, que volta sozinho se a NE
       // ganhar rateio depois.
       if (numero) {
         linkNc.textContent = numero;
+        linkNc.href = rotaDaNc(ncId);
         if (linkNc.parentNode !== linhaNc.valor) linhaNc.valor.replaceChildren(linkNc);
       } else {
         linhaNc.valor.textContent = '-';
@@ -615,8 +672,17 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
     }
     reconciliar(rateioLista, rateio, {
       chave: (a, i) => a.nota_credito_id ?? i,
-      criar: (a) => el('div', { textContent: textoRateio(a) }),
-      atualizar: (no, a) => { no.textContent = textoRateio(a); },
+      // Cada parcela LEVA A FICHA da NC dela, pelo mesmo motivo do caso de uma
+      // NC só: a lista abre no ano corrente, e a NC da NE antiga não está lá.
+      criar: (a) => el('a', {
+        href: rotaDaNc(a.nota_credito_id),
+        textContent: textoRateio(a),
+        style: { display: 'block' },
+      }),
+      atualizar: (no, a) => {
+        no.textContent = textoRateio(a);
+        no.href = rotaDaNc(a.nota_credito_id);
+      },
     });
   }
 
@@ -675,6 +741,8 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
 
   function pintarNota(nota) {
     titulo.textContent = `Nota de empenho ${nota.numero || `#${nota.id}`}`;
+    // O ano da NE, que o "Voltar" leva a lista.
+    anoDaNota = nota.ano ?? null;
 
     // Antes de repintar as tabelas: a coluna "Ano de referência" o lê para
     // mostrar o ano que vale quando o recebimento não informa o próprio.
@@ -781,17 +849,24 @@ export async function renderNotaEmpenhoDetails(container, { params }) {
   // raiz: o painel era pendurado depois do primeiro load, e a primeira gravação
   // o arrancava da tela. Hoje a raiz só se limpa na falha da PRIMEIRA carga,
   // quando o histórico ainda nem existe.
-  const historico = criarHistorico({
-    modulo: 'orcamento',
-    entidade: 'nota_empenho',
-    id: notaEmpenhoId,
-    subtitulo: 'Alterações na NE, no rateio por NC, nas liquidações e nos recebimentos',
-  });
-  root.appendChild(historico.element);
+  //
+  // SÓ QUANDO A FICHA MONTOU. Falhando a primeira carga, a raiz fica com "Nota de
+  // empenho não encontrada" e o botão de voltar, e o painel era pendurado ali
+  // assim mesmo: uma consulta de rastreabilidade por um registro que não abriu, e
+  // um título de "Histórico" embaixo de uma tela que não mostra nada.
+  const historico = montado
+    ? criarHistorico({
+      modulo: 'orcamento',
+      entidade: 'nota_empenho',
+      id: notaEmpenhoId,
+      subtitulo: 'Alterações na NE, no rateio por NC, nas liquidações e nos recebimentos',
+    })
+    : null;
+  if (historico) root.appendChild(historico.element);
 
   return () => {
     disposed = true;
     cleanupTables();
-    historico.cleanup();
+    if (historico) historico.cleanup();
   };
 }

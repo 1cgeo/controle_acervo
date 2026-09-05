@@ -215,10 +215,13 @@ router.delete(
   schemaValidation({ body: perigoSchema.utSemAtividadeBody }),
   asyncHandler(async (req, res, next) => {
     const dados = await perigoCtrl.deleteUtSemAtividade(
-      req.usuarioUuid, req.contexto, req.body.motivo
+      req.usuarioUuid, req.contexto, req.body.motivo, req.body.lote_id
     )
     return res.sendJsonAndLog(
-      true, 'Unidades de trabalho sem atividade removidas com sucesso',
+      true,
+      req.body.lote_id != null
+        ? `Unidades de trabalho sem atividade do lote ${req.body.lote_id} removidas com sucesso`
+        : 'Unidades de trabalho sem atividade removidas com sucesso',
       httpCode.OK, dados
     )
   })
@@ -251,9 +254,20 @@ router.delete(
     const dados = await perigoCtrl.limpaAtividades(
       req.params.uuid, req.usuarioUuid, req.contexto, req.body.motivo
     )
-    return res.sendJsonAndLog(
-      true, 'Atividades do usuário soltas com sucesso', httpCode.OK, dados
-    )
+    // A MENSAGEM DIZ O QUE SOBROU. Soltar a atividade nao devolve a unidade a
+    // fila quando ela saiu de circulacao por apontamento de problema
+    // (`disponivel = FALSE`), e a rota existe justamente para "a fila voltar a
+    // andar": responder sucesso sem citar o passo que falta e o que faz a
+    // unidade ficar fora para sempre.
+    const mensagem =
+      dados.unidades_indisponiveis > 0
+        ? `Atividades do usuário soltas com sucesso. ${dados.unidades_indisponiveis} ` +
+          'destas unidades de trabalho estão indisponíveis (saíram da distribuição por ' +
+          'apontamento de problema) e não voltam à fila até alguém as liberar em ' +
+          'Gerência da Produção'
+        : 'Atividades do usuário soltas com sucesso'
+
+    return res.sendJsonAndLog(true, mensagem, httpCode.OK, dados)
   })
 )
 

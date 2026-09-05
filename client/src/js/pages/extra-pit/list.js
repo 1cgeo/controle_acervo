@@ -33,9 +33,11 @@ export async function renderExtraPitList(container, _ctx) {
   let disposed = false;
   // CADASTRAR a demanda Extra-PIT é do OPERADOR DO PIT desde a 1.33.0, e
   // era do administrador global. O servidor cobra o mesmo em POST, PUT e DELETE
-  // /metas/extra. LIGAR uma VERSÃO do acervo à demanda continua do
-  // administrador, e por isso `versoes-dialog.js` segue com `isAdmin`: aquilo
-  // grava em `acervo.versao`, e quem manda no acervo é o módulo acervo.
+  // /metas/extra. LIGAR uma VERSÃO do acervo à demanda seguiu o mesmo caminho
+  // na 1.35.0, e `versoes-dialog.js` cobra a MESMA régua daqui: o argumento de
+  // que aquilo grava em `acervo.versao` caiu diante do que produzia -- quem
+  // cadastra a demanda tem de poder dizer QUAIS folhas a cumprem, senão a
+  // demanda fica valendo zero na grade do PIT (`pit_route.js:305-313`).
   const podeEscrever = temPerfil('operador', 'pit');
   let anoSelecionado = new Date().getFullYear();
 

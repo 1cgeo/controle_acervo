@@ -252,3 +252,74 @@ describe('rastreabilidade: o catálogo de opções fora do ar', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 });
+
+// ---------------------------------------------------------------------------
+// O ENDERECO E O PRODUTO DESTA TELA.
+//
+// Ela existe para MOSTRAR a alguem o que mudou, e o gesto seguinte a achar o
+// evento e mandar o endereco da barra ao colega. A tela era so LIDA da rota:
+// quem chegava de uma ficha em `?usuario_uuid=...`, clicava em "Limpar" e
+// vasculhava o rastro inteiro mandava um endereco recortado naquela pessoa. F5
+// e o Voltar do navegador faziam o mesmo, e a pagina em que se estava se
+// perdia sempre.
+//
+// `history.replaceState`, e nunca `location.hash = ...`: mexer no hash dispara
+// o roteador, que remontaria a tela e refaria a consulta a cada troca de combo.
+// Mesmo desenho da lista de pedidos da mapoteca (commit `a8212b9`).
+// ---------------------------------------------------------------------------
+describe('rastreabilidade: o filtro volta para a URL', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+    saveAuth({ token: 'tk-teste', administrador: true, uuid: 'u', perfis: {}, modulos: [] }, 'x');
+    history.replaceState(null, '', '#/rastreabilidade');
+  });
+
+  test('trocar o Sistema escreve o filtro na hash, sem remontar a tela', async () => {
+    const { container, cleanup } = await montar();
+    const antes = getRastreabilidade.mock.calls.length;
+
+    const sistema = selectDoRotulo(container, 'Sistema');
+    sistema.value = 'acervo';
+    sistema.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(location.hash).toContain('modulo=acervo');
+    // Uma consulta a mais, e nao uma remontagem: `replaceState` nao acorda o
+    // roteador.
+    expect(getRastreabilidade.mock.calls.length).toBe(antes + 1);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('"Limpar" devolve a hash pelada, mesmo tendo chegado recortado da rota', async () => {
+    const { container, cleanup } = await montar('usuario_uuid=u1');
+
+    // A tela chegou recortada, e a URL diz isso.
+    expect(location.hash).toContain('usuario_uuid=u1');
+
+    [...container.querySelectorAll('button')]
+      .find(b => b.textContent.includes('Limpar'))
+      .click();
+    await flush();
+
+    expect(location.hash).toBe('#/rastreabilidade');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('a página volta pela URL, e a página 1 não entra nela', async () => {
+    getRastreabilidade.mockResolvedValue({
+      dados: [],
+      pagination: { totalItems: 120, totalPages: 6, currentPage: 3, pageSize: 20 },
+    });
+
+    const { cleanup } = await montar('pagina=3');
+
+    // A consulta saiu na pagina 3, e nao na 1.
+    expect(getRastreabilidade.mock.calls[0][0].page).toBe(3);
+    expect(location.hash).toContain('pagina=3');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});

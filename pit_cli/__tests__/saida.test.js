@@ -129,6 +129,13 @@ test('lista vazia diz que esta vazia, em vez de sair em branco', () => {
   assert.strictEqual(saida.lista([], {}).texto, '(nenhum registro)')
 })
 
+test('lista vazia com --json sai como [], e nao como prosa', () => {
+  // Quem encadeia faz JSON.parse da saida, e o caso mais comum e justamente a
+  // consulta que nao achou nada: '(nenhum registro)' quebrava o parse ali.
+  assert.strictEqual(saida.lista([], { formato: 'json' }).texto, '[]')
+  assert.deepStrictEqual(JSON.parse(saida.lista([], { formato: 'json' }).texto), [])
+})
+
 test('lista de ESCALARES sai como valores, e nao em branco', () => {
   // O que as rotas /anos devolvem. Sem este ramo, escolherColunas nao acharia
   // chave nenhuma e a saida viria vazia, dizendo "nao tem" onde tem.
@@ -156,4 +163,61 @@ test('registro unico sai como pares chave e valor', () => {
   assert.ok(texto.includes('numero_meta'))
   assert.ok(texto.includes('24'))
   assert.ok(!texto.includes('descricao'))
+})
+
+// ---------------------------------------------------------------------------
+// `--json` puro: quem encadeia faz JSON.parse do stdout INTEIRO
+// ---------------------------------------------------------------------------
+//
+// Ate 2026-09-05 a escrita colava a mensagem do servidor ANTES do objeto
+// gravado, e o envio de arquivo ainda colava o recibo de bytes DEPOIS dele. Os
+// dois quebravam o JSON.parse de quem le o id para a chamada seguinte.
+
+const http = require('../lib/http')
+const operacao = require('../comandos/operacao')
+
+/** Troca o transporte por uma resposta fixa, e o devolve ao fim. */
+async function comResposta (resposta, fn) {
+  const antes = http.autenticada
+  http.autenticada = async () => resposta
+  try {
+    return await fn()
+  } finally {
+    http.autenticada = antes
+  }
+}
+
+const CORPO_META = JSON.stringify({
+  ano: 2026,
+  numero_meta: 12,
+  item: '1.1',
+  descricao: 'Carta topografica 1:25.000',
+  unidade_id: 1
+})
+
+test('meta criar --json devolve so o registro gravado', async () => {
+  const r = await comResposta(
+    { message: 'Meta criada com sucesso', dados: { id: 77, numero_meta: 12 } },
+    () => operacao.executar({ _: ['meta', 'criar'], flags: { json: true, data: CORPO_META } }, {})
+  )
+  const voltou = JSON.parse(r.texto)
+  assert.strictEqual(voltou.id, 77)
+  assert.ok(
+    r.avisos.some(a => a.includes('Meta criada')),
+    'a mensagem do servidor nao pode sumir: ela so muda de stream (stderr)'
+  )
+})
+
+test('meta criar sem --json continua mostrando a mensagem junto do registro', async () => {
+  const r = await comResposta(
+    { message: 'Meta criada com sucesso', dados: { id: 77, numero_meta: 12 } },
+    () => operacao.executar({ _: ['meta', 'criar'], flags: { data: CORPO_META } }, {})
+  )
+  assert.ok(r.texto.includes('Meta criada'), r.texto)
+  assert.ok(r.texto.includes('77'), r.texto)
+})
+
+test('registro ausente com --json sai como null, e nao como (vazio)', () => {
+  assert.strictEqual(JSON.parse(saida.registro(null, { formato: 'json' })), null)
+  assert.strictEqual(saida.registro(null, {}), '(vazio)')
 })

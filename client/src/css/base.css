@@ -192,22 +192,64 @@ img {
   box-shadow: var(--shadow-lg);
   animation: toast-in 250ms ease;
   max-width: 400px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
 }
 
+/* O botao de fechar HERDA a cor do toast (`currentColor`), que ja esta resolvida
+   nos dois temas pela regra do tema escuro logo abaixo. Pintar um cinza fixo
+   aqui devolveria o problema de contraste que aquela regra acabou de fechar. */
+.toast__texto {
+  flex: 1;
+}
+
+.toast__fechar {
+  flex: none;
+  padding: 0;
+  border: none;
+  background: none;
+  color: currentColor;
+  opacity: 0.75;
+  font-size: var(--font-size-lg);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.toast__fechar:hover,
+.toast__fechar:focus-visible {
+  opacity: 1;
+}
+
+/* TINTA ESCURA NO TEMA ESCURO, e e a mesma correcao que `.badge`, `.btn--danger`
+   e o circulo concluido do wizard ja tinham -- aqui ela faltou.
+   No escuro as quatro cores de aviso sao CLARAS (`--color-info` e #4fc3f7,
+   `--color-warning` e #ffa726), e branco sobre elas fica em torno de 1,9:1: o
+   texto some no proprio fundo. O toast e como o sistema inteiro reporta sucesso
+   e falha, e some sozinho em 4 a 6 segundos -- ilegivel, ele nao e lido depois. */
+[data-theme="dark"] .toast {
+  color: #1a1a1a;
+}
+
+/* O fundo do toast vem dos tokens `--toast-*-bg`, e NAO das `--color-*`: no tema
+   claro o texto e branco sobre a cor cheia, e duas das quatro cores da paleta
+   ficavam abaixo do 4,5:1. Os tokens sao proprios para nao arrastar borda, icone
+   e chip do sistema inteiro junto. Os numeros medidos estao em
+   `design-tokens.css`. */
 .toast--success {
-  background-color: var(--color-success);
+  background-color: var(--toast-success-bg);
 }
 
 .toast--error {
-  background-color: var(--color-error);
+  background-color: var(--toast-error-bg);
 }
 
 .toast--warning {
-  background-color: var(--color-warning);
+  background-color: var(--toast-warning-bg);
 }
 
 .toast--info {
-  background-color: var(--color-info);
+  background-color: var(--toast-info-bg);
 }
 
 @keyframes toast-in {

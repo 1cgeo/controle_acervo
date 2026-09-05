@@ -53,11 +53,31 @@ function estaQuitada(ne) {
  * nota de credito. A acao "Ver detalhes" navega para a pagina de detalhes da NE
  * (liquidacoes e recebimentos de material).
  * @param {HTMLElement} container
- * @param {{params:Object, query:URLSearchParams}} _ctx
+ * @param {{params:Object, query:URLSearchParams}} ctx - `?ano=` abre a lista naquele ano
  * @returns {Function} cleanup
  */
-export async function renderNotasEmpenhoList(container, _ctx) {
+export async function renderNotasEmpenhoList(container, ctx) {
+  // O ANO VIAJA NA URL (`?ano=`), e por isso a tela o LE do `ctx.query`.
+  //
+  // Nao contradiz a regra do `criarFiltroAno` (o ano e DA TELA e nao guarda
+  // nada): quem o carrega e a URL daquela navegacao, que a pessoa ve na barra de
+  // endereco. Sem isto, o link de uma pendencia do painel de 2025 e o "Voltar"
+  // de um registro de 2025 caiam numa lista aberta em 2026, onde o que se foi
+  // buscar nao existe.
+  const anoDaUrl = () => {
+    const n = parseInt(((ctx && ctx.query) || new URLSearchParams()).get('ano'), 10);
+    return Number.isFinite(n) ? n : null;
+  };
   let disposed = false;
+
+  // O NUMERO DA REQUISICAO, que decide quem pinta.
+  //
+  // `disposed` so protege a SAIDA da pagina. Numa rede lenta, trocar o filtro
+  // duas vezes dispara duas cargas, e quem PINTA e a que chegar por ultimo: a
+  // resposta antiga pintava por cima da nova, com o seletor mostrando um recorte
+  // e a tabela mostrando outro. Aqui so a ULTIMA pedida pinta, no acerto e no
+  // erro.
+  let requisicao = 0;
   let filtroNotaCredito = null;
   const pode = permissoes('orcamento');
 
@@ -72,6 +92,7 @@ export async function renderNotasEmpenhoList(container, _ctx) {
   // anterior e a lista ficaria presa a uma NC que nao esta mais nas opcoes.
   const filtroAno = criarFiltroAno({
     carregarAnos: getAnos,
+    anoInicial: anoDaUrl(),
     permitirOutroAno: true,
     onChange: async () => {
       filtroNotaCredito = null;
@@ -228,6 +249,7 @@ export async function renderNotasEmpenhoList(container, _ctx) {
   }
 
   async function load() {
+    const minha = ++requisicao;
     // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
     if (!areaTabela.contains(table.element)) areaTabela.replaceChildren(table.element);
 
@@ -237,10 +259,10 @@ export async function renderNotasEmpenhoList(container, _ctx) {
         ano: filtroAno.getAno(),
         nota_credito_id: filtroNotaCredito ?? undefined,
       });
-      if (disposed) return;
+      if (disposed || minha !== requisicao) return;
       table.update({ rows: dados || [], loading: false });
     } catch (err) {
-      if (disposed) return;
+      if (disposed || minha !== requisicao) return;
       table.update({ loading: false });
       falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar notas de empenho');
@@ -248,9 +270,29 @@ export async function renderNotasEmpenhoList(container, _ctx) {
   }
 
   async function handleDelete(row) {
+    // O NUMERO SOZINHO NAO IDENTIFICA A NE: tres NEs reais de 2026 compartilham
+    // o 2026NE000024, e so a NC e a finalidade as separam (ver o comentario da
+    // coluna "Finalidade" acima). A confirmacao nomeia as tres coisas, como a da
+    // nota de credito ja faz com a chave dela.
+    //
+    // A FINALIDADE ENTRA CORTADA. Ela e TEXT sem limite, e a coluna da tabela ja
+    // corta por CSS; a caixa de confirmacao, nao. Uma finalidade de duzentos
+    // caracteres empurrava o botao "Excluir" para baixo da dobra do modal em
+    // tela estreita, e a frase que importa ("Esta acao nao pode ser desfeita")
+    // ficava atras do texto colado. A regua e a mesma da licitacao: 80.
+    const finalidadeCurta = row.finalidade && row.finalidade.length > 80
+      ? `${row.finalidade.slice(0, 80)}…`
+      : row.finalidade;
+    const rotulo = [
+      row.numero,
+      row.ano != null ? `ano ${row.ano}` : null,
+      row.nota_credito_numero ? `NC ${row.nota_credito_numero}` : null,
+      finalidadeCurta || null,
+    ].filter(Boolean).join(' / ');
     const ok = await confirmDialog({
       title: 'Excluir nota de empenho',
-      message: `Tem certeza que deseja excluir a NE ${row.numero}? Esta ação não pode ser desfeita.`,
+      message: `Tem certeza que deseja excluir a NE ${rotulo}? Esta ação não pode `
+        + 'ser desfeita. Uma NE com liquidação ou recebimento lançado é recusada.',
       confirmLabel: 'Excluir',
       danger: true,
     });

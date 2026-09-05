@@ -82,12 +82,33 @@ function percentual(valor) {
 }
 
 /**
+ * Singular ou plural pelo número QUE APARECE, e não pelo valor cru.
+ *
+ * A tela mostra uma casa decimal, então 1,04 aparece como "1" e pede o
+ * singular: decidir pelo valor cru escreveria "1 dias" ao lado de um número que
+ * a pessoa lê como um.
+ *
+ * ZERO É PLURAL em português ("0 dias", e nunca "0 dia"), e por isso o singular
+ * exige um valor MAIOR que zero. O teto é 1, que é onde a língua vira plural.
+ *
+ * @param {number} valor
+ * @param {string} singular
+ * @param {string} plural
+ * @returns {string}
+ */
+function unidade(valor, singular, plural) {
+  const mostrado = Math.round(Math.abs(valor) * 10) / 10;
+  return mostrado > 0 && mostrado <= 1 ? singular : plural;
+}
+
+/**
  * Dias-militar: '21,3 dias'. Uma casa decimal, porque a unidade é fracionária
  * por construção -- um impedimento de 50% num dia custa meio dia-militar.
  */
 function diasMilitar(valor) {
   const n = toNumber(valor);
-  return `${n.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} dias`;
+  const texto = n.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  return `${texto} ${unidade(n, 'dia', 'dias')}`;
 }
 
 /** Nome de guerra com o posto na frente: '3 Sgt Silva'. */
@@ -433,8 +454,11 @@ async function renderEfetivoTab(container) {
     if (delta !== null) {
       const anterior = mesAnterior(ano, mes);
       const sinal = delta > 0 ? '+' : '';
+      // "8,3 pontos percentuais", e não "8,3 ponto percentual": a frase estava
+      // no singular fixo, e o singular é justamente o caso raro aqui.
       partes.push(`Aproveitamento ${sinal}${delta.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}`
-        + ` ponto percentual contra ${monthName(anterior.mes)} de ${anterior.ano}.`);
+        + ` ${unidade(delta, 'ponto percentual', 'pontos percentuais')}`
+        + ` contra ${monthName(anterior.mes)} de ${anterior.ano}.`);
     }
 
     if (!partes.length) return;

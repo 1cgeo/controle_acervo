@@ -293,9 +293,13 @@ export function renderInstituicao(container) {
 
   carregar();
 
-  return {
-    cleanup: () => {
-      if (desmontar) desmontar();
-    },
+  // UMA FUNCAO, e nao `{ cleanup }`: o router chama o retorno do handler
+  // (`typeof === 'function'`, em router.js), e o objeto que estava aqui era
+  // ignorado em silencio. O painel de historico nunca se desmontava ao sair da
+  // tela, entao a resposta atrasada de `GET /auditoria/historico` continuava
+  // pintando num DOM ja descartado. O formato `{ cleanup }` e o das ABAS
+  // (`createTabs`), e nao o de uma pagina.
+  return () => {
+    if (desmontar) desmontar();
   };
 }

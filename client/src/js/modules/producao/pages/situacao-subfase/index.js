@@ -66,19 +66,37 @@ export function agruparPorBloco(linhas) {
  * pintá-la de vermelho afirmaria um atraso que ninguém mediu. Reusar aquelas
  * cores com outro sentido seria a terceira convenção de cor no mesmo sistema.
  *
+ * A BUSCA VIVE NA URL, e não numa variável desta função. Sair da tela para
+ * conferir outra coisa e voltar apagava o texto digitado, e sem nada na barra de
+ * endereço também não havia como mandar o recorte para outra pessoa. A escrita é
+ * por `history.replaceState`: trocar o hash faria o roteador remontar a tela a
+ * cada tecla. Busca vazia não entra na query, então a tela pelada continua sendo
+ * '#/producao/situacao_subfase'.
+ *
  * @param {HTMLElement} container
+ * @param {{params?:Object, query?:URLSearchParams}} [ctx]
  * @returns {Function} cleanup
  */
-export async function renderSituacaoSubfase(container) {
+export async function renderSituacaoSubfase(container, ctx = {}) {
   let disposed = false;
 
+  const consulta = (ctx && ctx.query) || new URLSearchParams();
+
   let linhas = [];
-  let busca = '';
+  let busca = consulta.get('busca') || '';
   let debounce = null;
+
+  function sincronizarUrl() {
+    const params = new URLSearchParams();
+    if (busca) params.set('busca', busca);
+    const texto = params.toString();
+    history.replaceState(null, '', `#/producao/situacao_subfase${texto ? `?${texto}` : ''}`);
+  }
 
   const buscaFilter = createTextField({
     label: 'Buscar',
     placeholder: 'Bloco ou subfase',
+    value: busca,
     onInput: (v) => {
       busca = v;
       if (debounce) clearTimeout(debounce);
@@ -160,6 +178,7 @@ export async function renderSituacaoSubfase(container) {
   }
 
   function desenhar() {
+    sincronizarUrl();
     clearChildren(area);
 
     const alvo = normalizar(busca);

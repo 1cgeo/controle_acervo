@@ -376,22 +376,68 @@ describe('DELETE /log', () => {
       .send({ confirmar: perigoSchema.TOKEN.LOG, motivo: 'faxina de agosto' })
 
     expect(r.status).toBe(200)
+    // CONTA ENTRADA, E NAO LINHA: sao DUAS entradas de duas linhas cada, uma
+    // antiga e uma nova. O `alvo` diz "entradas", e a trilha e append-only --
+    // registrar 2 removidas para 1 entrada removida deixaria o numero errado
+    // para sempre. As linhas continuam contadas ao lado, com o nome delas.
+    // CONTRATO MUDADO EM 2026-09-05 (S6-03): `removidos`/`preservados` contavam
+    // LINHAS (2 e 2).
     expect(r.body.dados).toEqual({
       operacao: 'log_combinado',
       alvo: 'entradas anteriores a 3 dias',
-      removidos: 2,
-      preservados: 2
+      removidos: 1,
+      preservados: 1,
+      linhas_removidas: 2,
+      linhas_preservadas: 2
     })
     expect(escrever).toHaveBeenCalledTimes(1)
+    // A QUEBRA DE LINHA FINAL VOLTA. Sem ela a proxima linha do winston gruda
+    // na ultima que sobrou.
     expect(escrever.mock.calls[0][1]).toBe(
-      `${recente}|entrada nova|{}\n    at Object.novo (arquivo.js:2:2)`
+      `${recente}|entrada nova|{}\n    at Object.novo (arquivo.js:2:2)\n`
     )
+  })
+
+  // O ARQUIVO DE VERDADE TERMINA EM QUEBRA DE LINHA, e o `split` produz um ''
+  // no fim. Ele sai antes do laco: sem isso, ou a quebra final some (quando a
+  // ultima entrada e antiga) ou ela dobra.
+  it('o log que já termina em quebra de linha não ganha uma segunda', async () => {
+    const escrever = dublarArquivo({ conteudo: `${CONTEUDO}\n` })
+
+    await request(app)
+      .delete('/api/perigo/log')
+      .send({ confirmar: perigoSchema.TOKEN.LOG })
+
+    expect(escrever.mock.calls[0][1]).toBe(
+      `${recente}|entrada nova|{}\n    at Object.novo (arquivo.js:2:2)\n`
+    )
+  })
+
+  it('o log em que tudo é antigo vira arquivo vazio, e não uma quebra solta', async () => {
+    const escrever = dublarArquivo({
+      conteudo: [`${antiga}|entrada velha|{}`, '    at Object.velho (a.js:1:1)'].join('\n')
+    })
+
+    const r = await request(app)
+      .delete('/api/perigo/log')
+      .send({ confirmar: perigoSchema.TOKEN.LOG })
+
+    expect(r.body.dados.removidos).toBe(1)
+    expect(r.body.dados.linhas_removidas).toBe(2)
+    expect(escrever.mock.calls[0][1]).toBe('')
   })
 
   it('a trilha vem ANTES do disco, e as duas dentro da transação', async () => {
     const ordem = []
     jest.spyOn(fs, 'existsSync').mockReturnValue(true)
-    jest.spyOn(fs.promises, 'readFile').mockResolvedValue(CONTEUDO)
+    // A LEITURA TAMBEM E DENTRO DA TRANSACAO (2026-09-05, S6-03): tudo o que o
+    // winston escrever entre o `readFile` e o `writeFile` e truncado junto,
+    // porque a escrita substitui o arquivo pelo conteudo lido antes. Ler fora da
+    // transacao punha a espera pela conexao do pool dentro dessa janela.
+    jest.spyOn(fs.promises, 'readFile').mockImplementation(async () => {
+      ordem.push(`leitura(transacao=${profundidade > 0})`)
+      return CONTEUDO
+    })
     jest.spyOn(fs.promises, 'writeFile').mockImplementation(async () => {
       ordem.push(`disco(transacao=${profundidade > 0})`)
     })
@@ -415,7 +461,11 @@ describe('DELETE /log', () => {
 
     // Gravar o evento e falhar na escrita derruba a transacao e a trilha nao
     // afirma o que nao houve. A ordem inversa deixaria o log truncado sem rastro.
-    expect(ordem).toEqual(['trilha(transacao=true)', 'disco(transacao=true)'])
+    expect(ordem).toEqual([
+      'leitura(transacao=true)',
+      'trilha(transacao=true)',
+      'disco(transacao=true)'
+    ])
   })
 
   it('o motivo do corpo vai para a coluna motivo do evento', async () => {
@@ -589,6 +639,79 @@ describe('DELETE /ut_sem_atividade', () => {
     // O DELETE continua alcancando as 500.
     expect(r.body.dados.removidos).toBe(500)
   })
+
+  // O ALVO, ACRESCENTADO EM 2026-09-05. O fluxo normal de carga e `POST
+  // /producao/unidade_trabalho` e SO DEPOIS `POST /producao/atividades` -- duas
+  // telas que podem ficar dias uma da outra. Entre elas, toda unidade
+  // recem-carregada e "sem atividade": sem filtro de lote, limpar quatro sobras
+  // de um lote antigo leva junto os milhares de recortes que outro gerente
+  // carregou de manha, e a confirmacao por token nao ajuda, porque ela confirma
+  // a ACAO e nunca o ALVO.
+  it('o lote_id do corpo entra na varredura, e a resposta o nomeia', async () => {
+    dublarAlvos([{ id: 7, nome: 'Folha A', lote_id: 61 }])
+
+    const r = await request(app)
+      .delete('/api/perigo/ut_sem_atividade')
+      .send({
+        confirmar: perigoSchema.TOKEN.UT_SEM_ATIVIDADE,
+        lote_id: 61,
+        motivo: 'sobras do 61'
+      })
+
+    expect(r.status).toBe(200)
+
+    // O FILTRO ESTA NA CONSULTA, e nao num `filter` de JS: trazer a instalacao
+    // inteira para a memoria so para descartar quase tudo tem custo real.
+    const selecao = textos().find(t => t.includes('FROM producao.unidade_trabalho AS ut'))
+    expect(selecao).toContain('AND ut.lote_id = 61')
+
+    expect(r.body.dados.alvo).toBe('unidades de trabalho sem atividade do lote 61')
+    expect(r.body.message).toContain('lote 61')
+    // Com alvo declarado, a contagem por lote nao acrescenta nada.
+    expect(r.body.dados.por_lote).toBeUndefined()
+  })
+
+  it('sem lote_id a varredura continua global, e o SQL não ganha filtro', async () => {
+    dublarAlvos(ALVOS)
+
+    await request(app)
+      .delete('/api/perigo/ut_sem_atividade')
+      .send({ confirmar: perigoSchema.TOKEN.UT_SEM_ATIVIDADE })
+
+    const selecao = textos().find(t => t.includes('FROM producao.unidade_trabalho AS ut'))
+    expect(selecao).not.toContain('ut.lote_id =')
+  })
+
+  // A CONTAGEM POR LOTE E O QUE TORNA A VARREDURA SEM ALVO AUDITAVEL: o
+  // `detalhe` para nos vinte primeiros e o resto vira "e mais N", entao quem le
+  // o evento depois nao consegue dizer de ONDE saiu o que sumiu.
+  it('sem lote_id o resumo conta por lote, e é isso que denuncia o acidente', async () => {
+    dublarAlvos([
+      { id: 7, nome: 'Folha A', lote_id: 55 },
+      { id: 9, nome: 'Folha B', lote_id: 61 },
+      { id: 11, nome: 'Folha C', lote_id: 61 }
+    ])
+
+    const r = await request(app)
+      .delete('/api/perigo/ut_sem_atividade')
+      .send({ confirmar: perigoSchema.TOKEN.UT_SEM_ATIVIDADE, motivo: 'faxina' })
+
+    expect(r.status).toBe(200)
+    expect(r.body.dados.por_lote).toEqual({ 55: 1, 61: 2 })
+    // E vai para a trilha junto, que e onde ele serve.
+    expect(eventos()[0].texto).toContain('por_lote')
+  })
+
+  it('lote_id que não é inteiro positivo é recusado antes do banco', async () => {
+    dublarAlvos(ALVOS)
+
+    const r = await request(app)
+      .delete('/api/perigo/ut_sem_atividade')
+      .send({ confirmar: perigoSchema.TOKEN.UT_SEM_ATIVIDADE, lote_id: 0 })
+
+    expect(r.status).toBe(400)
+    expect(escritas()).toEqual([])
+  })
 })
 
 // --- DELETE /atividades/usuario/:uuid -----------------------------------------
@@ -596,9 +719,15 @@ describe('DELETE /ut_sem_atividade', () => {
 describe('DELETE /atividades/usuario/:uuid', () => {
   const PESSOA = { uuid: ALVO, ativo: false, usuario: '3º Sgt Fulano' }
 
-  const dublarPessoa = ({ pessoa = PESSOA, soltas = [{ id: 11 }, { id: 12 }], preservadas = 4 } = {}) =>
+  const dublarPessoa = ({
+    pessoa = PESSOA,
+    soltas = [{ id: 11 }, { id: 12 }],
+    preservadas = 4,
+    indisponiveis = 0
+  } = {}) =>
     dublar({
       'FROM dgeo.usuario AS u': pessoa,
+      'SELECT COUNT(DISTINCT ut.id)::int AS total': { total: indisponiveis },
       'SELECT COUNT(*)::int AS total': { total: preservadas },
       'UPDATE producao.atividade': soltas
     })
@@ -732,6 +861,46 @@ describe('DELETE /atividades/usuario/:uuid', () => {
     expect(r.status).toBe(400)
     expect(r.body.message).toContain('uuid')
     expect(consultas).toEqual([])
+  })
+
+  // SOLTAR A ATIVIDADE NAO DEVOLVE A UNIDADE A FILA. `POST
+  // /distribuicao/problema_atividade` poe `unidade_trabalho.disponivel = FALSE`
+  // junto com a pausa, e `distribuicao/sql/calcula_fila.sql` cobra
+  // `ut.disponivel IS TRUE`. Esta rota existe para "a fila voltar a andar":
+  // responder so `soltas com sucesso` deixa a unidade fora da fila para sempre,
+  // sem nada dizer que sobrou um passo. Religar a coluna aqui seria desfazer a
+  // decisao de quem apontou o problema -- o que faltava era DIZER.
+  it('conta as unidades indisponíveis e a resposta diz o passo que falta', async () => {
+    dublarPessoa({ indisponiveis: 1 })
+
+    const r = await request(app)
+      .delete(`/api/perigo/atividades/usuario/${ALVO}`)
+      .send({ confirmar: ALVO })
+
+    expect(r.status).toBe(200)
+    expect(r.body.dados.unidades_indisponiveis).toBe(1)
+    expect(r.body.message).toContain('indisponíveis')
+    expect(r.body.message).toContain('Gerência da Produção')
+
+    // A contagem sai da MESMA transacao, e olha as unidades das atividades soltas.
+    const contagem = consultas.find(c => c.texto.includes('COUNT(DISTINCT ut.id)'))
+    expect(contagem.emTransacao).toBe(true)
+    expect(contagem.texto).toContain('a.id IN (11,12)')
+    expect(contagem.texto).toContain('ut.disponivel IS FALSE')
+
+    // E nada RELIGA a coluna: isso e da Gerencia da Producao.
+    expect(escritas().some(t => t.includes('SET disponivel'))).toBe(false)
+  })
+
+  it('sem unidade indisponível a mensagem continua a de sempre', async () => {
+    dublarPessoa()
+
+    const r = await request(app)
+      .delete(`/api/perigo/atividades/usuario/${ALVO}`)
+      .send({ confirmar: ALVO })
+
+    expect(r.body.dados.unidades_indisponiveis).toBe(0)
+    expect(r.body.message).toBe('Atividades do usuário soltas com sucesso')
   })
 
   it('confirmação que não é uuid é recusada pelo schema, antes do banco', async () => {

@@ -11,9 +11,13 @@ const volumeSchema = require("./volume_schema");
 
 const router = express.Router();
 
+// LEITURA e `consulta`, pela regua da casa: `consulta` LE as telas do modulo,
+// `operador` LANCA. As duas listas de volume cobravam `operador`, e o
+// `projeto_route.js`, do mesmo modulo, ja usa `consulta` nos dois GET
+// equivalentes -- o desvio era aqui, e nao la.
 router.get(
   '/volume_tipo_produto',
-  verifyPerfil('operador'),
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await volumeCtrl.getVolumeTipoProduto()
 
@@ -68,9 +72,10 @@ router.put(
   })
 )
 
+// Leitura, pela mesma regua do GET de volume_tipo_produto acima.
 router.get(
   '/volume_armazenamento',
-  verifyPerfil('operador'),
+  verifyPerfil('consulta'),
   asyncHandler(async (req, res, next) => {
     const dados = await volumeCtrl.getVolumeArmazenamento()
 

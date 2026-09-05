@@ -25,9 +25,30 @@ const crypto = require('crypto')
 
 // A lista fechada de clientes vive no Joi de `login/login_schema.js`, e a rota
 // so grava o que ela mesma aceitou. Aqui ela vira o rotulo de origem.
+//
+// A ORIGEM E A PORTA, E NAO O NOME DO CLIENTE. Sao quatro portas de escrita (a
+// interface web, o plugin do QGIS, os CLIs e o proprio sistema), e e por elas
+// que a pergunta "de onde isto entrou" se responde. Por isso os DOIS plugins do
+// QGIS caem no mesmo 'qgis': qual dos dois foi e uma pergunta menor, e a coluna
+// nao e o lugar dela.
+//
+// OS NOMES NOVOS ENTRARAM AQUI EM 2026-09-05, e a falta deles era defeito. O Joi
+// aceita 'sap_web', 'sap_fp' e 'sap_fg' desde a renomeacao de 2026-08-09, e sem
+// linha no mapa o fallback abaixo gravava o nome CRU: o plugin SAP Operador
+// entrava no rastro como 'sap_fp' e o plugin antigo como 'qgis', para o mesmo
+// trabalho pela mesma porta. O combo da tela sai de um `SELECT DISTINCT origem`,
+// entao ela passaria a oferecer duas entradas para a mesma coisa, e filtrar por
+// uma esconderia metade dos eventos -- sem erro nenhum.
+//
+// `sca_cli` NAO E ENVIADO POR NINGUEM hoje (os CLIs entram como 'sca_web', ver
+// `CLIENTE_PADRAO` de `acervo_cli/lib/config.js`) e fica como estava: ele nao
+// custa nada e o dia em que um CLI se anunciar ja o encontra aqui.
 const ORIGEM_POR_CLIENTE = {
   sca_web: 'web',
+  sap_web: 'web',
   sca_qgis: 'qgis',
+  sap_fp: 'qgis',
+  sap_fg: 'qgis',
   sca_cli: 'cli'
 }
 

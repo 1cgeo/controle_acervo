@@ -74,7 +74,11 @@ router.post(
       id: req.usuarioId,
       uuid: req.usuarioUuid,
       administrador: req.administrador,
-      cliente: req.clienteDoToken
+      cliente: req.clienteDoToken,
+      // O carimbo da senha vigente, lido pelo `verifyLogin` na consulta que ele
+      // já faz: sem ele, a camada de tiles sobreviveria à troca de senha pelos
+      // dez minutos do token curto.
+      carimbo: req.carimboDaSenha
     })
 
     return res.sendJsonAndLog(

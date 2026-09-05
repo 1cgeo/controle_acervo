@@ -13,6 +13,7 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 
 import { renderDashboard } from '@modules/mapoteca/pages/dashboard/index.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
+import { logarComo, OPERADOR, GERENTE } from '@/__tests__/helpers/sessao.js';
 
 // O dashboard tem UM filtro de ano, no nivel da pagina, e abre no ano ATUAL.
 // O seletor da navbar acabou, e nada fica no localStorage.
@@ -307,6 +308,58 @@ describe('renderDashboard da mapoteca', () => {
 
     await trocarAno(container, ANO_ANTERIOR);
     expect(svc.getResumoAnual).not.toHaveBeenCalled();
+  });
+
+  // O RECORTE DO OPERADOR, no dashboard.
+  //
+  // '/dashboard' e dos TRES perfis, e '/pedidos/:id' e '/clientes/:id' declaram
+  // ['consulta','gerente']: para o operador, o '#123' do bloco "Pedidos parados"
+  // e o nome do Top 10 de clientes terminavam em '#/unauthorized'. E o mesmo
+  // recorte que a fila de atendimento ja fazia, pela mesma constante
+  // (PERFIS_DA_LISTA_DE_PEDIDOS, no manifesto do modulo).
+  test('o operador ve o numero do pedido e o nome do cliente, sem link', async () => {
+    logarComo({ mapoteca: OPERADOR });
+    svc.getPendingOrders.mockResolvedValue([{
+      id: 123, cliente_nome: '18º BI Mtz', situacao_nome: 'Em andamento',
+      quantidade_produtos: 4, data_pedido: '2026-01-01', dias_aberto: 218,
+      ultima_movimentacao: '2026-07-30', prazo: null,
+    }]);
+
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    await abrirAba(container, 'Pedidos');
+    expect(container.querySelector('a[href*="/mapoteca/pedidos/"]')).toBeNull();
+    // O numero continua na tela: o que saiu foi a promessa de abrir.
+    expect(container.textContent).toContain('#123');
+
+    await abrirAba(container, 'Atendimento');
+    expect(container.querySelector('a[href*="/mapoteca/clientes/"]')).toBeNull();
+    expect(container.textContent).toContain('1º CGEO');
+
+    cleanup();
+  });
+
+  test('o gerente continua com os dois links', async () => {
+    logarComo({ mapoteca: GERENTE });
+    svc.getPendingOrders.mockResolvedValue([{
+      id: 123, cliente_nome: '18º BI Mtz', situacao_nome: 'Em andamento',
+      quantidade_produtos: 4, data_pedido: '2026-01-01', dias_aberto: 218,
+      ultima_movimentacao: '2026-07-30', prazo: null,
+    }]);
+
+    const container = document.createElement('div');
+    const cleanup = await renderDashboard(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    await abrirAba(container, 'Pedidos');
+    expect(container.querySelector('a[href="#/mapoteca/pedidos/123"]')).toBeTruthy();
+
+    await abrirAba(container, 'Atendimento');
+    expect(container.querySelector('a[href="#/mapoteca/clientes/7"]')).toBeTruthy();
+
+    cleanup();
   });
 
   test('o cleanup para o refetch de 60s', async () => {

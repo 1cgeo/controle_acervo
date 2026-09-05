@@ -193,6 +193,43 @@ describe('Schemas de produto', () => {
       expect(value.subtipo_produto_id).toBeNull()
     })
 
+    // `mi` e `inom` seguem a MESMA regra, e o controlador os preserva com o
+    // mesmo `preserveOmitted`. Sem estes dois casos, um corpo sem as duas
+    // chaves apagava a identidade da folha e a rota respondia 200.
+    it('produtoAtualizacao não inventa mi nem inom quando as chaves faltam', () => {
+      const { error, value } = produtoSchema.produtoAtualizacao.validate({
+        id: 1,
+        nome: 'Carta',
+        tipo_escala_id: 2,
+        denominador_escala_especial: null,
+        tipo_produto_id: 1,
+        subtipo_produto_id: 3,
+        descricao: ''
+      })
+
+      expect(error).toBeUndefined()
+      expect('mi' in value).toBe(false)
+      expect('inom' in value).toBe(false)
+    })
+
+    it('produtoAtualizacao continua aceitando mi e inom nulos explícitos', () => {
+      const { error, value } = produtoSchema.produtoAtualizacao.validate({
+        id: 1,
+        nome: 'Carta',
+        mi: null,
+        inom: null,
+        tipo_escala_id: 2,
+        denominador_escala_especial: null,
+        tipo_produto_id: 1,
+        subtipo_produto_id: 3,
+        descricao: ''
+      })
+
+      expect(error).toBeUndefined()
+      expect(value.mi).toBeNull()
+      expect(value.inom).toBeNull()
+    })
+
     it('versaoAtualizacao não zera palavras_chave quando a chave falta', () => {
       const { error, value } = produtoSchema.versaoAtualizacao.validate({
         id: 1,

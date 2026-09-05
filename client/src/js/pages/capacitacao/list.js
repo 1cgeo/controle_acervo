@@ -14,6 +14,7 @@ import {
   getUsuarios,
   getMetasPit,
 } from '@services/plataforma-service.js';
+import { temPerfil } from '@store/auth-store.js';
 import { openCapacitacaoDialog, MINISTRADA, RECEBIDA } from './capacitacao-dialog.js';
 
 const dia = (valor) => (valor
@@ -67,6 +68,16 @@ function criarTela(tipoId, textos) {
   const { listar, anos: listarAnos, excluir } = textos.servicos;
   return async function render(container, ctx) {
     let disposed = false;
+
+    // LANÇAR é do OPERADOR do módulo desta tela; LER é da CONSULTA, e é o que a
+    // rota exige (`perfilLoader('pit'|'efetivo', 'consulta')`, em index.js). O
+    // servidor cobra `verifyPerfil('operador', ...)` no POST, no PUT e no
+    // DELETE de `/rpcmtec/capacitacao/<tipo>`: sem este recorte, quem só tem
+    // consulta preenchia o formulário inteiro para receber 403 no fim, e os
+    // ícones de editar e excluir da linha respondiam o mesmo. Isto é ERGONOMIA:
+    // quem barra a escrita é o servidor, que lê o perfil do banco a cada
+    // requisição.
+    const podeEscrever = temPerfil('operador', textos.modulo);
 
     // A ROTA MANDA. Outra tela aponta para uma PESSOA
     // (#/capacitacao_recebida?usuario_uuid=...), e a tela chega filtrada nela.
@@ -190,7 +201,7 @@ function criarTela(tipoId, textos) {
       pageSize: 25,
       loading: true,
       emptyMessage: VAZIO,
-      actions: [
+      actions: podeEscrever ? [
         {
           icon: ICONS.edit,
           title: 'Editar',
@@ -204,7 +215,7 @@ function criarTela(tipoId, textos) {
           variant: 'danger',
           onClick: (row) => handleDelete(row),
         },
-      ],
+      ] : [],
     });
 
     // A tabela OU o painel de erro, no mesmo lugar. Ver `mostrar()`.
@@ -214,7 +225,7 @@ function criarTela(tipoId, textos) {
     const page = el('div', { className: 'page' }, [
       el('div', { className: 'page__header' }, [
         el('h1', { className: 'page__title', textContent: textos.titulo }),
-        el('div', { className: 'page__actions' }, [newBtn]),
+        el('div', { className: 'page__actions' }, podeEscrever ? [newBtn] : []),
       ]),
       el('div', { className: 'page__filters' }, [anoFilter.element, militarFilter.element]),
       areaTabela,
@@ -400,6 +411,9 @@ function criarTela(tipoId, textos) {
 export const renderCapacitacaoMinistrada = criarTela(MINISTRADA, {
   titulo: 'Capacitação ministrada',
   rotuloNovo: 'Nova capacitação',
+  // O `nome_abrev` do módulo que guarda a ESCRITA desta tela, e o mesmo que a
+  // rota do servidor cobra (`verifyPerfil('operador', 'pit')`).
+  modulo: 'pit',
   servicos: {
     listar: getCapacitacoesMinistradas,
     anos: getAnosCapacitacaoMinistrada,
@@ -451,6 +465,8 @@ export const renderCapacitacaoMinistrada = criarTela(MINISTRADA, {
 export const renderCapacitacaoRecebida = criarTela(RECEBIDA, {
   titulo: 'Capacitação recebida',
   rotuloNovo: 'Nova capacitação',
+  // `verifyPerfil('operador', 'efetivo')` no servidor. Ver a ministrada acima.
+  modulo: 'efetivo',
   servicos: {
     listar: getCapacitacoesRecebidas,
     anos: getAnosCapacitacaoRecebida,

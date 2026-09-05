@@ -125,6 +125,28 @@ describe('renderAtividades', () => {
     cleanup();
   });
 
+  // O RESUMO NAO REPETE O ESTADO VAZIO. Ele fica dois centimetros acima do
+  // `emptyMessage` da tabela, e a frase antiga repetia "Nenhuma atividade
+  // finalizada recentemente" palavra por palavra, empilhada. O que so o resumo
+  // diz e a regua do limite.
+  test('sem finalizada nenhuma, o resumo diz o limite e nao repete a tabela', async () => {
+    servico.getUltimasAtividadesFinalizadas.mockResolvedValue([]);
+
+    const container = document.createElement('div');
+    const cleanup = await renderAtividades(container);
+
+    abas(container)[1].click();
+    await flush();
+
+    const resumo = container.querySelector('.producao-atividades__resumo').textContent;
+    expect(resumo).toBe('A lista traz as 20 últimas finalizadas, e o limite é do servidor.');
+    // A tabela continua dizendo o estado vazio, e ela sozinha.
+    expect(container.textContent).toContain('Nenhuma atividade finalizada recentemente');
+    expect(resumo).not.toContain('Nenhuma atividade finalizada recentemente');
+
+    cleanup();
+  });
+
   test('a falha de uma aba vira estado de erro dela, com a mensagem do servidor', async () => {
     servico.getAtividadesEmExecucao.mockRejectedValue(new Error('Falha ao consultar o banco'));
 

@@ -146,3 +146,40 @@ describe('Ponto de controle - área desenhada', () => {
     expect((await listar(`geometria=${linha}`)).status).toBe(400)
   })
 })
+
+// O CSV PERDIA O TEXTO DE "OUTRA REFERENCIA".
+//
+// Os codigos 99 de `sistema_geodesico` e `referencial_altim` querem dizer "e
+// outra"; QUAL e mora em `outra_ref_plan` e `outro_ref_alt`, e essas duas
+// colunas nao estavam no SELECT do CSV. A planilha mostrava so o rotulo
+// generico, e quem exportava perdia exatamente a informacao que o codigo 99
+// existe para registrar -- sem ter como saber que perdeu. A ficha nunca teve o
+// problema porque le a linha inteira.
+describe('CSV do ponto de controle - a "Outra referencia"', () => {
+  it('traz o TEXTO das duas outras referencias, e nao so o rotulo generico', async () => {
+    const projeto = await createProjeto({ nome: 'Projeto Ref' })
+    const lote = await createLote(projeto.id, { nome: 'Missão Ref', pit: 'PIT-REF' })
+    const usuario = await conn.one('SELECT uuid FROM dgeo.usuario LIMIT 1')
+
+    await conn.none(
+      `INSERT INTO ponto_controle.ponto
+         (cod_ponto, lote_id, data_rastreio, usuario_cadastramento_uuid, geom,
+          sistema_geodesico, outra_ref_plan, referencial_altim, outro_ref_alt)
+       VALUES ('REF-HV-1', $1, '2026-05-12', $2,
+               ST_SetSRID(ST_MakePoint(-50, -15), 4674),
+               99, 'SAD-69 local da obra', 99, 'RN do porto de Rio Grande')`,
+      [lote.id, usuario.uuid]
+    )
+
+    const csv = await request(app)
+      .get('/api/ponto_controle/csv')
+      .set('Authorization', token())
+
+    expect(csv.status).toBe(200)
+    expect(csv.text).toContain('SAD-69 local da obra')
+    expect(csv.text).toContain('RN do porto de Rio Grande')
+    // E as colunas aparecem no cabecalho, e nao so o valor solto numa linha.
+    expect(csv.text).toContain('outra_ref_plan')
+    expect(csv.text).toContain('outro_ref_alt')
+  })
+})

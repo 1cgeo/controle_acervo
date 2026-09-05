@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
@@ -7,8 +7,36 @@ vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
 });
 
 import { renderInsumosList } from '@modules/mapoteca/pages/insumos/list.js';
+import {
+  openConsumoDialog,
+  openEntradaDialog,
+  openTransferenciaDialog,
+} from '@modules/mapoteca/pages/insumos/movimento-dialogs.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
 import { logarComo, CONSULTA, OPERADOR } from '@/__tests__/helpers/sessao.js';
+
+// O RELOGIO E FIXO NO ARQUIVO INTEIRO, e nao dentro de um `describe`.
+//
+// Esta tela fala de MES: a coluna "Consumo no mês" so conta a linha cujo `mes`
+// e o de hoje, e o `getConsumoMensal` leva o ano de hoje. Com o relogio de
+// parede, a fixture do "mes anterior" vira dezembro do ano passado em janeiro,
+// e o caso da virada do mes (o ultimo do arquivo) so poderia existir num dia
+// escolhido. 31/08/2026 e a vespera de uma virada, que e justamente o dia em
+// que a tela erra.
+const RELOGIO = new Date('2026-08-31T09:00:00');
+vi.useFakeTimers({ toFake: ['Date'] });
+vi.setSystemTime(RELOGIO);
+
+// SO o Date entra no `toFake`: o `flush()` deste repositorio e um `setTimeout`,
+// e congelar o cronometro junto travaria a espera da tela em todo caso.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(RELOGIO);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const MES_ATUAL = new Date().getMonth() + 1;
 const ANO_ATUAL = new Date().getFullYear();
@@ -198,5 +226,77 @@ describe('renderInsumosList', () => {
     expect(container.textContent).not.toContain('Nenhum insumo cadastrado');
 
     cleanup();
+  });
+
+  // A COLUNA DO MES SEGUE O RELOGIO, e nao a hora da montagem.
+  //
+  // Esta e a tela do lancamento de todo dia, e fica aberta o turno inteiro. Com
+  // o mes preso na montagem, atravessar a virada fazia todo `load()` recalcular
+  // a coluna com o mes VELHO, embaixo de um rodape que promete "o mesmo numero
+  // da tabela 7.2 do RPCMTec" -- que em setembro e outro. O consumo lancado
+  // agora entrava no livro e nao aparecia na coluna.
+  test('depois da virada do mes, a coluna passa a contar o mes NOVO', async () => {
+    // O material 1 gastou 7 em agosto e 55 em setembro. O relogio do arquivo
+    // esta em 31/08, entao a primeira carga tem de mostrar 7.
+    svc.getConsumoMensal.mockResolvedValue([
+      { tipo_material_id: 1, mes: 8, quantidade: '7' },
+      { tipo_material_id: 1, mes: 9, quantidade: '55' },
+    ]);
+    // A primeira carga falha de proposito: o botao "Tentar de novo" do estado de
+    // erro e o `load()` que a tela ja oferece, e assim o caso nao precisa
+    // atravessar um dialogo para provocar a recarga.
+    svc.getTiposMaterial.mockRejectedValueOnce(new Error('Erro de conexão'));
+    const { container, cleanup } = await montar();
+
+    vi.setSystemTime(new Date('2026-09-01T09:00:00'));
+
+    const tentarDeNovo = [...container.querySelectorAll('button')]
+      .find(b => b.textContent.includes('Tentar de novo'));
+    tentarDeNovo.click();
+    await flush();
+
+    // O ano do relogio novo, e nao o da montagem.
+    expect(svc.getConsumoMensal).toHaveBeenLastCalledWith(2026);
+    const papel = linhaDe(container, 'Papel A0');
+    expect(papel).toContain('55');
+    expect(papel).not.toContain('7');
+
+    cleanup();
+  });
+});
+
+// A DATA DO MOVIMENTO NAO PODE SER FUTURA.
+//
+// O erro barato e o ano trocado num campo que nasce preenchido. A linha entra no
+// livro, o gatilho de `estoque_material` desconta o saldo NA HORA (ele nao olha
+// `data_movimento`), a coluna "Consumo no mês" desta tela continua zerada e a
+// 7.2 do RPCMTec do mes nao conta nada: o saldo e o relatorio passam a discordar
+// sem uma linha de erro. O dialogo de impressao, ao lado, ja travava data futura.
+describe('os dialogos de movimento travam data futura', () => {
+  const MATERIAL = { id: 1, nome: 'Papel A0' };
+  const SALDOS = new Map([[1, 12], [2, 0]]);
+
+  /** O campo de data do dialogo aberto, pelo rotulo. */
+  const campoData = () => [...document.querySelectorAll('.modal .form-field')]
+    .find(f => f.textContent.includes('Data'))
+    .querySelector('input[type="date"]');
+
+  afterEach(() => {
+    document.querySelectorAll('.modal-overlay').forEach(n => n.remove());
+  });
+
+  test('o campo de data dos tres dialogos para em HOJE', async () => {
+    const abrir = [openConsumoDialog, openEntradaDialog, openTransferenciaDialog];
+    for (const abrirDialogo of abrir) {
+      abrirDialogo({ material: MATERIAL, saldos: SALDOS });
+      await flush();
+
+      const input = campoData();
+      // 31/08/2026 e o relogio do arquivo: sem o `max`, o seletor abria 2027.
+      expect(input.getAttribute('max')).toBe('2026-08-31');
+      expect(input.value).toBe('2026-08-31');
+
+      document.querySelectorAll('.modal-overlay').forEach(n => n.remove());
+    }
   });
 });

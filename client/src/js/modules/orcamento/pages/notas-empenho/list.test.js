@@ -17,8 +17,12 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
   getLicitacoes: vi.fn(() => Promise.resolve([])),
 }));
 
+const confirmDialog = vi.hoisted(() => vi.fn(() => Promise.resolve(false)));
+vi.mock('@components/modal/confirm-dialog.js', () => ({ confirmDialog }));
+
 import { renderNotasEmpenhoList } from '@modules/orcamento/pages/notas-empenho/list.js';
 import { getNotasEmpenho } from '@modules/orcamento/services/orcamento-service.js';
+import { logarComo, GERENTE } from '@/__tests__/helpers/sessao.js';
 
 const ANO_ATUAL = new Date().getFullYear();
 
@@ -80,6 +84,37 @@ describe('renderNotasEmpenhoList', () => {
 
     // A coluna "A liquidar" troca o valor por um chip nas que já fecharam.
     expect(container.textContent).toContain('Liquidada');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+  // A FINALIDADE E TEXT SEM LIMITE, e entrava INTEIRA no rotulo da confirmacao.
+  // A coluna da tabela ja corta por CSS; a caixa de confirmacao, nao. Uma
+  // finalidade de duzentos caracteres empurrava o botao "Excluir" para baixo da
+  // dobra do modal em tela estreita, e a frase que importa ficava atras do texto
+  // colado.
+  test('a confirmação de exclusão corta a finalidade, e não vira um parágrafo', async () => {
+    logarComo({ orcamento: GERENTE });
+    const finalidade = 'Aquisição de suprimentos de impressão para a Divisão '.repeat(6);
+    getNotasEmpenho.mockResolvedValueOnce([
+      { id: 1, numero: '2026NE000024', ano: 2026, nota_credito_numero: '2026NC400136',
+        finalidade, valor_empenhado: '1000.00', valor_anulado: '0.00', total_liquidado: '0.00' },
+    ]);
+
+    const container = document.createElement('div');
+    const cleanup = await renderNotasEmpenhoList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+
+    container.querySelector('tbody tr .data-table__action-btn--danger').click();
+    await flush();
+
+    expect(confirmDialog).toHaveBeenCalledTimes(1);
+    const mensagem = confirmDialog.mock.calls[0][0].message;
+    // O que identifica a NE continua la, e o texto longo entra cortado.
+    expect(mensagem).toContain('2026NE000024');
+    expect(mensagem).toContain('2026NC400136');
+    expect(mensagem).toContain('…');
+    expect(mensagem).not.toContain(finalidade);
+    expect(mensagem.indexOf('Esta ação não pode')).toBeLessThan(200);
 
     if (typeof cleanup === 'function') cleanup();
   });

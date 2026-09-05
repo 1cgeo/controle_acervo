@@ -595,6 +595,42 @@ describe('tela de ponto de controle: filtros, área e exportação', () => {
     expect(decodeURIComponent(location.hash)).toContain('"type":"Polygon"');
   });
 
+  // A caixa do link vale SO ate alguem mexer no interruptor. Ela nunca era
+  // esquecida: quem abrisse um link com `bbox`, desmarcasse e remarcasse antes
+  // de o mapa montar -- ou depois de o mapa falhar, quando `caixaVisivel()`
+  // devolve null para sempre -- voltava a consultar por uma area invisivel.
+  test('mexer no interruptor esquece a caixa que veio no link', async () => {
+    mapaFalso.caixaVisivel = null;
+    const { container } = await montar({ query: 'bbox=-53,-31,-50,-29' });
+    expect(ultimaBusca().bbox).toBe('-53,-31,-50,-29');
+
+    const seguir = container.querySelector('#pc-seguir-mapa');
+    seguir.checked = false;
+    seguir.dispatchEvent(new Event('change'));
+    await flush();
+    seguir.checked = true;
+    seguir.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(ultimaBusca().bbox).toBe('');
+  });
+
+  // Este cobra o DESFECHO, e nao a linha: hoje `limparTudo` ja zera o
+  // `seguirMapa`, entao a caixa do link nao sairia mesmo sem o `bboxDoLink = ''`
+  // que foi acrescentado ao lado. A linha fica porque `bboxDoLink` sobreviver a
+  // um "Limpar filtros" e um estado que ninguem espera encontrar depois.
+  test('"Limpar filtros" esquece a caixa que veio no link', async () => {
+    mapaFalso.caixaVisivel = null;
+    const { container } = await montar({ query: 'bbox=-53,-31,-50,-29' });
+    expect(ultimaBusca().bbox).toBe('-53,-31,-50,-29');
+
+    [...container.querySelectorAll('button')]
+      .find(b => b.textContent.includes('Limpar filtros')).click();
+    await flush();
+
+    expect(ultimaBusca().bbox).toBe('');
+  });
+
   test('desenhar DESLIGA o "so na area do mapa": o recorte e um so', async () => {
     const { container } = await montar();
     const seguir = container.querySelector('#pc-seguir-mapa');
@@ -720,6 +756,74 @@ describe('tela de ponto de controle: robustez', () => {
     proxima.click();
     await flush();
     expect(ultimaBusca().pagina).toBe(2);
+  });
+
+  // O link guardado com `pagina=7` envelhece. Sem o corte, a tela dizia tres
+  // coisas que se contradizem: "50 pontos" no contador, "Nenhum ponto de
+  // controle com esses filtros" na lista, e "Página 7 de 3" no rodape.
+  test('pagina fora do intervalo cai para a ultima valida', async () => {
+    buscarPontos.mockImplementation((f) => resposta({
+      total: 50,
+      pagina: f.pagina,
+      pontos: f.pagina > 3 ? [] : PONTOS,
+    }));
+
+    const { container } = await montar({ query: 'pagina=7' });
+
+    expect(ultimaBusca().pagina).toBe(3);
+    expect(cartoes(container)).toHaveLength(2);
+    expect(container.textContent).toContain('Página 3 de 3');
+    expect(location.hash).toContain('pagina=3');
+  });
+
+  // As facetas so acrescentam o quantitativo ao lado de cada opcao. Derrubando
+  // a consulta inteira, a falha de um adorno apagava a lista e o mapa, que sao
+  // o conteudo. E a mesma regra que a busca do acervo ja segue.
+  test('faceta que falha nao derruba a lista nem o mapa', async () => {
+    getFacetas.mockImplementation(() => Promise.reject(new Error('500')));
+
+    const { container } = await montar();
+
+    expect(cartoes(container)).toHaveLength(2);
+    expect(contador(container)).toContain('2 pontos');
+    expect(mapaFalso.pontos).toHaveLength(2);
+    expect(container.querySelector('.dashboard-erro')).toBeNull();
+  });
+
+  // As facetas sao a UNICA fonte das opcoes dos quatro filtros desta tela. Com
+  // elas fora, os filtros abriam dizendo "Nenhuma opcao para este recorte", que
+  // afirma um fato diferente do que aconteceu.
+  test('faceta que falha na primeira consulta diz por que os filtros estao vazios', async () => {
+    getFacetas.mockImplementation(() => Promise.reject(new Error('500')));
+
+    const { container } = await montar();
+
+    const aviso = container.querySelector('.busca-filtros__aviso');
+    expect(aviso).not.toBeNull();
+    expect(aviso.classList.contains('hidden')).toBe(false);
+    expect(aviso.textContent).toContain('As opções dos filtros não carregaram');
+  });
+
+  test('faceta que chega deixa o aviso escondido', async () => {
+    const { container } = await montar();
+
+    expect(container.querySelector('.busca-filtros__aviso').classList.contains('hidden'))
+      .toBe(true);
+  });
+
+  // Depois da primeira faceta os filtros ja tem opcao: a falha seguinte so
+  // envelhece o quantitativo, e isso nao merece uma frase na tela.
+  test('faceta que falha DEPOIS de uma boa nao acusa filtro vazio', async () => {
+    const { container } = await montar();
+    getFacetas.mockImplementation(() => Promise.reject(new Error('500')));
+
+    const codigo = container.querySelector('input[type="search"]');
+    codigo.value = 'RS';
+    codigo.dispatchEvent(new Event('input'));
+    await flush();
+
+    expect(container.querySelector('.busca-filtros__aviso').classList.contains('hidden'))
+      .toBe(true);
   });
 
   test('lista vazia nao deixa o resumo em branco', async () => {

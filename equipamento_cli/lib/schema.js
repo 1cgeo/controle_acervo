@@ -353,7 +353,13 @@ function contrato (chave, recurso) {
     linhas.push('campos do corpo em PUT')
     linhas.push(`  os mesmos do POST${novos.length ? ', mais: ' + novos.join(', ') : ''}` +
       `${mudaram.length ? '; exceto ' + mudaram.join(', ') : ''}`)
-    linhas.push('  o PUT SUBSTITUI a linha: campo omitido volta ao default do schema.')
+    // Ate 2026-09-05 esta linha terminava em "campo omitido volta ao default do
+    // schema", e desde a saida dos defaults do equipamento (achado S3-05) isso
+    // deixou de ser verdade ali: sem default, a chave ausente nao viaja e o
+    // servidor preserva a coluna. O que continua valendo em TODO recurso e a
+    // instrucao, e nao o mecanismo; o que o omitido faz e dito logo abaixo, e so
+    // onde houver default.
+    linhas.push('  o PUT SUBSTITUI a linha: mande o corpo INTEIRO, lido de volta.')
 
     const defaults = camposComDefault(modulo.atualizar)
     if (defaults.length) {

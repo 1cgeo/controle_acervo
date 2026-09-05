@@ -15,7 +15,7 @@ import { describe, test, expect, afterEach } from 'vitest';
  * sem perceber: ele não aparece com um modal só, que é como quase toda tela usa.
  */
 
-import { openModal } from './modal-base.js';
+import { openModal, fecharTodosOsModais } from './modal-base.js';
 
 const abertos = () => document.querySelectorAll('.modal').length;
 
@@ -196,5 +196,52 @@ describe('armadilha de foco', () => {
 
     expect(evento.defaultPrevented).toBe(true);
     expect(cima.element.contains(document.activeElement)).toBe(true);
+  });
+});
+
+/**
+ * O overlay mora no `document.body`, e nao no `#app`. Nem a limpeza da pagina
+ * nem o `clearLayout()` o alcancam, entao um modal aberto sobrevivia a troca de
+ * rota e ficava por cima da tela seguinte com a armadilha de foco ligada. O
+ * router chama `fecharTodosOsModais()` no inicio de cada navegacao.
+ */
+describe('fecharTodosOsModais', () => {
+  test('derruba a pilha inteira, do topo ao fundo', () => {
+    openModal({ title: 'De baixo', content: 'a' });
+    openModal({ title: 'Do meio', content: 'b' });
+    openModal({ title: 'De cima', content: 'c' });
+    expect(abertos()).toBe(3);
+
+    fecharTodosOsModais();
+
+    expect(abertos()).toBe(0);
+    expect(document.querySelector('.modal-overlay')).toBeNull();
+  });
+
+  test('cada modal recebe o proprio onClose, uma vez so', () => {
+    const chamadas = [];
+    openModal({ title: 'A', content: 'a', onClose: () => chamadas.push('a') });
+    openModal({ title: 'B', content: 'b', onClose: () => chamadas.push('b') });
+
+    fecharTodosOsModais();
+    fecharTodosOsModais();
+
+    expect(chamadas).toEqual(['a', 'b']);
+  });
+
+  // NAO passa pela guarda de descarte: a navegacao ja aconteceu, e perguntar
+  // "descartar?" aqui travaria a fila do router esperando resposta sobre uma
+  // tela que ja saiu do ar.
+  test('ignora a guarda de descarte, que recusaria o fechamento', () => {
+    openModal({ title: 'Com pendencia', content: 'x', podeFechar: () => false });
+
+    fecharTodosOsModais();
+
+    expect(abertos()).toBe(0);
+  });
+
+  test('sem modal aberto, nao faz nada e nao quebra', () => {
+    expect(() => fecharTodosOsModais()).not.toThrow();
+    expect(abertos()).toBe(0);
   });
 });

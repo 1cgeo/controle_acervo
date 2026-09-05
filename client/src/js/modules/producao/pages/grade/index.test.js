@@ -44,16 +44,29 @@ let container;
 beforeEach(() => {
   container = document.createElement('div');
   document.body.replaceChildren(container);
+  // O FILTRO VIVE NA URL, e a barra de endereço é estado compartilhado entre os
+  // casos deste arquivo: sem zerar, a query que um caso escreveu chegaria ao
+  // seguinte como se fosse a rota por onde a pessoa entrou.
+  history.replaceState(null, '', '#/producao/grade');
   servico.resposta = [];
   servico.falha = null;
   servico.chamadas = 0;
 });
 
-const abrir = async () => {
-  const cleanup = await renderGrade(container);
+const abrir = async (busca = '') => {
+  const cleanup = await renderGrade(container, { query: new URLSearchParams(busca) });
   await flush();
   return cleanup;
 };
+
+const seletor = (rotulo) => [...container.querySelectorAll('.page__filters .form-field')]
+  .find(f => f.textContent.includes(rotulo))
+  .querySelector('select, input');
+
+// O que a barra de endereço está dizendo agora, sem o '#'. O espaço sai como
+// '+' porque é o que `URLSearchParams.toString()` escreve, e é o que o roteador
+// lê de volta como espaço ao montar o `ctx.query`.
+const urlDaTela = () => window.location.hash.replace(/^#/, '');
 
 const cartoes = () => [...container.querySelectorAll('.grade-prod__card')];
 const aviso = () => container.querySelector('.grade-prod__aviso');
@@ -196,5 +209,73 @@ describe('grade de acompanhamento: a falha', () => {
     await flush();
     // Nada a afirmar além de não ter estourado: o `disposed` corta a escrita.
     expect(typeof cleanup).toBe('function');
+  });
+});
+
+// É UMA TELA FEITA PARA VASCULHAR, e o filtro morava em variável local: sair
+// para conferir outra coisa e voltar devolvia tudo em "Todos", com a busca em
+// branco, e não havia como mandar a tela filtrada para outra pessoa. Mesmo
+// desenho da lista de pedidos da mapoteca (commit `a8212b9`).
+describe('grade de acompanhamento: o filtro vive na URL', () => {
+  test('abre já filtrada pelo que a query manda', async () => {
+    servico.resposta = [
+      atividade(),
+      atividade({ atividade_id: 2, usuario: 'Cap Souza', lote: 'Lote 2' }),
+    ];
+    await abrir('lote=Lote 2');
+
+    expect(cartoes()).toHaveLength(1);
+    expect(container.textContent).toContain('Cap Souza');
+    expect(container.textContent).not.toContain('1º Ten Silva');
+    // E o seletor NASCE marcado: o filtro que age sem aparecer é pior do que
+    // filtro nenhum.
+    expect(seletor('Lote').value).toBe('Lote 2');
+    expect(container.querySelector('.grade-prod__resumo').textContent)
+      .toBe('1 de 2 atividade(s) em execução.');
+  });
+
+  test('a busca da query também chega, e já vem escrita no campo', async () => {
+    servico.resposta = [
+      atividade(),
+      atividade({ atividade_id: 2, usuario: 'Cap Souza' }),
+    ];
+    await abrir('busca=souza');
+
+    expect(cartoes()).toHaveLength(1);
+    expect(seletor('Buscar').value).toBe('souza');
+  });
+
+  test('trocar um filtro escreve a URL, e a tela pelada não leva query', async () => {
+    servico.resposta = [
+      atividade(),
+      atividade({ atividade_id: 2, usuario: 'Cap Souza', lote: 'Lote 2' }),
+    ];
+    await abrir();
+    expect(urlDaTela()).toBe('/producao/grade');
+
+    const lote = seletor('Lote');
+    lote.value = 'Lote 2';
+    lote.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(urlDaTela()).toBe('/producao/grade?lote=Lote+2');
+    expect(cartoes()).toHaveLength(1);
+
+    // E voltar para "Todos" limpa a query, em vez de deixar um parâmetro vazio.
+    lote.value = '';
+    lote.dispatchEvent(new Event('change'));
+    await flush();
+    expect(urlDaTela()).toBe('/producao/grade');
+  });
+
+  // O RECORTE QUE ACABOU: sem isto, a galeria abriria vazia com o seletor
+  // dizendo "Todos" -- a tela afirmando duas coisas ao mesmo tempo.
+  test('filtro da URL que não existe nos dados é descartado', async () => {
+    servico.resposta = [atividade()];
+    await abrir('lote=Lote 9');
+
+    expect(cartoes()).toHaveLength(1);
+    expect(seletor('Lote').value).toBe('');
+    expect(urlDaTela()).toBe('/producao/grade');
   });
 });

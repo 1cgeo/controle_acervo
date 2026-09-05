@@ -324,6 +324,20 @@ controller.usuariosSemPerfil = async () => {
 
 /**
  * Onde cada pessoa ativa está agora: ociosa, em atividade ou pausada.
+ *
+ * UMA LINHA POR PESSOA, e o `LATERAL` é o que garante isso. Com o `LEFT JOIN`
+ * simples que estava aqui, quem tivesse ao mesmo tempo uma atividade EM EXECUÇÃO
+ * e uma PAUSADA aparecia DUAS VEZES na lista, uma em cada estado -- e esse par
+ * não é caso de borda, é o desfecho normal de apontar um problema: o
+ * `/problema_atividade` encerra a atividade viva, abre uma PAUSADA no nome da
+ * mesma pessoa e tira a unidade de trabalho da distribuição, e a próxima vez que
+ * ela pede trabalho a fila entrega OUTRA folha. A tela então conta a mesma pessoa
+ * duas vezes, e o total de "em atividade" mais "ocioso" deixa de bater com o
+ * efetivo.
+ *
+ * A ORDEM DE DESEMPATE É A SITUAÇÃO, e ela responde a pergunta da tela: 2 ('Em
+ * execução') vem antes de 3 ('Pausada'), porque onde a pessoa ESTÁ agora é onde
+ * ela está trabalhando. A pausada é o que ficou para trás.
  */
 controller.resumoUsuario = async () => {
   return db.conn.any(
@@ -339,9 +353,15 @@ controller.resumoUsuario = async () => {
             COALESCE(b.nome, 'N/A') AS nome_bloco
        FROM dgeo.usuario AS u
        INNER JOIN dominio.tipo_posto_grad AS tpg ON tpg.code = u.tipo_posto_grad_id
-       LEFT JOIN producao.atividade AS a
-         ON a.usuario_uuid = u.uuid
-        AND a.tipo_situacao_atividade_id IN ($<emExecucao>, $<pausada>)
+       LEFT JOIN LATERAL (
+         SELECT ativ.usuario_uuid, ativ.tipo_situacao_atividade_id,
+                ativ.unidade_trabalho_id
+           FROM producao.atividade AS ativ
+          WHERE ativ.usuario_uuid = u.uuid
+            AND ativ.tipo_situacao_atividade_id IN ($<emExecucao>, $<pausada>)
+          ORDER BY ativ.tipo_situacao_atividade_id, ativ.data_inicio DESC NULLS LAST
+          LIMIT 1
+       ) AS a ON TRUE
        LEFT JOIN producao.unidade_trabalho AS ut ON ut.id = a.unidade_trabalho_id
        LEFT JOIN producao.subfase AS s ON s.id = ut.subfase_id
        LEFT JOIN acervo.lote AS l ON l.id = ut.lote_id
@@ -702,7 +722,16 @@ controller.getInfoSubfasePIT = async ano => {
          INNER JOIN ut_completa AS u ON u.id = rv.ut_id
         GROUP BY rv.versao_id, u.lote_id, u.subfase_id
      )
-     SELECT l.nome AS lote, s.nome AS subfase,
+     -- A CHAVE SAI JUNTO COM O ROTULO, e e ela que o cliente agrupa. Agrupar
+     -- por (l.nome, s.nome) juntava numa linha so o que sao DUAS series:
+     -- producao.subfase e UNIQUE (nome, fase_id), entao "Edição" existe na
+     -- linha da Carta Topografica E na do CDGV, e acervo.lote so e UNIQUE em
+     -- (projeto_id, pit), entao dois projetos podem ter lotes homonimos. A tela
+     -- do PIT mostrava um lote com o dobro do que ele entregou, enquanto a
+     -- secao "Por lote" logo acima, que ja agrupa por lote_id, mostrava os
+     -- dois separados. E a mesma cirurgia que linhaDoTempo recebeu, 200 linhas acima.
+     SELECT vs.lote_id, vs.subfase_id,
+            l.nome AS lote, s.nome AS subfase,
             EXTRACT(MONTH FROM vs.data_fim)::int AS mes,
             COUNT(*)::int AS quantidade
        FROM versao_subfase AS vs
@@ -710,7 +739,8 @@ controller.getInfoSubfasePIT = async ano => {
        INNER JOIN producao.subfase AS s ON s.id = vs.subfase_id
       WHERE vs.completa IS TRUE
         AND EXTRACT(YEAR FROM vs.data_fim) = $<ano>
-      GROUP BY l.nome, s.nome, s.ordem, EXTRACT(MONTH FROM vs.data_fim)
+      GROUP BY vs.lote_id, vs.subfase_id, l.nome, s.nome, s.ordem,
+               EXTRACT(MONTH FROM vs.data_fim)
       ORDER BY l.nome, s.ordem, mes`,
     { ano }
   )
@@ -1014,10 +1044,18 @@ controller.getLayerGeoJSON = async nome => {
   // antes -- a expressao regular ancorada do Joi (`nomeParams`) e a existencia em
   // `pg_matviews` logo acima -- e nenhuma das duas deixa passar aspas, ponto e
   // virgula ou espaco.
+  // O `COALESCE` E A VIEW VAZIA, QUE E ESTADO NORMAL: a view materializada
+  // nasce junto com a primeira etapa, e nesse instante o lote ainda nao tem
+  // unidade de trabalho nenhuma. Sobre zero linhas, `array_agg` devolve NULL e
+  // `array_to_json(NULL)` devolve NULL -- a rota responderia
+  // `{"type":"FeatureCollection","features":null}`, que nao e GeoJSON valido e
+  // que a tela de mapas quebra ao ler `features.length`. O certo e a colecao
+  // VAZIA: o mapa em branco e a resposta honesta para um lote sem geometria.
   return db.conn.oneOrNone(
     `SELECT row_to_json(fc) AS geojson
        FROM (
-         SELECT 'FeatureCollection' AS type, array_to_json(array_agg(f)) AS features
+         SELECT 'FeatureCollection' AS type,
+                COALESCE(array_to_json(array_agg(f)), '[]'::json) AS features
            FROM (
              SELECT 'Feature' AS type,
                     ST_AsGeoJSON(d.geom)::json AS geometry,

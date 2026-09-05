@@ -12,6 +12,8 @@ import {
 } from '@modules/mapoteca/services/mapoteca-service.js';
 import { permissoes } from '@store/auth-store.js';
 import { criarHistorico } from '@components/historico/historico.js';
+import { mostrarErroNoGrafico } from '@components/estado-erro.js';
+import { criarAvisoDeErro } from '@modules/mapoteca/pages/aviso-carga.js';
 import { TIPO_LOCALIZACAO, NOME_LOCALIZACAO } from '@modules/mapoteca/movimento-material.js';
 import { openMaterialDialog } from './material-dialog.js';
 import {
@@ -115,6 +117,15 @@ export async function renderInsumoFicha(container, { params }) {
   // Os nos da pagina, montados uma vez. Nulo antes da primeira carga, e nulo de
   // novo depois de um erro, que troca a ficha pela tela de erro.
   let tela = null;
+  // SEQUENCIA DAS CARGAS, para descartar a resposta que chegar atrasada.
+  //
+  // O ano e o mes ficam LADO A LADO na mesma barra, e escolher os dois e o gesto
+  // normal: sao duas cargas em voo. A do ANO INTEIRO le doze meses do livro e
+  // costuma ser a mais lenta, entao ela chegava DEPOIS da do mes e repintava por
+  // cima -- a tabela mostrava o ano inteiro com "Março" no seletor, e o titulo do
+  // grafico voltava para o ano anterior. E o mesmo remedio do mapa do dashboard
+  // (pages/dashboard/mapa-tab.js).
+  let cargaAtual = 0;
 
   // O ANO E O MES filtram o LIVRO e o grafico de consumo, que sao as duas partes
   // historicas da ficha. O cadastro e o saldo nao tem ano: saldo e o de HOJE.
@@ -281,12 +292,19 @@ export async function renderInsumoFicha(container, { params }) {
       estoqueTable.element,
     ]);
 
+    // O LIVRO VAZIO NAO PODE SER O LIVRO QUE NAO CARREGOU. A mensagem de vazio
+    // da tabela diz "Nenhum movimento neste período", e quem pergunta "por que o
+    // saldo caiu" a leria como "ninguem lancou nada" -- e concluiria que o saldo
+    // e que esta errado. As duas frases pedem acoes opostas, e a de erro traz o
+    // "Tentar de novo".
+    const avisoLivro = criarAvisoDeErro(livroTable, load);
+
     const secaoLivro = el('div', { className: 'dashboard-section' }, [
       el('div', { className: 'dashboard-section__header' }, [
         el('h2', { className: 'dashboard-section__title', textContent: 'Livro de movimentos' }),
       ]),
       barraFiltro,
-      livroTable.element,
+      avisoLivro.element,
     ]);
 
     // -------------------------------------------------------------------------
@@ -330,6 +348,7 @@ export async function renderInsumoFicha(container, { params }) {
       secaoLivro,
       estoqueTable,
       livroTable,
+      avisoLivro,
       consumoChart,
       tituloGrafico: consumoChart.querySelector('.chart-card__title'),
       // Assinatura do que o grafico ja mostra. Ver o comentario no `pintar`.
@@ -354,8 +373,20 @@ export async function renderInsumoFicha(container, { params }) {
     if (linhas > 0) tabela.update({ loading: true });
   }
 
-  /** Escreve o dado novo nos nos que ja existem. */
-  function pintar(movimentos, consumoMensal, ano) {
+  /**
+   * Escreve o dado novo nos nos que ja existem.
+   *
+   * As duas leituras ACESSORIAS chegam como resultado de `Promise.allSettled`,
+   * e nao como lista: a que falhou tem de se declarar falha na secao dela, e
+   * nao virar lista vazia.
+   *
+   * @param {PromiseSettledResult} movimentosRes - GET /movimento_material
+   * @param {PromiseSettledResult} consumoRes - GET /consumo_mensal do ano
+   * @param {number} ano
+   */
+  function pintar(movimentosRes, consumoRes, ano) {
+    const movimentos = movimentosRes.status === 'fulfilled' ? movimentosRes.value : [];
+    const consumoMensal = consumoRes.status === 'fulfilled' ? consumoRes.value : [];
     const disponivel = Number(material.estoque?.disponivel || 0);
     // O ALERTA CONTA O DISPONIVEL (Seção + Almoxarifado), e nao o total das
     // quatro localizacoes: material comprado e ainda nao entregue nao tapa buraco
@@ -418,9 +449,21 @@ export async function renderInsumoFicha(container, { params }) {
 
     const registrosEstoque = material.estoque?.registros || [];
     tela.estoqueTable.update(registrosEstoque);
-    tela.livroTable.update(movimentos);
     tela.linhasEstoque = registrosEstoque.length;
-    tela.linhasLivro = movimentos.length;
+
+    if (movimentosRes.status === 'fulfilled') {
+      tela.livroTable.update(movimentos);
+      tela.linhasLivro = movimentos.length;
+      tela.avisoLivro.ok();
+    } else {
+      // A tabela sai do DOM e o estado de erro toma o lugar dela, com o botao
+      // que refaz a carga. Zerar `linhasLivro` faz a proxima recarga nao marcar
+      // "carregando" numa tabela que nao esta na tela.
+      tela.linhasLivro = 0;
+      tela.avisoLivro.falhou(
+        movimentosRes.reason?.message || 'Erro ao carregar o livro de movimentos'
+      );
+    }
 
     const consumoDoMaterial = consumoMensal
       .filter(r => Number(r.tipo_material_id) === id)
@@ -431,11 +474,21 @@ export async function renderInsumoFicha(container, { params }) {
     // A chart.js destroi e refaz a tela do grafico a cada `update`. Gravar o
     // cadastro do insumo nao muda o consumo do ano, e repintar ali so pisca.
     // Por isso o repinte depende da assinatura do que o grafico ja mostra.
-    const assinatura = `${ano}|${JSON.stringify(dadosGrafico)}`;
-    if (assinatura !== tela.assinaturaGrafico) {
+    //
+    // A carga que FALHOU nao entra nessa conta: ela repinta sempre, porque o
+    // estado de erro tem de voltar depois de qualquer `update` do grafico.
+    const assinatura = consumoRes.status === 'fulfilled'
+      ? `${ano}|${JSON.stringify(dadosGrafico)}`
+      : null;
+    if (assinatura === null || assinatura !== tela.assinaturaGrafico) {
       tela.assinaturaGrafico = assinatura;
       tela.tituloGrafico.textContent = `Consumo mensal em ${ano}`;
       tela.consumoChart.update({ data: dadosGrafico });
+      // Grafico vazio le-se como "nao houve consumo", que e o oposto do que
+      // aconteceu. Mesma regra da aba Materiais do dashboard.
+      if (consumoRes.status === 'rejected') {
+        mostrarErroNoGrafico(tela.consumoChart, consumoRes.reason, load);
+      }
     }
 
     // A descricao e opcional, e e o unico bloco que entra e sai da pagina.
@@ -451,6 +504,7 @@ export async function renderInsumoFicha(container, { params }) {
   }
 
   async function load() {
+    const meuToken = ++cargaAtual;
     // Recarga silenciosa: as tabelas ficam na tela com as linhas que ja tem, e
     // so avisam que estao carregando. Trocar por esqueleto encolhia a tela.
     if (tela) {
@@ -462,21 +516,26 @@ export async function renderInsumoFicha(container, { params }) {
     const mes = filtroMes.getValue();
     const { inicio, fim } = intervalo(ano, mes);
 
-    let carregado;
-    let movimentos = [];
-    let consumoMensal = [];
-    try {
-      [carregado, movimentos, consumoMensal] = await Promise.all([
-        getTipoMaterial(id),
-        // O LIVRO vem da rota filtravel, e nao do `registros_recentes` da ficha:
-        // aquele traz so os dez ultimos, sem filtro de periodo nenhum.
-        getMovimentosMaterial({
-          tipo_material_id: id, data_inicio: inicio, data_fim: fim,
-        }).catch(() => []),
-        getConsumoMensal(ano).catch(() => []),
-      ]);
-    } catch (err) {
-      if (disposed) return;
+    // AS TRES CARREGAM SOZINHAS, e so a primeira e obrigatoria.
+    //
+    // Sem o cadastro nao ha ficha, e a tela inteira vira erro. As outras duas
+    // sao ACESSORIAS, e cada uma responde pela SECAO dela: engolir a falha delas
+    // com `catch(() => [])` fazia o livro dizer "Nenhum movimento neste período"
+    // e o grafico dizer "nao houve consumo" quando o que houve foi falta de
+    // resposta -- as duas frases pedem a acao oposta a de tentar de novo.
+    const [materialRes, movimentosRes, consumoRes] = await Promise.allSettled([
+      getTipoMaterial(id),
+      // O LIVRO vem da rota filtravel, e nao do `registros_recentes` da ficha:
+      // aquele traz so os dez ultimos, sem filtro de periodo nenhum.
+      getMovimentosMaterial({
+        tipo_material_id: id, data_inicio: inicio, data_fim: fim,
+      }),
+      getConsumoMensal(ano),
+    ]);
+
+    if (materialRes.status === 'rejected') {
+      const err = materialRes.reason || new Error('Erro ao carregar o insumo');
+      if (disposed || meuToken !== cargaAtual) return;
       showError(err.message || 'Erro ao carregar o insumo');
       // Sem dado nao ha ficha. A tela de erro toma o lugar dela, e a proxima
       // carga bem-sucedida monta a ficha de novo.
@@ -490,9 +549,11 @@ export async function renderInsumoFicha(container, { params }) {
       ]));
       return;
     }
-    if (disposed) return;
+    // A resposta de uma carga que outra ja substituiu nao pinta nada: ela
+    // devolveria o periodo antigo por cima do que o filtro esta mostrando.
+    if (disposed || meuToken !== cargaAtual) return;
 
-    material = carregado;
+    material = materialRes.value;
     saldos = new Map(
       (material.estoque?.registros || []).map(
         r => [Number(r.localizacao_id), Number(r.quantidade)]
@@ -506,7 +567,7 @@ export async function renderInsumoFicha(container, { params }) {
       container.appendChild(tela.pagina);
     }
 
-    pintar(movimentos, consumoMensal, ano);
+    pintar(movimentosRes, consumoRes, ano);
 
     // Na primeira carga o historico ja busca sozinho.
     if (!primeira) tela.historico.recarregar();

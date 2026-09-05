@@ -98,6 +98,7 @@ class PedidosDialog(QDialog, FORM_CLASS):
         self.pedido_selecionado = None
         self.detalhe = {}
         self.download_in_progress = False
+        self._total_pdfs = 0       # PDFs da rodada de download em curso
 
         self.setup_ui()
         self.setup_signals()
@@ -186,9 +187,12 @@ class PedidosDialog(QDialog, FORM_CLASS):
         plugin não tem seletor de ano. Por ela, o pedido de dezembro ainda
         aberto em janeiro some da tela sem aviso.
 
-        A fila já exclui no SERVIDOR o que não é trabalho de quem imprime
-        (Concluído, Cancelado, Remetido e Aguardando produção). Não duplique
-        essa régua aqui em Python.
+        A fila já exclui no SERVIDOR o que não é trabalho de quem imprime. Ela é
+        `SITUACOES_FILA_IMPRESSAO` (server/src/mapoteca/query_fragments.js), que
+        são só Pedido recebido (2) e Em andamento (3): ficam de fora Remetido
+        (4), Concluído (5), Cancelado (6), Aguardando produção (7) e também
+        Aguardando envio (8), que é o pedido já impresso à espera do despacho.
+        Não duplique essa régua aqui em Python.
         """
         self._aguardar("Carregando a fila de atendimento...")
         try:
@@ -411,7 +415,12 @@ class PedidosDialog(QDialog, FORM_CLASS):
         if sem_arquivo:
             info.append(f"{sem_arquivo} item(ns) sem PDF para baixar")
         if total > 0 and concluidos >= total:
-            info.append("impressão concluída, marque o pedido como Remetido no SCA")
+            # Aguardando envio (8), e NÃO Remetido (4): a situação 8 existe
+            # justamente para o estágio entre imprimir e despachar, e a mapoteca
+            # não usa a 4 (ver o comentário do DDL em er/mapoteca.sql). Marcar
+            # Remetido aqui declararia despachado o que ainda está na prateleira,
+            # e a tela pública diria isso ao solicitante.
+            info.append("impressão concluída, marque o pedido como Aguardando envio")
 
         self.pedidoInfoLabel.setText('  ·  '.join(info))
 
@@ -554,7 +563,7 @@ class PedidosDialog(QDialog, FORM_CLASS):
                 self, "Item sem PDF",
                 "Este item não tem PDF no acervo para baixar.\n\n"
                 "Item avulso se imprime do original. Item do acervo sem "
-                "arquivo depende de alguém carregar o PDF no SCA."
+                "arquivo depende de alguém carregar o PDF no SAP."
             )
             return
 
@@ -694,6 +703,10 @@ class PedidosDialog(QDialog, FORM_CLASS):
             return
 
         total_mb = self.impressao_manager.get_total_size_mb(arquivos)
+        # Quantos PDFs esta rodada tem de baixar. Um item pode render mais de um
+        # arquivo (principal e formato alternativo), então isto NÃO é o número de
+        # itens do pedido; é com ele que o cancelamento diz "N de M".
+        self._total_pdfs = len(arquivos)
         self.statusLabel.setText(f"Baixando {len(arquivos)} PDF(s) ({total_mb:.1f} MB)...")
 
         self.download_in_progress = True
@@ -732,10 +745,37 @@ class PedidosDialog(QDialog, FORM_CLASS):
         self.progressGroupBox.setVisible(False)
         self._atualizar_botoes()
 
+        # Lista VAZIA é o cancelamento antes de o primeiro PDF terminar. Sem
+        # este caso, a tela anunciava "Todos os 0 PDF(s) foram baixados com
+        # sucesso" para quem acabara de cancelar.
+        if not results:
+            self.statusLabel.setText("Download cancelado: nenhum PDF foi baixado.")
+            QMessageBox.information(
+                self, "Download cancelado",
+                "O download foi cancelado antes de qualquer PDF terminar. "
+                "Nenhum arquivo foi gravado na pasta de destino."
+            )
+            return
+
         sucessos = sum(1 for r in results if r['success'])
         falhas = len(results) - sucessos
+        cancelado = self.impressao_manager.is_cancelled
+        total = self._total_pdfs or len(results)
 
-        if falhas == 0:
+        if cancelado:
+            # CANCELADO NO MEIO não é concluído. Sem este caso, cancelar depois
+            # do terceiro de dez PDFs abria "Todos os 3 PDF(s) foram baixados
+            # com sucesso", e nada na tela dizia que sete ficaram para trás.
+            mensagem = (
+                f"{sucessos} de {total} PDF(s) baixados antes do cancelamento."
+            )
+            if falhas:
+                mensagem += f"\n\n{falhas} PDF(s) falharam antes do cancelamento."
+            mensagem += (
+                "\n\nBaixe o pedido de novo para pegar os que faltaram, ou use "
+                "\"Baixar PDF do item\" em cada um deles."
+            )
+        elif falhas == 0:
             mensagem = f"Todos os {sucessos} PDF(s) foram baixados com sucesso."
         else:
             detalhes = "\n".join(
@@ -753,10 +793,17 @@ class PedidosDialog(QDialog, FORM_CLASS):
                 "\n\nApós imprimir, use \"Registrar impressão\" para atualizar o controle."
             )
 
-        self.statusLabel.setText(f"Download concluído: {sucessos} sucesso(s), {falhas} falha(s).")
-        if falhas == 0:
+        if cancelado:
+            self.statusLabel.setText(
+                f"Download cancelado: {sucessos} de {total} PDF(s) baixados.")
+            QMessageBox.information(self, "Download cancelado", mensagem)
+        elif falhas == 0:
+            self.statusLabel.setText(
+                f"Download concluído: {sucessos} sucesso(s), {falhas} falha(s).")
             QMessageBox.information(self, "Download Concluído", mensagem)
         else:
+            self.statusLabel.setText(
+                f"Download concluído: {sucessos} sucesso(s), {falhas} falha(s).")
             QMessageBox.warning(self, "Download Parcial", mensagem)
 
     def handle_download_error(self, error_message):
@@ -793,6 +840,16 @@ class PedidosDialog(QDialog, FORM_CLASS):
     def _atualizar_botoes(self):
         """Habilita o que dá para fazer, e diz na dica por que o resto não dá."""
         ocupado = self.download_in_progress
+
+        # AS TABELAS TAMBÉM. O download de um item é SÍNCRONO e chama
+        # `QApplication.processEvents()` a cada bloco para pintar a barra: sem
+        # isto, um clique em outro pedido é despachado no meio da cópia,
+        # `handle_pedido_selecionado` faz uma chamada de rede ANINHADA dentro do
+        # callback de progresso e troca `self.itens`, `self.detalhe` e
+        # `self.pedido_selecionado` debaixo do download em curso.
+        self.pedidosTable.setEnabled(not ocupado)
+        self.itensTable.setEnabled(not ocupado)
+
         tem_itens = bool(self.itens)
         tem_destino = bool(self.destinationLineEdit.text())
         tem_baixavel = any(i.get('uuid_arquivo') for i in self.itens)

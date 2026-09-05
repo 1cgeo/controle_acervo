@@ -113,6 +113,13 @@ test('lista vazia diz que esta vazia, em vez de sair em branco', () => {
   assert.strictEqual(saida.lista([], {}).texto, '(nenhum registro)')
 })
 
+test('lista vazia com --json sai como [], e nao como prosa', () => {
+  // Quem encadeia faz JSON.parse da saida, e o caso mais comum e justamente a
+  // consulta que nao achou nada: '(nenhum registro)' quebrava o parse ali.
+  assert.strictEqual(saida.lista([], { formato: 'json' }).texto, '[]')
+  assert.deepStrictEqual(JSON.parse(saida.lista([], { formato: 'json' }).texto), [])
+})
+
 test('o rodape conta registros e quantas colunas foram omitidas', () => {
   const { texto } = saida.lista(VERSOES, { formato: 'tsv', campos: ['versao'] })
   assert.ok(texto.includes('2 registros'))
@@ -132,4 +139,69 @@ test('registro unico sai como pares chave e valor', () => {
   assert.ok(texto.includes('versao'))
   assert.ok(texto.includes('DSG'))
   assert.ok(!texto.includes('uuid_versao'))
+})
+
+// ---------------------------------------------------------------------------
+// `--json` puro: quem encadeia faz JSON.parse do stdout INTEIRO
+// ---------------------------------------------------------------------------
+//
+// A ajuda anuncia `--json  saida crua e completa (para encadear)`. Ate
+// 2026-09-05 tres caminhos colavam prosa em volta do JSON e o parse quebrava: o
+// rodape de paginacao (na rota mais usada do CLI), a mensagem do servidor na
+// escrita e o `(vazio)` do registro ausente.
+
+const { formatar } = require('../comandos/api')
+
+const ENVELOPE_PAGINADO = {
+  message: 'ok',
+  dados: {
+    total: 42,
+    page: 1,
+    limit: 20,
+    dados: [{ id: 1, mi: '2965-2' }, { id: 2, mi: '2965-3' }]
+  }
+}
+
+test('busca paginada com --json devolve o envelope inteiro, e so ele', () => {
+  const texto = formatar(ENVELOPE_PAGINADO, { envelope: 'paginado' }, { formato: 'json' }, [])
+  const voltou = JSON.parse(texto)
+  assert.strictEqual(voltou.total, 42)
+  assert.strictEqual(voltou.page, 1)
+  assert.strictEqual(voltou.limit, 20)
+  assert.strictEqual(voltou.dados.length, 2, 'a pagina de dados vem junto do envelope')
+})
+
+test('a paginacao continua visivel no formato legivel', () => {
+  const texto = formatar(ENVELOPE_PAGINADO, { envelope: 'paginado' }, { formato: 'tsv' }, [])
+  assert.ok(texto.includes('pagina 1 de 3'), texto)
+  assert.ok(texto.includes('42 no total'), texto)
+})
+
+test('a escrita com --json sai como JSON, e nao como a prosa do servidor', () => {
+  const texto = formatar(
+    { message: 'Produto atualizado com sucesso', dados: null },
+    { envelope: 'mensagem' },
+    { formato: 'json' },
+    []
+  )
+  const voltou = JSON.parse(texto)
+  assert.strictEqual(voltou.message, 'Produto atualizado com sucesso')
+  assert.strictEqual(voltou.dados, null)
+})
+
+test('a escrita sem --json continua respondendo a prosa do servidor', () => {
+  const texto = formatar(
+    { message: 'Produto atualizado com sucesso', dados: null },
+    { envelope: 'mensagem' },
+    { formato: 'tsv' },
+    []
+  )
+  assert.strictEqual(texto, 'Produto atualizado com sucesso')
+})
+
+test('registro ausente com --json sai como null, e nao como (vazio)', () => {
+  assert.strictEqual(JSON.parse(saida.registro(null, { formato: 'json' })), null)
+  assert.strictEqual(JSON.parse(saida.registro(undefined, { formato: 'json' })), null)
+  // Sem --json a resposta legivel nao muda.
+  assert.strictEqual(saida.registro(null, {}), '(vazio)')
 })

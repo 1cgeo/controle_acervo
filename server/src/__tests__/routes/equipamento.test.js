@@ -41,6 +41,9 @@ const {
 } = require('../../utils/domain_constants')
 
 const auditoriaCtrl = require('../../auditoria/auditoria_ctrl')
+// O Relatório DMT só tem porta binária (.ods): o caso que precisa das LINHAS
+// dele chama o controlador, e não a rota.
+const equipamentoCtrl = require('../../equipamento/equipamento_ctrl')
 
 let app
 
@@ -113,6 +116,19 @@ const parar = (bemId, dataInicio, dataFim = null) =>
     equipamento_id: bemId, motivo: 'Erro de firmware', data_inicio: dataInicio,
     data_fim: dataFim
   })
+
+// A indisponibilidade que TERMINA HOJE, com as duas datas vindas do PROPRIO
+// banco (`CURRENT_DATE`), e nao do relogio do Node: e `equipamento.situacao_em`
+// que decide o dia, e uma data montada em JavaScript poderia cair no dia
+// anterior por fuso e transformar o caso em outro caso.
+const pararFechandoHoje = bemId =>
+  conn.one(
+    `INSERT INTO equipamento.indisponibilidade
+       (equipamento_id, motivo, data_inicio, data_fim, usuario_cadastramento_uuid)
+     VALUES ($<bemId>, $<motivo>, CURRENT_DATE - 3, CURRENT_DATE, $<uuid>)
+     RETURNING id, data_inicio::text AS data_inicio`,
+    { bemId, motivo: 'Erro de firmware', uuid: ADMIN_UUID }
+  )
 
 const consertar = (bemId, dataInicio, dataFim = null) =>
   lancar('manutencao', ['equipamento_id', 'data_inicio', 'data_fim'], {
@@ -784,6 +800,210 @@ describe('o painel', () => {
     const lista = res.body.dados.indisponiveisHa
     expect(lista.map(i => i.id)).toEqual([antigo, recente])
     expect(lista[0].dias).toBeGreaterThan(lista[1].dias)
+  })
+})
+
+/**
+ * O QUE TERMINA HOJE AINDA CONTA HOJE.
+ *
+ * `equipamento.situacao_em(p_dia)` conta o evento quando
+ * `data_inicio <= p_dia AND (data_fim IS NULL OR data_fim >= p_dia)`. As
+ * leituras do painel e do Relatório DMT liam "sem data_fim", que é uma janela
+ * MENOR: no único dia em que a diferença aparece, a coluna 9 do relatório dizia
+ * 'Indisponível' e as colunas 14 e 15 (Motivo e Início) saíam em branco, e o
+ * cartão do painel contava um bem que a lista logo abaixo não mostrava.
+ *
+ * AS DUAS DATAS VÊM DO BANCO, e o caso não congela relógio nenhum: quem decide
+ * o dia aqui é o CURRENT_DATE do Postgres, e um `jest.setSystemTime` mudaria só
+ * o lado do Node, criando a divergência que o caso existe para negar.
+ */
+describe('a indisponibilidade que fecha HOJE ainda vale hoje', () => {
+  test('o bem continua Indisponível pela função', async () => {
+    const bem = await criarBem()
+    await pararFechandoHoje(bem)
+
+    // VARIÂNCIA: se a própria função ignorasse o último dia, todo o resto do
+    // describe passaria por vacuidade.
+    expect(await situacaoEm(bem)).toMatchObject({
+      situacao_id: SITUACAO_EQUIPAMENTO.INDISPONIVEL, nome: 'Indisponível'
+    })
+  })
+
+  test('ele aparece na lista indisponiveisHa do painel, e não só no cartão', async () => {
+    const bem = await criarBem()
+    await pararFechandoHoje(bem)
+
+    const res = await request(app)
+      .get('/api/equipamento/dashboard').set('Authorization', admin())
+    expect(res.status).toBe(200)
+
+    const porNome = Object.fromEntries(
+      res.body.dados.porSituacao.map(x => [x.situacao, x.quantidade])
+    )
+    expect(porNome['Indisponível']).toBe(1)
+
+    const linha = res.body.dados.indisponiveisHa.find(i => i.id === bem)
+    // O cartão e a lista TÊM de concordar: era aqui que o bem sumia.
+    expect(linha).toBeDefined()
+    expect(linha.motivo).toBe('Erro de firmware')
+    expect(linha.dias).toBe(3)
+  })
+
+  test('o Relatório DMT traz Motivo e Início, e não uma linha que se contradiz', async () => {
+    const bem = await criarBem()
+    const lancamento = await pararFechandoHoje(bem)
+
+    const linhas = await equipamentoCtrl.linhasDoRelatorioDmt()
+    const linha = linhas.find(l => l.id === bem)
+
+    expect(linha).toBeDefined()
+    expect(linha.situacao).toBe('Indisponível')
+    // As colunas 14 e 15 da planilha, que saíam vazias sob a situação
+    // 'Indisponível' da coluna 9.
+    expect(linha.indisponibilidade_motivo).toBe('Erro de firmware')
+    expect(String(linha.indisponibilidade_data_inicio)).toContain(lancamento.data_inicio)
+  })
+})
+
+/**
+ * O PUT REESCREVE A LINHA INTEIRA, e default não é ausência: ele GRAVA.
+ *
+ * Os schemas de atualização herdavam os defaults da criação, e um PUT com só os
+ * campos obrigatórios reativava o bem baixado (`ativo` voltava a true), apagava
+ * a marca de patrimônio por conferir e devolvia ao trânsito contábil os dois
+ * SIAFI da transferência, tudo com 200 e sem aviso. As duas pontas de hoje
+ * mandam os campos sempre, então nada disso quebrava em produção: quebraria na
+ * primeira ponta nova (carga, integração, curl), que é o que estes casos fecham.
+ */
+describe('a chave ausente no PUT não reverte o que estava gravado', () => {
+  const soOsObrigatorios = (bem) => ({
+    nr_patrimonio: bem.nr_patrimonio,
+    classe_id: CLASSE_SUPRIMENTO.VI,
+    tipo_id: bem.tipo_id,
+    modelo: 'TOPCON CTS-3007',
+    secao_detentora_id: SECAO_DETENTORA.CIA_LEV
+  })
+
+  const lerBem = (bemId) =>
+    conn.one(
+      'SELECT nr_patrimonio, tipo_id FROM equipamento.equipamento WHERE id = $1',
+      [bemId]
+    )
+
+  test('o bem BAIXADO não volta ao parque', async () => {
+    const bemId = await criarBem({ ativo: false })
+    const bem = await lerBem(bemId)
+
+    const res = await request(app)
+      .put(`/api/equipamento/${bemId}`)
+      .set('Authorization', admin())
+      .send(soOsObrigatorios(bem))
+    expect(res.status).toBe(200)
+
+    const depois = await request(app)
+      .get(`/api/equipamento/${bemId}`).set('Authorization', admin())
+    expect(depois.body.dados.ativo).toBe(false)
+    expect(depois.body.dados.situacao).toBe('Baixado')
+  })
+
+  test('a marca de patrimônio por conferir continua de pé', async () => {
+    const tipoId = await criarTipo('Estação Total')
+    const corpo = {
+      nr_patrimonio: '104821500017430',
+      classe_id: CLASSE_SUPRIMENTO.VI,
+      tipo_id: tipoId,
+      modelo: 'Spectra SP 60',
+      secao_detentora_id: SECAO_DETENTORA.CIA_LEV
+    }
+
+    const criado = await request(app)
+      .post('/api/equipamento')
+      .set('Authorization', admin())
+      .send({ ...corpo, patrimonio_pendente: true })
+    expect(criado.status).toBe(201)
+    const bemId = criado.body.dados.id
+
+    const res = await request(app)
+      .put(`/api/equipamento/${bemId}`)
+      .set('Authorization', admin())
+      .send(corpo)
+    expect(res.status).toBe(200)
+
+    const depois = await request(app)
+      .get(`/api/equipamento/${bemId}`).set('Authorization', admin())
+    expect(depois.body.dados.patrimonio_pendente).toBe(true)
+  })
+
+  test('o campo que VEM continua valendo: mandar false baixa o bem', async () => {
+    const bemId = await criarBem()
+    const bem = await lerBem(bemId)
+
+    const res = await request(app)
+      .put(`/api/equipamento/${bemId}`)
+      .set('Authorization', admin())
+      .send({ ...soOsObrigatorios(bem), ativo: false })
+    expect(res.status).toBe(200)
+
+    const depois = await request(app)
+      .get(`/api/equipamento/${bemId}`).set('Authorization', admin())
+    expect(depois.body.dados.situacao).toBe('Baixado')
+  })
+
+  test('os dois SIAFI da transferência não voltam a false', async () => {
+    const bemId = await criarBem()
+    const criada = await request(app)
+      .post('/api/equipamento/transferencia')
+      .set('Authorization', admin())
+      .send({
+        equipamento_id: bemId,
+        tipo_id: TIPO_TRANSFERENCIA.DESCARGA,
+        situacao_id: SITUACAO_TRANSFERENCIA.CONCLUIDA,
+        transferido_siafi: true,
+        apropriado_siafi: true
+      })
+    expect(criada.status).toBe(201)
+    const id = criada.body.dados.id
+
+    const res = await request(app)
+      .put(`/api/equipamento/transferencia/${id}`)
+      .set('Authorization', admin())
+      .send({
+        tipo_id: TIPO_TRANSFERENCIA.DESCARGA,
+        situacao_id: SITUACAO_TRANSFERENCIA.CONCLUIDA,
+        descricao: 'Publicado no BI'
+      })
+    expect(res.status).toBe(200)
+
+    const linha = await conn.one(
+      `SELECT transferido_siafi, apropriado_siafi, descricao
+         FROM equipamento.transferencia WHERE id = $1`,
+      [id]
+    )
+    expect(linha.transferido_siafi).toBe(true)
+    expect(linha.apropriado_siafi).toBe(true)
+    // E o que VEIO no corpo continua sendo gravado.
+    expect(linha.descricao).toBe('Publicado no BI')
+  })
+
+  test('o tipo INATIVO não volta a ativo', async () => {
+    const nome = `Nível óptico ${Date.now()}`
+    const criado = await request(app)
+      .post('/api/equipamento/tipo')
+      .set('Authorization', admin())
+      .send({ nome, ativo: false })
+    expect(criado.status).toBe(201)
+    const id = criado.body.dados.id
+
+    const res = await request(app)
+      .put(`/api/equipamento/tipo/${id}`)
+      .set('Authorization', admin())
+      .send({ nome })
+    expect(res.status).toBe(200)
+
+    const linha = await conn.one(
+      'SELECT ativo FROM equipamento.tipo_equipamento WHERE id = $1', [id]
+    )
+    expect(linha.ativo).toBe(false)
   })
 })
 

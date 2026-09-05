@@ -272,6 +272,38 @@ describe('pagina de auditoria do acervo', () => {
     expect(container.textContent).toContain('Não foi possível rodar a auditoria');
   });
 
+  // A SEGUNDA rodada que falha nao pode apagar a primeira.
+  //
+  // Zerar a lista custava duas coisas. A tabela passava a dizer "Nenhum
+  // invariante nesta severidade", que nesta tela se le como acervo limpo --
+  // o oposto do que aconteceu. E o resumo, repintado no primeiro toque no
+  // filtro de severidade, afirmava "Medido às HH:MM. 0 invariante(s) rodados",
+  // com a hora da medicao que deu certo e as contagens da que falhou.
+  test('falha depois de uma medicao que deu certo mantem na tela o resultado datado', async () => {
+    servico.resposta = [inv('2c', 'DEFECT', 3), inv('7a', 'REVISAR', 0)];
+    await abrirERodar();
+    expect(codigosNaTela()).toEqual(['2c', '7a']);
+
+    servico.falha = new Error('sem rede');
+    container.querySelector('.btn--primary').click();
+    await flush();
+
+    expect(codigosNaTela()).toEqual(['2c', '7a']);
+    expect(container.textContent).toContain('Não foi possível rodar a auditoria agora');
+    expect(container.textContent).toContain('Na tela, a medição das');
+
+    // E o filtro de severidade continua falando da medicao que existe, em vez
+    // de anunciar zero invariante rodado.
+    const select = container.querySelector('.auditoria__select');
+    select.value = 'DEFECT';
+    select.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(codigosNaTela()).toEqual(['2c']);
+    expect(container.querySelector('.auditoria__resumo').textContent)
+      .toContain('1 invariante(s) rodados');
+  });
+
   test('o cleanup nao deixa a resposta atrasada pintar a tela', async () => {
     servico.adiar = true;
     const cleanup = await renderAuditoria(container);

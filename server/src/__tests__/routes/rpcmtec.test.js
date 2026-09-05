@@ -19,9 +19,11 @@
 //     Divisão. Uma subseção que muda de número, ou some, quebra o documento sem
 //     dar erro nenhum.
 //
-//  3. A DIVISÃO ENTRE CALCULADO E DIGITADO. Vinte subseções saem do banco e
-//     doze o gestor preenche. Uma calculada que vire digitada por descuido
-//     faria alguém redigitar todo mês um número que o sistema tem.
+//  3. A DIVISÃO ENTRE CALCULADO E DIGITADO. Vinte e uma subseções saem do
+//     banco, onze o gestor preenche e uma é texto fixo. Uma calculada que vire
+//     digitada por descuido faria alguém redigitar todo mês um número que o
+//     sistema tem. (A contagem já esteve errada aqui e em `docs/decisoes.md`:
+//     conte em `NUMEROS_CALCULADOS` antes de reescrever este parágrafo.)
 //
 //  4. O CICLO DE FECHAMENTO, que é o coração do desenho: aberta o calculado
 //     recalcula, fechada tudo congela, e o congelado não muda quando o banco
@@ -126,9 +128,9 @@ const SUBSECOES_CALCULADAS = [
   '7.2'
 ]
 
-// As que o gestor digita. Sete vêm de outro sistema ou de fora (2.3 do SAP, 5.1
-// do painel do GitHub, 8.3 do doc_dgeo) e quatro não têm cadastro em lugar
-// nenhum.
+// As que o gestor digita. Três vêm de outro sistema ou de fora (2.3 do SAP, 5.1
+// do painel do GitHub, 8.3 do doc_dgeo) e oito não têm cadastro em lugar nenhum
+// (5.2, 8.1, 8.2, 8.4, 8.5 e as três da seção 9).
 //
 // A 2.3 (lote) FICA digitada, e a 2.5 (campo) SAIU em 2026-08-08. A diferença
 // entre as duas é real, e é a régua: não é "veio do SAP", é "o SCA sabe provar".
@@ -178,7 +180,7 @@ describe('RPCMTec: a estrutura do documento', () => {
     expect(blocos(doc).filter(b => b.cabecalhos)).toHaveLength(29)
   })
 
-  test('vinte subseções são calculadas e doze são digitadas', async () => {
+  test('vinte e uma subseções são calculadas e onze são digitadas', async () => {
     const id = await criarEdicao()
     const doc = await documento(id)
 
@@ -849,6 +851,38 @@ describe('RPCMTec: fechar, congelar e conferir', () => {
     expect(res.body.message).toMatch(/Reabra/)
   })
 
+  test('edição fechada não muda de MÊS, e continua trocando de assinante', async () => {
+    // O diálogo de metadados oferece ano, mês, assinante e data da assinatura no
+    // mesmo corpo, e com a edição fechada os quatro chegavam ao UPDATE. Os dois
+    // últimos DEVEM chegar: o documento se assina depois de fechado. O par
+    // (ano, mes) não, porque ele diz de que mês são as subseções congeladas, e
+    // trocá-lo não tem volta: reabrir apaga o calculado e o refaz para o mês
+    // novo.
+    const id = await criarEdicao()
+    await preencherTudo(id)
+    await request(app).post(`/api/rpcmtec/${id}/fechar`).set('Authorization', admin())
+      .send({ ciente_revisao: true })
+
+    const trocouOMes = await request(app)
+      .put(`/api/rpcmtec/${id}`)
+      .set('Authorization', admin())
+      .send({ ano: 2026, mes: 8, assinante_uuid: ADMIN_UUID })
+    expect(trocouOMes.status).toBe(400)
+    expect(trocouOMes.body.message).toMatch(/Reabra/)
+
+    // A edição continua sendo a de julho, e não a de agosto.
+    const lida = await request(app)
+      .get(`/api/rpcmtec/${id}`).set('Authorization', admin())
+    expect(lida.body.dados.mes).toBe(7)
+
+    // E a outra metade da regra segue valendo, com o mesmo ano e mês.
+    const assinou = await request(app)
+      .put(`/api/rpcmtec/${id}`)
+      .set('Authorization', admin())
+      .send({ ano: 2026, mes: 7, assinante_uuid: ADMIN_UUID, data_assinatura: '2026-08-12' })
+    expect(assinou.status).toBe(200)
+  })
+
   test('a conferência acusa a divergência entre o congelado e o banco de hoje', async () => {
     // É o contrapeso do congelamento: sem ela, um número corrigido depois do
     // fechamento ficaria invisível.
@@ -1008,6 +1042,15 @@ describe('RPCMTec: o assinado', () => {
     const baixado = await comoBinario(request(app)
       .get(`/api/rpcmtec/anexo/${anexoId}/download`).set('Authorization', admin()))
     expect(baixado.body.toString()).toBe('%PDF-1.4 assinado')
+    // O TAMANHO VIAJA. Sem ele a resposta sai em chunked e o navegador mostra
+    // "tamanho desconhecido" num arquivo que vai a 20 MB.
+    expect(baixado.headers['content-length']).toBe('17')
+    // E o nome sai nas DUAS formas: `filename` ASCII de reserva para cliente
+    // antigo, `filename*` com o nome de verdade. E a de reserva e a que garante
+    // a EXTENSAO: com so a estrela, cliente antigo salva "download".
+    expect(baixado.headers['content-disposition'])
+      .toBe('attachment; filename="RPCMTec-2026-07-assinado.pdf"; ' +
+            "filename*=UTF-8''RPCMTec-2026-07-assinado.pdf")
 
     const apagado = await request(app)
       .delete(`/api/rpcmtec/anexo/${anexoId}`).set('Authorization', admin())

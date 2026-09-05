@@ -64,6 +64,54 @@ describe('liquidacao_ctrl.criar', () => {
     expect(mockDb.conn.one).toHaveBeenCalledTimes(1)
   })
 
+  // O SALDO EXATO PASSA MESMO COM RESIDUO DE PONTO FLUTUANTE.
+  //
+  // Os valores sao NUMERIC(15,2) e chegam como TEXTO; `Number()` os aproxima.
+  //
+  // O TRIO E ESCOLHIDO, e nao qualquer um: medido em node em 2026-09-05,
+  // Number('1000.00') + Number('128.11') da 1128.1100000000001 e
+  // Number('1128.11') da 1128.11 exatos, entao a soma fica 2,3e-13 ACIMA do teto
+  // e a comparacao CRUA recusa a liquidacao que quita a NE. SEM a tolerancia de
+  // meio centavo este caso reprova -- e e isso que ele existe para provar.
+  //
+  // O PAR OBVIO NAO SERVE, e foi o que este caso media ate hoje: com uma NE de
+  // 1.000,10 e 500,05 ja liquidados, Number('500.05') + Number('500.05') e
+  // Number('1000.10') sao bit a bit o MESMO double, a comparacao crua ja passava
+  // e o caso ficava verde com e sem a tolerancia.
+  test('a liquidacao do saldo EXATO passa apesar do residuo de ponto flutuante', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      valor_empenhado: '1128.11',
+      valor_anulado: '0.00'
+    })
+    mockDb.conn.one
+      .mockResolvedValueOnce({ total: '1000.00' }) // outras liquidacoes
+      .mockResolvedValueOnce({ id: 4, nota_empenho_id: 1 }) // INSERT RETURNING *
+
+    const r = await ctrl.criar(
+      { nota_empenho_id: 1, valor_liquidado: 128.11 },
+      'u'
+    )
+
+    expect(r).toEqual({ id: 4 })
+  })
+
+  // O CONTROLE, sobre a MESMA NE do caso acima: a tolerancia e de MEIO CENTAVO,
+  // e nao um cheque em branco. Um centavo a mais continua sendo estouro.
+  test('um centavo acima do disponivel continua recusado', async () => {
+    mockDb.conn.oneOrNone.mockResolvedValueOnce({
+      valor_empenhado: '1128.11',
+      valor_anulado: '0.00'
+    })
+    mockDb.conn.one.mockResolvedValueOnce({ total: '1000.00' })
+
+    await expect(
+      ctrl.criar({ nota_empenho_id: 1, valor_liquidado: 128.12 }, 'u')
+    ).rejects.toMatchObject({
+      statusCode: httpCode.BadRequest,
+      message: 'Liquidação excede o valor empenhado disponível'
+    })
+  })
+
   test('exatamente no limite e aceito (nao excede)', async () => {
     mockDb.conn.oneOrNone.mockResolvedValueOnce({
       valor_empenhado: '1000',

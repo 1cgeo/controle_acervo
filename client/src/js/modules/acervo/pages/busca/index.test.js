@@ -238,6 +238,10 @@ beforeEach(() => {
     // enquadra nada ainda via o id do anterior. So aparece quando alguem afirma
     // sobre ele, e foi o que aconteceu ao inverter o gesto do cartao.
     enquadradoProduto: null, apontado: undefined,
+    // Pela mesma razao: o caso da caixa que vem no link zera a area visivel para
+    // simular o mapa que ainda nao montou, e sem esta linha o proximo caso a
+    // encontraria nula.
+    areaVisivel: [-53, -31, -50, -29],
   });
   document.body.innerHTML = '';
   location.hash = '#/acervo/busca';
@@ -789,6 +793,34 @@ describe('busca do acervo: palavra-chave', () => {
 
     cleanup();
   });
+
+  // O × nascia com a classe `hidden` fixa e so aparecia na primeira tecla
+  // digitada: quem chegava por um link com a etiqueta ja aplicada via o filtro
+  // valendo e nenhum botao para tira-lo.
+  test('o botao de limpar nasce visivel quando a palavra-chave veio no link', async () => {
+    const { container, cleanup } = await montar({ query: 'palavra_chave=CDGV' });
+
+    const limpar = container.querySelector('.busca-palavras__limpar');
+    expect(limpar.classList.contains('hidden')).toBe(false);
+
+    limpar.click();
+    await flush();
+
+    expect(campo(container).value).toBe('');
+    expect(ultimaBusca().palavra_chave).toBe('');
+    expect(limpar.classList.contains('hidden')).toBe(true);
+
+    cleanup();
+  });
+
+  test('sem palavra-chave no link, o botao de limpar nasce escondido', async () => {
+    const { container, cleanup } = await montar();
+
+    expect(container.querySelector('.busca-palavras__limpar').classList.contains('hidden'))
+      .toBe(true);
+
+    cleanup();
+  });
 });
 
 describe('busca do acervo: recorte espacial', () => {
@@ -834,6 +866,73 @@ describe('busca do acervo: recorte espacial', () => {
     // Reenquadrar aqui moveria o mapa, que dispararia outra busca: cabo de
     // guerra entre a tela e a pessoa.
     expect(mapaFalso.extent).toBeNull();
+
+    cleanup();
+  });
+
+  // A `sincronizarUrl` sempre ESCREVEU o bbox do modo "so na area do mapa", e a
+  // tela nunca o LIA de volta: o endereco copiado e mandado por DIEx abria sem
+  // recorte nenhum, devolvia o acervo inteiro, e a barra continuava mostrando o
+  // mesmo endereco. Quem recebia o link via um resultado que nao era o do
+  // remetente, sem nada na tela dizendo isso.
+  test('a caixa que vem no link recorta a primeira busca e marca o interruptor', async () => {
+    // O mapa ainda nao montou quando a primeira busca sai, e `areaVisivel()`
+    // devolve null ate la. E justamente a janela em que a caixa do link vale.
+    mapaFalso.areaVisivel = null;
+
+    const { container, cleanup } = await montar({
+      query: 'bbox=-53.00000,-31.00000,-50.00000,-29.00000',
+    });
+
+    expect(ultimaBusca().bbox).toEqual([-53, -31, -50, -29]);
+    expect(container.querySelector('.busca-filtros__area input[type="checkbox"]').checked)
+      .toBe(true);
+    // E a camera vai ate a caixa do link: a lista recortada ao lado de um mapa
+    // no enquadramento padrao nao se le.
+    expect(mapaFalso.extent).toEqual([-53, -31, -50, -29]);
+
+    cleanup();
+  });
+
+  // O TOAST vai para o `document.body`, e o container do teste nao esta na
+  // arvore: o que sobra no corpo e so o aviso.
+  const avisos = () => document.body.textContent;
+  const limparAvisos = () => document.body.replaceChildren();
+
+  test('caixa ilegivel no link e ignorada, e a busca sai sem recorte', async () => {
+    mapaFalso.areaVisivel = null;
+    limparAvisos();
+
+    const { container, cleanup } = await montar({ query: 'bbox=abc,-31,-50' });
+
+    expect(ultimaBusca().bbox).toBeNull();
+    expect(container.querySelector('.busca-filtros__area input[type="checkbox"]').checked)
+      .toBe(false);
+    // A tela DIZ que descartou a area. Antes ela seguia em silencio, enquanto a
+    // tela irma de ponto de controle avisava: as duas andam juntas.
+    expect(avisos()).toContain('A área do link não pôde ser lida');
+
+    cleanup();
+  });
+
+  // Quatro numeros finitos nao provam uma caixa. Estes dois enderecos passavam
+  // pela conferencia, marcavam o interruptor e iam ao servidor, que respondia
+  // 400; a tela mostrava a frase do servidor com o interruptor marcado, sem
+  // dizer que a area tinha vindo do link.
+  test.each([
+    ['cantos trocados', 'bbox=-50,-29,-53,-31'],
+    ['caixa vazia', 'bbox=,,,'],
+    ['fora do mundo', 'bbox=-241,-31,-50,-29'],
+  ])('caixa invalida no link (%s) nao vai ao servidor, e a tela avisa', async (_nome, q) => {
+    mapaFalso.areaVisivel = null;
+    limparAvisos();
+
+    const { container, cleanup } = await montar({ query: q });
+
+    expect(ultimaBusca().bbox).toBeNull();
+    expect(container.querySelector('.busca-filtros__area input[type="checkbox"]').checked)
+      .toBe(false);
+    expect(avisos()).toContain('A área do link não pôde ser lida');
 
     cleanup();
   });
@@ -934,6 +1033,31 @@ describe('busca do acervo: a busca vive na URL', () => {
     cleanup();
   });
 
+  // `server/src/utils/lista_schema.js` declara TRES formas para um filtro de
+  // dominio, e a chave repetida e uma delas. Com `query.get`, tudo depois da
+  // primeira ocorrencia sumia em silencio, e a primeira busca ainda reescrevia a
+  // barra de endereco sem o que foi perdido: o link voltava a ser copiado sem o
+  // filtro que ele tinha.
+  test('chave repetida na URL entra inteira na primeira busca', async () => {
+    const { cleanup } = await montar({
+      query: 'tipo_produto_id=1&tipo_produto_id=9',
+    });
+
+    expect(ultimaBusca().tipo_produto_id).toEqual(['1', '9']);
+
+    cleanup();
+  });
+
+  test('chave repetida e lista por virgula se somam', async () => {
+    const { cleanup } = await montar({
+      query: 'tipo_escala_id=2,3&tipo_escala_id=4',
+    });
+
+    expect(ultimaBusca().tipo_escala_id).toEqual(['2', '3', '4']);
+
+    cleanup();
+  });
+
   test('geometria ilegivel na URL e ignorada em vez de quebrar a tela', async () => {
     const { container, cleanup } = await montar({ query: 'geometria=nao-e-json' });
 
@@ -966,6 +1090,31 @@ describe('busca do acervo: paginacao', () => {
 
     expect(ultimaBusca().page).toBe(2);
     expect(ultimaBusca().termo).toBe('carta');
+
+    cleanup();
+  });
+
+  // O link guardado com `page=7` envelhece (alguem excluiu produtos), e a
+  // recarga depois de uma exclusao feita na ficha NAO reinicia a pagina, de
+  // proposito. Sem o corte, a tela ficava dizendo tres coisas que se
+  // contradizem: "45 produtos encontrados" no contador, "Nenhum produto
+  // encontrado com estes filtros" na lista, e "Página 7 de 3" no rodape.
+  test('pagina fora do intervalo cai para a ultima valida, e a lista volta a ter cartao', async () => {
+    buscarProdutos.mockImplementation((f) => resposta({
+      total: 45,
+      page: f.page,
+      dados: f.page > 3 ? [] : PRODUTOS,
+    }));
+
+    const { container, cleanup } = await montar({ query: 'page=7' });
+
+    expect(ultimaBusca().page).toBe(3);
+    expect(cartoes(container)).toHaveLength(2);
+    expect(container.querySelector('.busca-paginacao').textContent).toContain('Página 3 de 3');
+    expect(contador(container)).toContain('45 produtos encontrados');
+    // E a URL passa a valer o que a tela mostra: o link que se copia de novo
+    // nao leva ninguem de volta a pagina que nao existe.
+    expect(location.hash).toContain('page=3');
 
     cleanup();
   });

@@ -34,6 +34,7 @@ vi.mock('@modules/orcamento/services/orcamento-service.js', () => ({
 }));
 
 import { openNotaEmpenhoDialog } from '@modules/orcamento/pages/notas-empenho/nota-empenho-dialog.js';
+import { getNotaEmpenho, getNotasCredito } from '@modules/orcamento/services/orcamento-service.js';
 
 function botao(rotulo) {
   return [...document.querySelectorAll('.modal__footer .btn')]
@@ -164,6 +165,40 @@ describe('openNotaEmpenhoDialog: tipo do id enviado ao servidor', () => {
     const rotulos = [...combos()[0].querySelectorAll('.combo__item')]
       .map(i => i.textContent);
     expect(rotulos).toEqual([...rotulos].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })));
+
+    botao('Cancelar').click();
+  });
+  // A NC DE OUTRO EXERCICIO. `nota_empenho.ano` e `nota_credito.ano` sao colunas
+  // independentes, e a lista de NCs vem do ano da TELA: sem a emenda, a linha do
+  // rateio abria com o campo de NC VAZIO e o valor preenchido ao lado, e quem
+  // olhava lia "linha sem NC".
+  test('a NC de outro exercício aparece no combo, com o ano dito no rótulo', async () => {
+    getNotasCredito.mockResolvedValueOnce([
+      { id: '10', numero: '2026NC400500', cod_nd: '339039', nd_nome: 'Serviços de terceiros' },
+    ]);
+    getNotaEmpenho.mockResolvedValueOnce({
+      id: 77,
+      ano: 2026,
+      numero: '2026NE000077',
+      data_empenho: '2026-03-01',
+      finalidade: 'Empenho contra NC do exercício anterior',
+      valor_anulado: 0,
+      valor_empenhado: 800,
+      notas_credito: [
+        { nota_credito_id: '99', valor: '800.00', nota_credito_numero: '2025NC000099', cod_nd: '339039' },
+      ],
+    });
+
+    await openNotaEmpenhoDialog({ neId: 77, ano: 2026 });
+    await flush();
+
+    const campo = combos()[0].querySelector('.combo__campo');
+    // O campo abre MOSTRANDO a NC escolhida, e nao vazio.
+    expect(campo.value).toContain('2025NC000099');
+    expect(campo.value).toContain('de outro exercício');
+
+    // E a ND herdada volta a sair, porque a NC passou a ser conhecida.
+    expect(document.querySelector('.modal__body').textContent).toContain('ND herdada: 339039');
 
     botao('Cancelar').click();
   });

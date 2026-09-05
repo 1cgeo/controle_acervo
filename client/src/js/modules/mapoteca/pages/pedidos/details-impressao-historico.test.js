@@ -420,7 +420,7 @@ describe('detalhe do pedido: corrigir a data de uma sessao de impressao', () => 
     await flush();
 
     expect(svc.corrigirDataImpressao).toHaveBeenCalledWith(1, {
-      data_impressao: '2026-07-25',
+      data_impressao: '2026-07-25T12:00:00',
       motivo: 'lancado no dia errado',
     });
 

@@ -109,6 +109,13 @@ export async function renderPedidosList(container, ctx) {
   // nao o que esta digitado no campo, para o contador nunca falar de uma busca
   // que ainda nao aconteceu.
   let palavraChave = query.get('palavra_chave') || null;
+  // SEQUENCIA DAS CARGAS, para descartar a resposta que chegar atrasada.
+  //
+  // O ano e a busca por etiqueta ficam na MESMA barra e disparam `load()` cada
+  // um: trocar o ano e buscar em seguida deixa duas em voo, e a lista do ano
+  // inteiro (a mais pesada) chegando por ultimo repinta por cima do recorte da
+  // etiqueta, com o contador dizendo outra coisa.
+  let cargaAtual = 0;
   const pode = permissoes('mapoteca');
 
   // O ano e DESTA tela, comeca no ano atual e nao guarda nada. Sem "+ Outro
@@ -224,6 +231,7 @@ export async function renderPedidosList(container, ctx) {
   }
 
   async function load() {
+    const meuToken = ++cargaAtual;
     ano = filtroAno.getAno();
     // ANTES da chamada, e nao depois: o ano e a etiqueta ja mudaram, e a URL tem
     // de dizer o que a tela esta pedindo mesmo que a resposta nao venha.
@@ -231,12 +239,13 @@ export async function renderPedidosList(container, ctx) {
     table.update({ loading: true });
     try {
       const pedidos = await getPedidos(ano, palavraChave);
-      if (disposed) return;
+      // A resposta que outra carga ja substituiu nao pinta nada.
+      if (disposed || meuToken !== cargaAtual) return;
       todosPedidos = pedidos;
       aplicarFiltro();
       aviso.ok();
     } catch (err) {
-      if (disposed) return;
+      if (disposed || meuToken !== cargaAtual) return;
       todosPedidos = [];
       table.update({ loading: false });
       contador.textContent = '';

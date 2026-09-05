@@ -72,13 +72,27 @@ export function abrirBemDialog({ bem = null, dominio = {}, tipos = [], onSaved }
     value: bem?.classe_id ?? undefined,
   });
 
+  // O TIPO INATIVO SÓ APARECE NA EDIÇÃO, e é o que a Configuração PROMETE a quem
+  // desmarca "Ativo" lá: "Tipo inativo não é oferecido no cadastro de bem novo, e
+  // os bens existentes ficam como estão" (`configuracao/tipo-dialog.js`).
+  //
+  // Oferecê-lo também no cadastro NOVO fazia daquela caixa uma marca sem efeito
+  // nenhum: o tipo tirado de circulação continuava a um clique de entrar em bem
+  // novo, com "(inativo)" ao lado, que se lê como aviso e não como impedimento.
+  //
+  // NA EDIÇÃO ELE FICA, e a razão é o outro lado da mesma frase: a ficha do bem
+  // que já usa um tipo inativo precisa poder ser salva sem trocar o tipo.
+  const tiposOferecidos = edicao
+    ? (tipos || [])
+    : (tipos || []).filter(t => t.ativo !== false);
+
   // COMBO BUSCÁVEL, e não `<select>`: são nove tipos hoje, e os nomes são longos
   // ("Rastreador Satelital para Navegação (GPS) veicular"). A busca por
   // substring acha "GPS" no meio do rótulo, o que o `<select>` nativo não faz.
   const tipoField = createComboBoxField({
     label: 'Tipo de equipamento',
     required: true,
-    options: (tipos || []).map(t => ({
+    options: tiposOferecidos.map(t => ({
       value: t.id,
       label: t.ativo === false ? `${t.nome} (inativo)` : t.nome,
     })),

@@ -47,6 +47,8 @@ const {
 const { conferirIdentidadeLivre } = require('../utils/identidade_produto')
 
 const { caminhoNoVolume, motivoCaminhoInseguro } = require('../utils/caminho_volume')
+const { sessaoQueReservou } = require('./nome_fisico')
+const { assertEspacoNoVolume } = require('../utils/arquivos_do_acervo')
 const arquivoSchema = require('./arquivo_schema')
 
 /** Sufixo do arquivo AINDA INCOMPLETO. Ver `promoverArquivos`. */
@@ -56,6 +58,15 @@ const SUFIXO_PARCIAL = '.parcial'
 const BLOCO_ESCRITA = 8 * 1024 * 1024
 
 const tetoEmBytes = () => Number(config.UPLOAD_WEB_MAX_GB) * 1024 * 1024 * 1024
+
+/**
+ * O teto do envio pelo navegador, em GB, como a tela precisa dele.
+ *
+ * Exportado para `GET /api/arquivo/upload-web/teto` LER DAQUI, e nao do
+ * `config` por conta propria: quem publica o numero e quem o aplica tem de ser a
+ * mesma leitura, senao a tela promete um limite e o multer recusa por outro.
+ */
+const tetoEmGb = () => Number(config.UPLOAD_WEB_MAX_GB)
 
 const mensagemDeTeto = () =>
   `Arquivo maior que o teto de ${config.UPLOAD_WEB_MAX_GB} GB do envio pelo navegador. ` +
@@ -83,7 +94,7 @@ const extensaoDe = (nomeOriginal) => {
  * padrão não computável e colisão de nome físico.
  */
 const construirPlano = async (dados, contexto) => {
-  const { tipo } = contexto
+  const { tipo, bytesDeclarados } = contexto
 
   return db.conn.task(async t => {
     // ---- de onde saem os metadados do produto e da versão ----
@@ -198,6 +209,33 @@ const construirPlano = async (dados, contexto) => {
       throw new AppError(
         `Não existe volume primário cadastrado para o tipo de produto ${produto.tipo_produto_id}`,
         httpCode.BadRequest
+      )
+    }
+
+    // ---- cabe no volume? ----
+    //
+    // Os TRÊS caminhos do plugin recusam com "Espaço insuficiente" antes de o
+    // cliente copiar byte; o caminho do navegador não conferia nada, e com o
+    // volume a 100% da capacidade cadastrada o envio era aceito e só falhava
+    // (ou não falhava, se o disco físico fosse maior que a `capacidade_gb`)
+    // quando o sistema de arquivos reclamasse. O teto `UPLOAD_WEB_MAX_GB` limita
+    // o TAMANHO do envio, e não o espaço no destino.
+    //
+    // O tamanho de cada arquivo não existe aqui: quem envia pela web não o
+    // declara. O `content-length` do multipart é o limite superior, e é com ele
+    // que se recusa -- ele conta também o envelope do multipart, então erra para
+    // o lado seguro. Sem cabeçalho (envio em `chunked`), não há o que conferir e
+    // a checagem é pulada, como já acontece em `conferirTamanhoDeclarado`.
+    if (Number.isFinite(bytesDeclarados) && bytesDeclarados > 0) {
+      await assertEspacoNoVolume(
+        t,
+        volume.id,
+        bytesDeclarados / (1024 * 1024 * 1024),
+        (necessarioGb, disponivelGb) => new AppError(
+          `Espaço insuficiente no volume de armazenamento ${volume.nome}. `
+          + `Necessário: ${necessarioGb.toFixed(2)}GB, Disponível: ${disponivelGb.toFixed(2)}GB`,
+          httpCode.BadRequest
+        )
       )
     }
 
@@ -317,8 +355,38 @@ const destinoDoArquivo = async (plano, indice, nomeOriginal) => {
     )
   }
 
+  // E as SESSÕES DO PLUGIN ainda abertas. O `prepare-upload` reserva um destino
+  // que só vira linha de `acervo.arquivo` no confirm: sem esta conferência, o
+  // envio pela web escolhe o mesmo caminho e o `rename` do fim sobrescreve os
+  // bytes que o operador está copiando por SMB neste momento.
+  const reservado = await sessaoQueReservou(
+    db.conn, plano.volume.id, plano.nomePadrao, extensao
+  )
+  if (reservado) {
+    throw new AppError(
+      `O nome físico "${plano.nomePadrao}.${extensao}" no volume ${plano.volume.nome} já foi ` +
+      `reservado pela sessão de envio ${reservado}, que continua aberta. Aguarde a conclusão ` +
+      'dela ou cancele-a antes de enviar por aqui.',
+      httpCode.Conflict
+    )
+  }
+
   const destino = caminhoNoVolume(plano.volume.volume, `${plano.nomePadrao}.${extensao}`)
-  return { declarado, extensao, destino, caminhoParcial: destino + SUFIXO_PARCIAL }
+  // O `.parcial` leva um sufixo POR REQUISIÇÃO. O nome físico é derivado dos
+  // metadados e é o MESMO para toda tentativa da mesma versão: sem isto, dois
+  // envios simultâneos (duplo clique, ou dois operadores completando a mesma
+  // versão planejada) abririam o MESMO `.parcial`, cada um escrevendo a partir
+  // do zero por cima do outro, e cada um calculando o SHA-256 do PRÓPRIO fluxo.
+  // O vencedor gravaria em `acervo.arquivo` um checksum que os bytes do disco
+  // não têm, e nada depois releria os bytes para acusar. Quem arbitra continua
+  // sendo o índice único de `acervo.arquivo`; aqui só se garante que os dois
+  // fluxos não se misturem no mesmo arquivo temporário.
+  return {
+    declarado,
+    extensao,
+    destino,
+    caminhoParcial: `${destino}${SUFIXO_PARCIAL}.${crypto.randomUUID()}`
+  }
 }
 
 /**
@@ -359,13 +427,18 @@ const storageNoVolume = {
           }
         })
 
-        // A subpasta é legítima e `createWriteStream` não a cria. `flags: 'w'`
-        // trunca: `.parcial` de tentativa anterior é sobrescrito, nunca
-        // continuado -- retomada parcial exigiria saber que os bytes já
-        // gravados são os mesmos deste envio, e ninguém sabe disso.
+        // A subpasta é legítima e `createWriteStream` não a cria. `flags: 'wx'`
+        // FALHA se o arquivo já existir, em vez de truncar: com o sufixo por
+        // requisição de `destinoDoArquivo` o nome nunca colide, e o `wx` é a
+        // rede que transforma um dia de colisão em erro na hora, em vez de dois
+        // fluxos escrevendo por cima um do outro. Não há retomada parcial: ela
+        // exigiria saber que os bytes já gravados são os mesmos deste envio, e
+        // ninguém sabe disso. Parcial de tentativa anterior sai por
+        // `limparParciais` (e pelo `_removeFile` do multer ao abortar), e não
+        // por sobrescrita.
         await fsPromises.mkdir(path.dirname(caminhoParcial), { recursive: true })
         const saida = fs.createWriteStream(caminhoParcial, {
-          flags: 'w',
+          flags: 'wx',
           highWaterMark: BLOCO_ESCRITA
         })
         await pipelineAsync(file.stream, medidor, saida)
@@ -445,7 +518,14 @@ const planoDaRequisicao = (req) => {
       )
     }
 
-    return construirPlano(value, { tipo: req._tipoEnvioWeb })
+    return construirPlano(value, {
+      tipo: req._tipoEnvioWeb,
+      // O `content-length` do multipart: o cliente do navegador NÃO declara o
+      // tamanho de cada arquivo, e este cabeçalho é o único limite superior que
+      // existe antes de o byte chegar. Ver `assertEspacoNoVolume` em
+      // `construirPlano`.
+      bytesDeclarados: Number(req.headers['content-length'])
+    })
   })()
 
   return req._planoWeb
@@ -529,5 +609,6 @@ module.exports = {
   uploadWebProduto,
   uploadWebArquivos,
   planoDaRequisicao,
-  limparParciais
+  limparParciais,
+  tetoEmGb
 }

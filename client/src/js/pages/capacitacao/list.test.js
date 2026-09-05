@@ -165,4 +165,65 @@ describe('capacitação em duas telas', () => {
 
     if (typeof cleanup === 'function') cleanup();
   });
+
+  // ---------------------------------------------------------------------------
+  // QUEM SÓ LÊ NÃO VÊ BOTÃO DE ESCREVER
+  //
+  // A rota das duas telas é `perfilLoader(<modulo>, 'consulta')`: abrir a lista
+  // é LER, e pela régua nova quem tem consulta lê as telas do módulo. LANÇAR é
+  // do OPERADOR, e é o que o servidor cobra em POST, PUT e DELETE de
+  // `/rpcmtec/capacitacao/<tipo>`.
+  //
+  // Sem este recorte, quem tinha só consulta abria "Nova capacitação",
+  // preenchia o formulário inteiro -- nome, situação, datas, instituições, meta
+  // do PIT e o seletor de militares -- e recebia 403 no fim. E os ícones de
+  // editar e de excluir da linha respondiam o mesmo.
+  //
+  // É ERGONOMIA, e não a guarda: quem barra a escrita é o `verifyPerfil`, que
+  // lê o perfil do banco a cada requisição.
+  // ---------------------------------------------------------------------------
+  const acoesDaLinha = (container) => [...container.querySelectorAll('.data-table__action-btn')];
+  const botaoNovo = (container) => [...container.querySelectorAll('.page__actions button')]
+    .find(b => b.textContent.includes('Nova capacitação'));
+
+  test('a MINISTRADA esconde o cadastro de quem só tem consulta no PIT', async () => {
+    saveAuth({ token: 't', administrador: false, uuid: 'u', perfis: { pit: 1 }, modulos: [] }, 'x');
+    getCapacitacoesMinistradas.mockResolvedValueOnce([MINISTRADA]);
+
+    const { container, cleanup } = await montar(renderCapacitacaoMinistrada);
+
+    expect(botaoNovo(container)).toBeUndefined();
+    expect(acoesDaLinha(container)).toHaveLength(0);
+    // A LISTA CONTINUA: consulta LÊ, e é para isso que a rota a deixa entrar.
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(1);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('o OPERADOR do PIT continua com "Nova capacitação" e com editar e excluir', async () => {
+    saveAuth({ token: 't', administrador: false, uuid: 'u', perfis: { pit: 2 }, modulos: [] }, 'x');
+    getCapacitacoesMinistradas.mockResolvedValueOnce([MINISTRADA]);
+
+    const { container, cleanup } = await montar(renderCapacitacaoMinistrada);
+
+    expect(botaoNovo(container)).toBeDefined();
+    expect(acoesDaLinha(container)).toHaveLength(2);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // A RECEBIDA cobra o módulo do EFETIVO, e não o do PIT: quem é operador do PIT
+  // não lança capacitação recebida, e o servidor recusa. Sem o módulo certo no
+  // recorte, a tela ofereceria o cadastro pelo perfil da tela vizinha.
+  test('a RECEBIDA cobra o EFETIVO, e o operador do PIT não escreve nela', async () => {
+    saveAuth({ token: 't', administrador: false, uuid: 'u', perfis: { pit: 3 }, modulos: [] }, 'x');
+    getCapacitacoesRecebidas.mockResolvedValueOnce([RECEBIDA]);
+
+    const { container, cleanup } = await montar(renderCapacitacaoRecebida);
+
+    expect(botaoNovo(container)).toBeUndefined();
+    expect(acoesDaLinha(container)).toHaveLength(0);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
 });

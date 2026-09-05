@@ -16,6 +16,7 @@ const {
 const {
   QTD_EFETIVA,
   MIDIA_EFETIVA,
+  META_DO_ITEM,
   PEDIDO_NAO_CANCELADO,
   ESCALA_DISPLAY,
   ESCALA_DISPLAY_ITEM,
@@ -201,7 +202,8 @@ controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
       c.nome AS om_destino,
       p.previsto_pit,
       -- A coluna "Meta" da aba guarda o CODIGO do item do PIT ('4.1', '4.2'), e
-      -- so vem preenchida no item coberto pelo PIT.
+      -- so vem preenchida no item coberto pelo PIT. E do ITEM: quando ele
+      -- declara meta propria, e a dele que sai aqui, e nao a do pedido.
       --
       -- O pedido aponta o item por CHAVE (pit.meta_item), e o codigo sai do
       -- proprio cadastro do PIT: nunca texto digitado a mao, e nunca p.prazo, que
@@ -255,7 +257,15 @@ controller.getRelatorioPedidosDetalhado = async (ano, mes = null) => {
     -- O PEDIDO SEM DECLARACAO PUBLICADA sai com meta nula, e isso e deliberado:
     -- a view usa INNER JOIN LATERAL, e o item que revisao publicada nenhuma
     -- declarou ainda nao esta no plano.
-    LEFT JOIN pit.meta_vigente mp ON mp.id = p.meta_pit_id
+    --
+    -- A META E DO ITEM, com a do pedido de fallback (META_DO_ITEM). Junta-la so
+    -- pela do pedido (sem crase: template literal) fazia o pedido MISTO sair
+    -- inteiro na meta do pedido: as 8 folhas de tyvek do pedido 140 saiam
+    -- rotuladas 4.1 nesta aba enquanto a tela do PIT ja as contava na 4.2, e o
+    -- documento que sobe para a DSG contradizia a tela sem nada acusar. O
+    -- fragmento e o mesmo que a execucao do PIT usa, e e por isso que ele mora
+    -- em query_fragments.js.
+    LEFT JOIN pit.meta_vigente mp ON mp.id = ${META_DO_ITEM}
     JOIN mapoteca.cliente c ON c.id = p.cliente_id
     -- LEFT, e não INNER: impressão avulsa conta na Meta 4 como qualquer outra, e
     -- um INNER aqui a apagaria da aba sem avisar.

@@ -122,6 +122,43 @@ export async function renderAtividade(container, _ctx) {
 
   const corpo = el('div', { className: 'producao-atividade__corpo' });
 
+  /**
+   * UM DIÁLOGO POR VEZ, e esta é a única tela do módulo que escreve.
+   *
+   * O `openModal` EMPILHA de propósito -- no acervo a ficha do produto abre
+   * "Nova versão" por cima de si mesma --, e aqui isso vira armadilha: dois
+   * cliques no mesmo botão abrem DOIS diálogos idênticos, um exatamente sobre o
+   * outro. Quem confirma o de cima recebe o sucesso, vê o segundo aparecer
+   * vazio, conclui que não gravou e confirma de novo.
+   *
+   * O PIOR CASO É "FINALIZEI SEM QUERER": os dois `POST` dão certo, porque o
+   * servidor só procura a última atividade finalizada e não recusa um segundo
+   * apontamento sobre ela -- ficam duas linhas em `producao.problema_atividade`
+   * dizendo a mesma coisa. Em "Finalizar" e em "Reportar problema" o segundo
+   * envio falha (a atividade já saiu de execução), e o que sobra é um toast
+   * vermelho sobre uma operação que deu certo.
+   *
+   * A trava é do BOTÃO, e não do modal: quem barra o duplo clique DENTRO do
+   * diálogo, com a requisição em voo, continua sendo o `setOcupado`.
+   */
+  let dialogoAberto = false;
+  const abrirUm = (abrir) => {
+    if (dialogoAberto) return;
+    dialogoAberto = true;
+    // A TRAVA TEM SAÍDA SE A MONTAGEM ESTOURAR. Ela só se solta pelo `onClose`
+    // do modal, e quem `abrir` falha ANTES de o modal existir (um campo montado
+    // a partir de `/tipo_problema` malformado, por exemplo) deixaria a bandeira
+    // presa em `true`: a trava é UMA para os TRÊS botões, então a tela inteira
+    // pararia de abrir diálogo, em silêncio, até a pessoa recarregar a página.
+    // O erro continua subindo -- o que não pode é trancar a porta com ele.
+    try {
+      abrir(() => { dialogoAberto = false; });
+    } catch (err) {
+      dialogoAberto = false;
+      throw err;
+    }
+  };
+
   const botaoAtualizar = el('button', {
     className: 'btn btn--secondary',
     type: 'button',
@@ -131,7 +168,10 @@ export async function renderAtividade(container, _ctx) {
   const botaoIncorreta = el('button', {
     className: 'btn btn--secondary',
     type: 'button',
-    onClick: () => abrirFinalizacaoIncorretaDialog({ onReportado: () => carregar() }),
+    onClick: () => abrirUm((onFechado) => abrirFinalizacaoIncorretaDialog({
+      onReportado: () => carregar(),
+      onFechado,
+    })),
   }, [svgIcon(ICONS.warning, 16), 'Finalizei sem querer']);
 
   const page = el('div', { className: 'page producao-atividade' }, [
@@ -203,16 +243,21 @@ export async function renderAtividade(container, _ctx) {
       el('button', {
         className: 'btn btn--secondary',
         type: 'button',
-        onClick: () => abrirProblemaDialog({
+        onClick: () => abrirUm((onFechado) => abrirProblemaDialog({
           atividade: a,
           tipos: tiposProblema,
           onReportado: () => carregar(),
-        }),
+          onFechado,
+        })),
       }, [svgIcon(ICONS.warning, 16), 'Reportar problema']),
       el('button', {
         className: 'btn btn--primary',
         type: 'button',
-        onClick: () => abrirFinalizarDialog({ atividade: a, onFinalizado: () => carregar() }),
+        onClick: () => abrirUm((onFechado) => abrirFinalizarDialog({
+          atividade: a,
+          onFinalizado: () => carregar(),
+          onFechado,
+        })),
       }, [svgIcon(ICONS.checkCircle, 16), 'Finalizar atividade']),
     ]);
 

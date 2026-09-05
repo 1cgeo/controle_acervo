@@ -18,7 +18,7 @@
 const request = require('supertest')
 const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
-const { generateAdminToken } = require('../helpers/auth')
+const { generateAdminToken, generateUserToken, generateToken } = require('../helpers/auth')
 const { createFullProduct, createArquivo } = require('../helpers/fixtures')
 const { domainConstants: { STATUS_ARQUIVO } } = require('../../utils')
 
@@ -104,8 +104,72 @@ describe('Arquivos com problema - a origem de cada id', () => {
     expect(porOrigem.arquivo_deletado.nome).toBe('O excluído')
   })
 
-  it('exige perfil de gerente', async () => {
+  it('sem token nao passa', async () => {
     const res = await request(app).get('/api/gerencia/arquivos_incorretos')
     expect(res.status).toBe(401)
+  })
+})
+
+// O PISO DAS TRES LEITURAS DO DIAGNOSTICO e `consulta`, desde 2026-09-05.
+//
+// As tres cobravam `gerente`, o piso mais alto do modulo, sem registro em
+// `docs/decisoes.md` e sem teste nenhum que o fixasse -- o caso acima so provava
+// que SEM TOKEN da 401, o que continuaria verde com qualquer piso. Pela regua de
+// 2026-08-08 (`consulta` LE as telas do modulo, `operador` LANCA, `gerente`
+// responde pela area), leitura pura e `consulta`, e nenhuma das duas excecoes
+// deliberadas da regua cobre este caso.
+//
+// O RECORTE DA TELA NAO MUDA: quem consome as tres e `#/acervo/administracao`,
+// que e do ADMINISTRADOR. O piso da rota e o minimo que o SERVIDOR cobra.
+//
+// `generateUserToken()` e o `test_user` da semente, que tem perfil 1 (consulta)
+// no modulo 1 (acervo) e NAO e administrador -- ver o reseed do `cleanTestData`.
+// E por isso que ele prova o piso: um token de admin passaria em qualquer piso,
+// e por isso nao prova nenhum.
+describe('as tres leituras do diagnostico cobram consulta, e nao gerente', () => {
+  const AS_TRES = ['arquivos_incorretos', 'arquivos_deletados', 'downloads_deletados']
+
+  it.each(AS_TRES)('GET /%s responde 200 para quem tem consulta no acervo', async (rota) => {
+    const res = await request(app)
+      .get(`/api/gerencia/${rota}`)
+      .set('Authorization', generateUserToken())
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+  })
+
+  it.each(AS_TRES)('GET /%s sem token nenhum responde 401', async (rota) => {
+    const res = await request(app).get(`/api/gerencia/${rota}`)
+    expect(res.status).toBe(401)
+  })
+
+  // CONTROLE, e ele guarda a fronteira: quem NAO tem linha nenhuma para o acervo
+  // continua de fora. Sem este caso, trocar as guardas por `verifyLogin` deixaria
+  // os dois casos acima verdes.
+  it('quem nao tem perfil no acervo continua tomando 403', async () => {
+    const semAcervo = 'c2eebc99-9c0b-4ef8-bb6d-6bb9bd380a55'
+    await conn.none(
+      `INSERT INTO dgeo.usuario
+         (login, nome, nome_guerra, tipo_posto_grad_id, administrador, ativo, uuid)
+       VALUES ('sem_acervo', 'Sem Acervo', 'Sem', 1, FALSE, TRUE, $1)`,
+      [semAcervo]
+    )
+
+    const res = await request(app)
+      .get('/api/gerencia/arquivos_incorretos')
+      .set('Authorization', generateToken({ id: 99, uuid: semAcervo, administrador: false }))
+
+    expect(res.status).toBe(403)
+  })
+
+  // A ESCRITA NAO DESCEU. `verificar_inconsistencias` rele o volume e REESCREVE
+  // `tipo_status_id` de arquivo, nos dois sentidos: e trabalho de quem responde
+  // pela area, e continua em `gerente`.
+  it('POST /verificar_inconsistencias continua exigindo gerente', async () => {
+    const res = await request(app)
+      .post('/api/gerencia/verificar_inconsistencias')
+      .set('Authorization', generateUserToken())
+
+    expect(res.status).toBe(403)
   })
 })

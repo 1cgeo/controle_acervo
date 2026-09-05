@@ -196,6 +196,31 @@ describe('renderExecucaoPit', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
+  // A DIVERGÊNCIA TEM DOIS LADOS, e o de cima existe: distribuir pelos doze
+  // meses MAIS do que o ano promete é o erro de digitação simétrico. A frase
+  // dizia "Faltam -3", que não nomeia nada e ainda parece defeito da tela.
+  test('o plano que passa da quantidade do ano diz SOBRAM, e não "Faltam -N"', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce([{
+      ...GRADE[0],
+      quantidade_prevista: 4,
+      meses: [
+        { id: '10', mes: 4, planejada: 4, realizada: null },
+        { id: '11', mes: 5, planejada: 3, realizada: null },
+      ],
+      realizado: 0, planejado: 7,
+    }]);
+
+    const { container, cleanup } = await montar();
+
+    const divergente = container.querySelector('.grade-pit__divergente');
+    expect(divergente.title).toContain('O plano soma 7 e o ano promete 4.');
+    expect(divergente.title).toContain('Sobram 3');
+    expect(divergente.title).not.toContain('-');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
   test('o modo decide qual dos dois o clique edita, e o POST leva só esse campo', async () => {
     logar({ administrador: true });
     getGradePit.mockResolvedValueOnce(GRADE);
@@ -677,6 +702,102 @@ describe('execucao do PIT: as caixas que escondem linha', () => {
 
     expect(salvarExecucaoPit).toHaveBeenCalled();
     expect(temItem(container, '1.1')).toBe(false);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// -----------------------------------------------------------------------------
+// O ANO ENCERRADO
+// -----------------------------------------------------------------------------
+//
+// Encerrar o exercicio (`pit.pit.situacao_id = 3`) faz `salvar` e `deletar`
+// recusarem lancamento com 400. Sem o recorte na tela, a celula de 2025 abria em
+// 2027: a pessoa digitava 12, tirava o foco e SO ENTAO levava a recusa. E o
+// mesmo "pedir e recusar depois" que as celulas calculada e futura ja evitam, e
+// a frase e LETRA POR LETRA a do servidor (`pit_execucao_ctrl.js:772`).
+//
+// `ano_encerrado` vem do servidor por linha da grade. Quando ele NAO vem
+// (servidor antigo), a celula continua editavel: recusar por um campo que nao
+// chegou travaria a grade inteira em vez de proteger o ano fechado.
+describe('a grade do ano encerrado', () => {
+  const GRADE_ENCERRADA = (encerrado) => [{
+    ...GRADE[0],
+    ano: 2025,
+    ...(encerrado === undefined ? {} : { ano_encerrado: encerrado }),
+  }];
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  test('a célula do ano encerrado não abre, e diz a frase do servidor', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce(GRADE_ENCERRADA(true));
+
+    const { container, cleanup } = await montar();
+    const item = linhas(container)[1];
+
+    // Junho de um ano que já passou: nem calculada, nem futura.
+    const junho = celulas(item)[5];
+    junho.click();
+    await flush();
+
+    expect(junho.querySelector('input')).toBeNull();
+    expect(junho.className).toContain('grade-pit__celula--encerrada');
+    expect(junho.title).toContain('O exercício de 2025 está encerrado e não aceita lançamento.');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // Encerrado nao aceita nem PLANO: a recusa do servidor e da linha de
+  // `pit.execucao`, e nao da coluna.
+  test('nem o modo Planejar abre a célula do ano encerrado', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValue(GRADE_ENCERRADA(true));
+
+    const { container, cleanup } = await montar();
+    trocarModo(container, 'quantidade_planejada');
+    await flush();
+
+    const junho = celulas(linhas(container)[1])[5];
+    junho.click();
+    await flush();
+
+    expect(junho.querySelector('input')).toBeNull();
+    expect(junho.className).toContain('grade-pit__celula--encerrada');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // VARIANCIA: sem estes dois, um caso que travasse a grade INTEIRA passaria.
+  test('o ano ABERTO continua abrindo a mesma célula', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce(GRADE_ENCERRADA(false));
+
+    const { container, cleanup } = await montar();
+    const junho = celulas(linhas(container)[1])[5];
+    junho.click();
+    await flush();
+
+    expect(junho.querySelector('input')).not.toBeNull();
+    expect(junho.className).not.toContain('grade-pit__celula--encerrada');
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('sem o campo na resposta, a célula continua editável', async () => {
+    logar({ administrador: true });
+    getGradePit.mockResolvedValueOnce(GRADE_ENCERRADA(undefined));
+
+    const { container, cleanup } = await montar();
+    const junho = celulas(linhas(container)[1])[5];
+    junho.click();
+    await flush();
+
+    expect(junho.querySelector('input')).not.toBeNull();
+    expect(junho.className).not.toContain('grade-pit__celula--encerrada');
 
     if (typeof cleanup === 'function') cleanup();
   });

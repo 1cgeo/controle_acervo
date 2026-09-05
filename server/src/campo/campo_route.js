@@ -109,10 +109,20 @@ router.get(
     // `res.send` CRU, e nao `sendJsonAndLog`: o corpo aqui e binario. E a mesma
     // excecao que as rotas de anexo do orcamento e da mapoteca ja abrem.
     //
-    // O tipo generico quando `mime_type` e nulo: 133 das 143 imagens do dump do
-    // SAP estao sem ele, e 'application/octet-stream' faz o navegador baixar em
-    // vez de tentar desenhar algo que nao sabe o que e.
-    res.setHeader('Content-Type', imagem.mime_type || 'application/octet-stream')
+    // O TIPO SO SAI DAQUI SE ESTIVER NA LISTA, e a conferencia se repete na
+    // saida por um motivo: o schema fecha a porta de ENTRADA, e as 143 linhas do
+    // dump do SAP entraram por outra (a carga adivinha o tipo pelo numero
+    // magico). Sem esta linha, um `mime_type` gravado antes da lista continuaria
+    // sendo declarado ao navegador na origem da propria aplicacao.
+    //
+    // O tipo generico cobre os dois casos: `mime_type` nulo (133 das 143 imagens
+    // do dump estao sem ele) e tipo fora da lista. 'application/octet-stream'
+    // faz o navegador baixar em vez de tentar desenhar -- ou EXECUTAR -- algo
+    // que nao sabe o que e.
+    const tipo = campoSchema.MIME_IMAGEM_PERMITIDOS.includes(imagem.mime_type)
+      ? imagem.mime_type
+      : 'application/octet-stream'
+    res.setHeader('Content-Type', tipo)
     return res.send(imagem.conteudo)
   })
 )

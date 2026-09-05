@@ -197,6 +197,76 @@ describe('data_fim não pode ser anterior a data_inicio', () => {
 // O que é obrigatório, e onde
 // ---------------------------------------------------------------------------
 
+/**
+ * NA CRIAÇÃO O DEFAULT É LEGÍTIMO; NA ATUALIZAÇÃO ELE É PERDA SILENCIOSA.
+ *
+ * O PUT reescreve a linha inteira, e ali default não é ausência: ele GRAVA. Com
+ * os schemas de atualização herdando os defaults da criação, um corpo com só os
+ * campos obrigatórios reativava o bem BAIXADO, apagava a marca de patrimônio
+ * por conferir e devolvia ao trânsito contábil os dois SIAFI da transferência,
+ * com 200 e sem aviso nenhum.
+ *
+ * O PAR É INDIVISÍVEL: o schema de atualização redeclara o campo SEM default, e
+ * o controller grava `COALESCE($<campo>, campo)`, preservando a coluna. Sem o
+ * COALESCE, a chave ausente viraria NULL contra uma coluna NOT NULL; sem esta
+ * redeclaração, o COALESCE nunca veria um NULL para preservar. Os casos de
+ * banco que provam a outra metade estão em `routes/equipamento.test.js`.
+ */
+describe('o default da criação NÃO vale na atualização', () => {
+  // Cada linha é um campo booleano que TEM default na criação. Objetos, e não
+  // tuplas, para o título do caso nomear o campo: com `%s` posicional o título
+  // sairia "equipamentoCriar põe o default em equipamentoAtualizar", que não
+  // diz qual dos dois campos do bem está sendo medido.
+  const COM_DEFAULT = [
+    { criar: 'equipamentoCriar', atualizar: 'equipamentoAtualizar', entidade: 'equipamento', campo: 'ativo', padrao: true },
+    { criar: 'equipamentoCriar', atualizar: 'equipamentoAtualizar', entidade: 'equipamento', campo: 'patrimonio_pendente', padrao: false },
+    { criar: 'tipoCriar', atualizar: 'tipoAtualizar', entidade: 'tipo', campo: 'ativo', padrao: true },
+    { criar: 'transferenciaCriar', atualizar: 'transferenciaAtualizar', entidade: 'transferencia', campo: 'transferido_siafi', padrao: false },
+    { criar: 'transferenciaCriar', atualizar: 'transferenciaAtualizar', entidade: 'transferencia', campo: 'apropriado_siafi', padrao: false }
+  ]
+
+  it.each(COM_DEFAULT)(
+    '$criar põe o default em $campo (na criação não existe valor anterior)',
+    ({ criar, entidade, campo, padrao }) => {
+      const value = aceita(equipamentoSchema[criar].validate(corpo(entidade)))
+      expect(value[campo]).toBe(padrao)
+    }
+  )
+
+  it.each(COM_DEFAULT)(
+    '$atualizar deixa $campo AUSENTE, para o controller preservar a coluna',
+    ({ atualizar, entidade, campo }) => {
+      const value = aceita(equipamentoSchema[atualizar].validate(corpo(entidade)))
+      // `undefined`, e não o default: é este `undefined` que vira NULL no
+      // parâmetro e faz o COALESCE do UPDATE devolver o valor gravado.
+      expect(value[campo]).toBeUndefined()
+    }
+  )
+
+  it.each(COM_DEFAULT)(
+    '$atualizar continua aceitando $campo quando ele VEM',
+    ({ atualizar, entidade, campo, padrao }) => {
+      // Tirar o default não pode tirar o campo: quem manda o valor manda mesmo,
+      // inclusive o contrário do default.
+      const value = aceita(
+        equipamentoSchema[atualizar].validate(corpo(entidade, { [campo]: !padrao }))
+      )
+      expect(value[campo]).toBe(!padrao)
+    }
+  )
+
+  it.each(COM_DEFAULT)(
+    '$atualizar continua recusando $campo que não seja booleano',
+    ({ atualizar, entidade, campo }) => {
+      recusaPor(
+        equipamentoSchema[atualizar].validate(corpo(entidade, { [campo]: 'talvez' })),
+        campo,
+        'boolean.base'
+      )
+    }
+  )
+})
+
 describe('o dono do lançamento', () => {
   const CRIAR = [
     ['indisponibilidadeCriar', 'indisponibilidade'],

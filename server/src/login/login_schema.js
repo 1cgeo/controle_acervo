@@ -21,10 +21,21 @@ const models = {}
 // podem. `plugins` e `qgis` são OBRIGATÓRIOS para 'sap_fp' e 'sap_fg' e
 // PROIBIDOS para o resto, e as duas metades importam:
 //
-//   Obrigatórios porque é com eles que o gate de versão de `login_ctrl.js`
-//   decide se aquele cliente pode trabalhar. Aceitá-los como opcionais faria o
+//   Obrigatórios NOS DOIS porque o corpo do login é o mesmo dos dois lados: os
+//   dois rodam dentro do QGIS e os dois sabem responder o que estão rodando.
+//   Para o 'sap_fp', é com eles que o gate de versão de `login_ctrl.js` decide
+//   se aquele cliente pode trabalhar, e aceitá-los como opcionais faria o
 //   plugin desatualizado passar batido simplesmente por omitir o campo, que é
 //   exatamente o que o gate existe para impedir.
+//
+//   O GATE, PORÉM, SÓ SE APLICA AO 'sap_fp': `login_ctrl.js` o abre com
+//   `if (cliente === 'sap_fp')`, e o SAP Gerente manda os dois campos para o
+//   servidor descartá-los. Isso é decisão, e não esquecimento -- travar pela
+//   versão do plugin justamente quem PUBLICA a versão nova trancaria a porta do
+//   lado errado, e era assim no SAP 2.3.5. O caso que fixa a decisão é
+//   `__tests__/unit/login_gate_versao.test.js`, "sap_fg com o MESMO QGIS
+//   atrasado entra". Quem for mexer no gate leia este parágrafo inteiro: ele
+//   cobre UM cliente, e o schema cobre dois.
 //
 //   Proibidos no navegador e no CLI porque ali eles não querem dizer nada: a
 //   interface web não roda dentro de QGIS nenhum, e um campo aceito e ignorado

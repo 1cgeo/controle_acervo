@@ -605,7 +605,11 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
       )
       const totalLiquidado = Number(liquidado.total)
       const disponivel = valorEmpenhado - valorAnulado
-      if (totalLiquidado > disponivel) {
+      // Tolerancia de meio centavo, a mesma de `validarTetoDasNcs` logo acima e
+      // pela mesma razao: os dois lados sao NUMERIC(15,2) somados em ponto
+      // flutuante, e sem a folga a NE liquidada por INTEIRO deixava de poder ser
+      // salva (corrigir a finalidade dela, por exemplo) por um residuo de 1e-13.
+      if (totalLiquidado > disponivel + 0.005) {
         throw new AppError(
           'Valor empenhado disponivel nao cobre as liquidacoes ja registradas',
           httpCode.BadRequest

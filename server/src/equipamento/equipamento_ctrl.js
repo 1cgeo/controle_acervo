@@ -168,9 +168,14 @@ controller.atualizarTipo = async (id, dados, usuarioUuid, contexto) => {
         )
 
         const depois = await t.one(
+          // `ativo` PRESERVA A COLUNA quando a chave nao vem. O schema de
+          // atualizacao tirou o default `true` justamente para que a ausencia
+          // deixe de significar "reative"; sem o COALESCE aqui, `normaliza`
+          // mandaria NULL contra uma coluna NOT NULL.
           `UPDATE equipamento.tipo_equipamento SET
              nome = $<nome>, descricao = $<descricao>,
-             vida_util_meses = $<vida_util_meses>, ativo = $<ativo>
+             vida_util_meses = $<vida_util_meses>,
+             ativo = COALESCE($<ativo>, ativo)
            WHERE id = $<id>
            RETURNING *`,
           { ...normaliza(COLUNAS_TIPO, dados), id }
@@ -407,14 +412,25 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
         )
 
         const depois = await t.one(
+          // OS DOIS BOOLEANOS PRESERVAM A COLUNA, e nao um literal.
+          //
+          // `patrimonio_pendente = COALESCE(..., FALSE)` resolvia o NOT NULL e
+          // ainda assim APAGAVA a marca: um PUT sem a chave declarava conferido
+          // um numero que ninguem conferiu, e o Relatorio DMT parava de escrever
+          // "Patrimonio por conferir". `ativo = $<ativo>` era pior, porque o
+          // default `true` do schema de criacao ressuscitava o bem BAIXADO.
+          //
+          // Com o default fora do schema de atualizacao, a chave ausente chega
+          // como NULL e o COALESCE devolve o que ja estava gravado.
           `UPDATE equipamento.equipamento SET
              nr_patrimonio = $<nr_patrimonio>,
-             patrimonio_pendente = COALESCE($<patrimonio_pendente>, FALSE),
+             patrimonio_pendente = COALESCE($<patrimonio_pendente>, patrimonio_pendente),
              classe_id = $<classe_id>,
              tipo_id = $<tipo_id>, modelo = $<modelo>, nr_serie = $<nr_serie>,
              data_entrada_carga = $<data_entrada_carga>,
              vida_util_meses = $<vida_util_meses>,
-             secao_detentora_id = $<secao_detentora_id>, ativo = $<ativo>,
+             secao_detentora_id = $<secao_detentora_id>,
+             ativo = COALESCE($<ativo>, ativo),
              observacao = $<observacao>,
              data_modificacao = now(), usuario_modificacao_uuid = $<usuarioUuid>
            WHERE id = $<id>
@@ -485,12 +501,16 @@ controller.deletar = async (id, usuarioUuid, contexto) => {
  * @param {string} config.joins - os JOIN de dominio, ou ''
  * @param {string} config.ordem - o ORDER BY da lista solta
  * @param {string} config.aberta - a condicao de "ainda em curso"
+ * @param {string[]} config.preservarSeAusente - colunas NOT NULL com default no
+ *   banco cuja chave ausente no PUT quer dizer "nao mexe", e nao o default. O
+ *   UPDATE as grava por `COALESCE($<c>, c)`. Ver a nota do `equipamento_schema`.
  * @param {object} config.erros - as frases por codigo do PostgreSQL
  */
 const crudDoHistorico = ({
   tabela,
   nomeAmigavel,
   colunas,
+  preservarSeAusente = [],
   selectExtra = '',
   joins = '',
   ordem,
@@ -498,7 +518,18 @@ const crudDoHistorico = ({
   erros = {}
 }) => {
   const colunasSql = colunas.map(c => `h.${c}`).join(', ')
-  const setSql = colunas.map(c => `${c} = $<${c}>`).join(', ')
+  // O UPDATE do PUT reescreve a linha inteira, entao coluna com default no
+  // schema de criacao precisa que a chave ausente signifique "nao mexe". As
+  // declaradas em `preservarSeAusente` gravam a PROPRIA coluna quando o corpo
+  // nao as traz; as outras gravam o que veio (NULL inclusive, que e o que
+  // "apague este campo" quer dizer nelas).
+  const setSql = colunas
+    .map(c =>
+      preservarSeAusente.includes(c)
+        ? `${c} = COALESCE($<${c}>, ${c})`
+        : `${c} = $<${c}>`
+    )
+    .join(', ')
   const insertColunas = colunas.join(', ')
   const insertValores = colunas.map(c => `$<${c}>`).join(', ')
 
@@ -678,6 +709,11 @@ controller.transferencia = crudDoHistorico({
     'data_transferencia', 'transferido_siafi', 'apropriado_siafi',
     'publicacao_autorizacao', 'descricao'
   ],
+  // OS DOIS SIAFI SAO NOT NULL, e o schema de criacao lhes da default `false`.
+  // Num PUT sem eles, o default gravaria: um bem ja transferido e apropriado no
+  // SIAFI voltaria a "em transito contabil" com 200 e sem aviso. Aqui a chave
+  // ausente preserva o que esta gravado.
+  preservarSeAusente: ['transferido_siafi', 'apropriado_siafi'],
   selectExtra: ', tt.nome AS tipo, st.nome AS situacao',
   joins: `INNER JOIN equipamento.tipo_transferencia AS tt ON tt.code = h.tipo_id
            INNER JOIN equipamento.situacao_transferencia AS st ON st.code = h.situacao_id`,
@@ -737,10 +773,13 @@ controller.getDashboard = async () => {
       // O PARADO HA MAIS TEMPO PRIMEIRO (`data_inicio` ASC), e no maximo 10: e a
       // lista que responde "o que esta encalhado", e nao "o que quebrou ontem".
       //
+      // A JANELA E A DE `situacao_em`, LETRA POR LETRA, e nao "sem data_fim".
       // `data_inicio <= CURRENT_DATE` porque `dias` seria NEGATIVO num
-      // lancamento com data futura, e a mesma condicao esta dentro de
-      // `situacao_em`: um bem que so fica indisponivel semana que vem ainda esta
-      // disponivel hoje, e as duas leituras tem de concordar.
+      // lancamento com data futura; `data_fim IS NULL OR data_fim >=
+      // CURRENT_DATE` porque a funcao conta como indisponivel o lancamento que
+      // FECHA HOJE (`data_fim >= p_dia`). Com so o `IS NULL`, o bem cujo
+      // conserto terminou hoje contava no cartao 'Indisponivel' logo acima e
+      // sumia desta lista, no unico dia em que os dois numeros se olham.
       t.any(
         `SELECT e.id, e.nr_patrimonio, e.patrimonio_pendente, e.modelo,
                 tp.nome AS tipo,
@@ -749,7 +788,8 @@ controller.getDashboard = async () => {
            FROM equipamento.indisponibilidade AS i
            INNER JOIN equipamento.equipamento AS e ON e.id = i.equipamento_id
            INNER JOIN equipamento.tipo_equipamento AS tp ON tp.id = e.tipo_id
-          WHERE i.data_fim IS NULL AND i.data_inicio <= CURRENT_DATE
+          WHERE i.data_inicio <= CURRENT_DATE
+            AND (i.data_fim IS NULL OR i.data_fim >= CURRENT_DATE)
           ORDER BY i.data_inicio ASC, i.id ASC
           LIMIT 10`
       ),
@@ -817,8 +857,8 @@ controller.getDashboard = async () => {
  * chaves daqui espelham as colunas da planilha, e nao a modelagem do banco.
  *
  * UMA CONSULTA SO, com quatro LATERAL. Para cada bem ela pega:
- *   - o AFASTAMENTO aberto hoje (sem `data_fim`);
- *   - a INDISPONIBILIDADE aberta hoje (sem `data_fim`);
+ *   - o AFASTAMENTO que vale HOJE, pela mesma janela de `situacao_em`;
+ *   - a INDISPONIBILIDADE que vale HOJE, pela mesma janela;
  *   - a MANUTENCAO ligada AQUELA indisponibilidade (e nao a ultima do bem: a
  *     planilha poe o valor orcado na mesma linha do motivo da parada, e as duas
  *     colunas tem de falar do mesmo evento);
@@ -865,19 +905,28 @@ controller.linhasDoRelatorioDmt = async () => {
        INNER JOIN equipamento.secao_detentora AS sd ON sd.code = e.secao_detentora_id
        INNER JOIN equipamento.situacao_em(CURRENT_DATE) AS s ON s.equipamento_id = e.id
        INNER JOIN equipamento.situacao AS sit ON sit.code = s.situacao_id
+       -- A JANELA DAS DUAS LATERAIS E A DE situacao_em(CURRENT_DATE), e nao
+       -- "sem data_fim". A coluna 9 (Situacao) sai da funcao, e as colunas 10 a
+       -- 15 saem daqui: com regras diferentes, o bem cujo afastamento ou
+       -- conserto TERMINA HOJE (data_fim = CURRENT_DATE, que a funcao ainda
+       -- conta por data_fim >= p_dia) saia do relatorio como 'Afastado' ou
+       -- 'Indisponivel' com Local, Motivo e Inicio em branco. O documento e
+       -- contrato de saida, e uma linha que se contradiz e pior que uma vazia.
        LEFT JOIN LATERAL (
          SELECT a.om, a.motivo, a.data_inicio, a.previsao_termino
            FROM equipamento.afastamento AS a
-          WHERE a.equipamento_id = e.id AND a.data_fim IS NULL
+          WHERE a.equipamento_id = e.id
             AND a.data_inicio <= CURRENT_DATE
+            AND (a.data_fim IS NULL OR a.data_fim >= CURRENT_DATE)
           ORDER BY a.data_inicio DESC, a.id DESC
           LIMIT 1
        ) AS af ON TRUE
        LEFT JOIN LATERAL (
          SELECT i.id, i.motivo, i.data_inicio, i.previsao_retorno
            FROM equipamento.indisponibilidade AS i
-          WHERE i.equipamento_id = e.id AND i.data_fim IS NULL
+          WHERE i.equipamento_id = e.id
             AND i.data_inicio <= CURRENT_DATE
+            AND (i.data_fim IS NULL OR i.data_fim >= CURRENT_DATE)
           ORDER BY i.data_inicio DESC, i.id DESC
           LIMIT 1
        ) AS ind ON TRUE

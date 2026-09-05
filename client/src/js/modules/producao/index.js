@@ -51,9 +51,15 @@
 // VISUALIZADOR NAO A VE: ele nao tem atividade para executar, e a tela abriria
 // vazia com todos os botoes em 403.
 //
-// A TELA "MICROCONTROLE" E A UNICA DE GERENTE, e o motivo nao e costume: as onze
-// rotas de `/api/microcontrole` que ela consome sao todas `gerente` no servidor.
-// Mostra-la em `consulta` daria uma tela que responde 403 em cada secao.
+// A TELA "MICROCONTROLE" NAO E MAIS SO DE GERENTE, e este paragrafo ja afirmou o
+// contrario. Ele dizia que as onze rotas de `/api/microcontrole` eram todas
+// `gerente` no servidor, e que mostrar a tela em `consulta` daria 403 em cada
+// secao. Em 2026-08-09 a regra do chefe ("o visualizador ve TUDO") desceu para
+// `consulta` as SEIS rotas de LEITURA daquele prefixo, e a rota do manifesto
+// acompanhou -- o comentario e que ficou para tras, afirmando um 403 que nao
+// acontece mais e convidando quem o lesse a "consertar" a rota de volta. O que
+// continua em `gerente` sao as TRES que MEXEM no perfil de monitoramento, e a
+// tela nao chama nenhuma delas. Ver a rota `/microcontrole`, no fim da lista.
 
 import { ICONS } from '@utils/dom.js';
 

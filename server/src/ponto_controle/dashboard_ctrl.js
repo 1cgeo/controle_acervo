@@ -6,8 +6,11 @@ const controller = {}
 
 // `ponto_controle.tipo_situacao`, code 3 = 'Aprovado' (er/ponto_controle.sql).
 // Fica com nome porque `tipo_situacao = 3` no meio do SQL não se lê, e o número
-// solto é o que faz um domínio mudar sem ninguém achar quem o usava.
-const SITUACAO_APROVADO = 3
+// solto é o que faz um domínio mudar sem ninguém achar quem o usava. O code
+// mora em `utils/domain_constants.js`, junto do que `upload_ctrl.js` usa: os
+// dois nunca mais divergem.
+const { SITUACAO_PONTO_CONTROLE } = require('../utils/domain_constants')
+const SITUACAO_APROVADO = SITUACAO_PONTO_CONTROLE.APROVADO
 
 /**
  * Números do ponto de controle para a aba do dashboard do acervo.

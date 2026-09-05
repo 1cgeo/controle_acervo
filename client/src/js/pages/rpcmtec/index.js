@@ -6,6 +6,7 @@ import { createSelectField } from '@components/form-fields/form-fields.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
 import { mostrarErro } from '@components/estado-erro.js';
 import { getUsuarios } from '@services/plataforma-service.js';
+import { isAdmin } from '@store/auth-store.js';
 import {
   listarEdicoes, getAnosEdicao, excluirEdicao,
 } from '@services/rpcmtec-service.js';
@@ -33,6 +34,15 @@ export async function renderRpcmtec(container, _ctx) {
   let disposed = false;
   let usuarios = [];
   let ano = new Date().getFullYear();
+
+  // CRIAR e EXCLUIR a edição são do ADMINISTRADOR, e a rota desta tela é
+  // `gerenteLoader` desde 2026-08-08: qualquer gerente LÊ o relatório inteiro.
+  // O servidor cobra `verifyAdmin` em `POST /rpcmtec` e em
+  // `DELETE /rpcmtec/:id`, então o gerente que não é administrador preenchia o
+  // formulário da edição nova para receber 403 no fim, e o ícone de excluir da
+  // linha respondia o mesmo. A tela da EDIÇÃO (`edicao.js`) já fazia este
+  // recorte; a LISTA ficou para trás. Isto é ergonomia: quem barra é o servidor.
+  const podeAdministrar = isAdmin();
 
   const anoField = createSelectField({
     label: 'Ano',
@@ -126,12 +136,12 @@ export async function renderRpcmtec(container, _ctx) {
         title: 'Abrir',
         onClick: (linha) => { location.hash = `/rpcmtec/${linha.id}`; },
       },
-      {
+      ...(podeAdministrar ? [{
         icon: ICONS.delete,
         title: 'Excluir',
         variant: 'danger',
         onClick: (linha) => excluir(linha),
-      },
+      }] : []),
     ],
   });
 
@@ -149,9 +159,7 @@ export async function renderRpcmtec(container, _ctx) {
     ]),
     el('div', { className: 'page__filters' }, [
       anoField.element,
-      el('div', { className: 'page__filters-acoes' }, [
-        novaBtn,
-      ]),
+      el('div', { className: 'page__filters-acoes' }, podeAdministrar ? [novaBtn] : []),
     ]),
     areaTabela,
   ]);

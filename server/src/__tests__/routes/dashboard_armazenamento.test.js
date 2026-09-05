@@ -68,12 +68,40 @@ const totalGb = async () => {
   return Number(res.body.dados.total_gb || 0)
 }
 
+/**
+ * O ÚLTIMO ponto da série "GB Acumulados".
+ *
+ * É ele que a tela põe ao lado do cartão "Armazenamento Total", e é por isso que
+ * a série precisa somar as MESMAS duas tabelas: divergindo, os dois números
+ * aparecem juntos, com o mesmo nome, discordando pelo tamanho do ponto de
+ * controle. O mês corrente é sempre o último da série (a consulta gera até
+ * `date_trunc('month', NOW())`), então o arquivo semeado agora cai nele em
+ * qualquer dia do ano.
+ */
+const acumuladoFinal = async () => {
+  const res = await request(app)
+    .get('/api/dashboard/storage_growth_trends')
+    .set('Authorization', generateAdminToken())
+  expect(res.status).toBe(200)
+  const linhas = res.body.dados || []
+  if (linhas.length === 0) return 0
+  return Number(linhas[linhas.length - 1].cumulative_gb || 0)
+}
+
 describe('Dashboard - espaço ocupado', () => {
   it('o total SOMA o arquivo do ponto de controle', async () => {
     const antes = await totalGb()
     await semearPontoDeControle(2048) // 2 GB
 
     const depois = await totalGb()
+    expect(depois - antes).toBeCloseTo(2, 3)
+  })
+
+  it('o crescimento acumulado SOMA o arquivo do ponto de controle', async () => {
+    const antes = await acumuladoFinal()
+    await semearPontoDeControle(2048) // 2 GB
+
+    const depois = await acumuladoFinal()
     expect(depois - antes).toBeCloseTo(2, 3)
   })
 

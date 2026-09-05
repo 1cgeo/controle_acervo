@@ -665,8 +665,11 @@ describe('aba Efetivo: o mes corrente e parcial', () => {
     await flush();
 
     // 64,6% agora contra 100% no mes anterior.
-    expect(container.textContent).toContain('ponto percentual contra');
-    expect(container.textContent).toContain('-35,4');
+    //
+    // PLURAL, como o nome do caso ja dizia: a frase estava presa no singular
+    // ("-35,4 ponto percentual"), e o singular e o caso raro aqui -- ele so vale
+    // quando a diferenca arredondada cabe em um ponto.
+    expect(container.textContent).toContain('-35,4 pontos percentuais contra');
 
     cleanup();
   });

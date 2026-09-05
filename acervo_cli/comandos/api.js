@@ -312,12 +312,25 @@ function formatar (r, operacao, opcoesSaida, avisos) {
   const dados = r.dados
 
   if (operacao.envelope === 'mensagem' || dados === undefined || dados === null) {
+    // Com `--json` o stdout INTEIRO tem de ser JSON, e a escrita e o caminho em
+    // que isso mais custa: `acervo produto atualizar --json` devolvia a prosa
+    // `Produto atualizado com sucesso`, que `JSON.parse` recusa. A mensagem do
+    // servidor sai como campo do objeto, com os dados junto quando houver.
+    if (opcoesSaida.formato === 'json') {
+      return JSON.stringify({ message: r.message || 'ok', dados: dados === undefined ? null : dados }, null, 2)
+    }
     return r.message || 'ok'
   }
 
   // O busca do acervo devolve { total, page, limit, dados: [...] }: a lista de
   // verdade esta um nivel abaixo do envelope.
   if (operacao.envelope === 'paginado' && dados && Array.isArray(dados.dados)) {
+    // Com `--json` sai o ENVELOPE INTEIRO (total, page, limit e dados), e nao
+    // so o array: o rodape de paginacao colado depois dele fazia `JSON.parse`
+    // responder `Unexpected non-whitespace character after JSON` na rota mais
+    // usada do CLI (`acervo acervo buscar --json`). E a paginacao e justamente
+    // o que quem encadeia precisa ler para pedir a proxima pagina.
+    if (opcoesSaida.formato === 'json') return JSON.stringify(dados, null, 2)
     const out = saida.lista(dados.dados, opcoesSaida)
     avisos.push(...out.avisos)
     return `${out.texto}\n(pagina ${dados.page} de ${Math.ceil((dados.total || 0) / (dados.limit || 1))}, ${dados.total} no total)`

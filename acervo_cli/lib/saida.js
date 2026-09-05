@@ -104,11 +104,17 @@ function lista (dados, opcoes = {}) {
   if (!Array.isArray(dados)) {
     return { texto: JSON.stringify(dados, null, 2), avisos }
   }
+
+  // O FORMATO decide antes de a lista vazia decidir: com `--json`, resultado
+  // vazio sai como `[]`, e nunca como `(nenhum registro)`, que quebraria o
+  // `JSON.parse` de quem encadeia justamente no caso mais comum, a consulta que
+  // nao achou nada.
+  const formato = opcoes.formato || 'tsv'
+
   if (!dados.length) {
-    return { texto: '(nenhum registro)', avisos }
+    return { texto: formato === 'json' ? '[]' : '(nenhum registro)', avisos }
   }
 
-  const formato = opcoes.formato || 'tsv'
   if (formato === 'json') {
     return { texto: JSON.stringify(dados, null, 2), avisos }
   }
@@ -129,9 +135,15 @@ function lista (dados, opcoes = {}) {
 
 /** Renderiza um registro unico como pares chave: valor. */
 function registro (dado, opcoes = {}) {
+  // O FORMATO decide antes de tudo, pela mesma razao que em lista(): com
+  // `--json`, registro ausente sai como `null` e escalar sai como escalar JSON,
+  // e nunca como `(vazio)`, que quebraria o `JSON.parse` de quem encadeia
+  // justamente no caso mais comum, a consulta que nao achou nada.
+  if ((opcoes.formato || 'tsv') === 'json') {
+    return JSON.stringify(dado === undefined ? null : dado, null, 2)
+  }
   if (dado === null || dado === undefined) return '(vazio)'
   if (typeof dado !== 'object') return String(dado)
-  if ((opcoes.formato || 'tsv') === 'json') return JSON.stringify(dado, null, 2)
 
   const chaves = opcoes.campos && opcoes.campos.length
     ? opcoes.campos.filter(c => c in dado)

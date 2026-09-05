@@ -656,11 +656,18 @@ class ProductInfoDialog(QDialog, FORM_CLASS):
     def handle_download_complete(self, results):
         """Manipula o evento de download concluído."""
         self.setCursor(Qt.CursorShape.ArrowCursor)
-        
+
+        # Lista VAZIA é o cancelamento antes de o primeiro arquivo terminar.
+        # Sem este caso, a tela anunciava "Todos os 0 arquivos foram baixados
+        # com sucesso" para quem acabara de cancelar.
+        if not results:
+            self.statusLabel.setText("Download cancelado: nenhum arquivo foi baixado.")
+            return
+
         # Contar sucessos e falhas
         successes = sum(1 for r in results if r['success'])
         failures = len(results) - successes
-        
+
         if failures == 0:
             self.statusLabel.setText(f"Download concluído: {successes} arquivo(s) baixado(s) com sucesso.")
             QMessageBox.information(

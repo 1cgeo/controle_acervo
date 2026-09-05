@@ -167,7 +167,9 @@ describe('openRegistrarImpressaoDialog', () => {
         produto_pedido_id: 900,
         quantidade: 6,
         observacao: undefined,
-        data_impressao: '2026-07-31',
+        // MEIO-DIA local, e nao o dia pelado: a coluna e TIMESTAMP, e o dia
+        // pelado virava 30/07 as 21:00 em UTC-3 (ver o comentario no dialogo).
+        data_impressao: '2026-07-31T12:00:00',
       },
     ]);
   });

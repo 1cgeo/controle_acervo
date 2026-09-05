@@ -11,12 +11,32 @@ const UTF8_BOM = String.fromCharCode(0xFEFF)
 
 const pad = n => String(n).padStart(2, '0')
 
+// A COLUNA DATE NÃO CHEGA COMO `Date`, e chegar a este arquivo como texto é o
+// desenho, não um acidente: `database/db.js` registra
+// `setTypeParser(1082, valor => valor)`, e por isso toda coluna DATE volta como
+// a string crua 'AAAA-MM-DD'. Sem esta linha, o mesmo CSV saía com DOIS
+// formatos de data -- `data_pedido` e `prazo` (DATE) em 2026-08-01, e qualquer
+// coluna TIMESTAMPTZ do mesmo relatório em 14/08/2026. O Excel pt-BR lê a
+// primeira forma como TEXTO, e ordenar ou filtrar por mês deixa de funcionar
+// justamente na coluna pela qual o relatório é lido.
+//
+// Casa a forma INTEIRA e nada mais: um texto que só comece com uma data
+// (`2026-08-01 a 2026-08-31`) continua saindo como veio.
+const DIA_ISO = /^(\d{4})-(\d{2})-(\d{2})$/
+
 const formatValue = value => {
   if (value === null || value === undefined) {
     return ''
   }
   if (value instanceof Date) {
     return `${pad(value.getDate())}/${pad(value.getMonth() + 1)}/${value.getFullYear()}`
+  }
+  if (typeof value === 'string') {
+    const dia = DIA_ISO.exec(value)
+    if (dia) {
+      const [, ano, mes, diaDoMes] = dia
+      return `${diaDoMes}/${mes}/${ano}`
+    }
   }
   if (typeof value === 'boolean') {
     return value ? 'Sim' : 'Não'

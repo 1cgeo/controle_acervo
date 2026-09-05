@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { flush } from '@/__tests__/helpers/flush.js';
 
 vi.mock('@modules/mapoteca/services/mapoteca-service.js', async () => {
@@ -146,6 +146,116 @@ describe('renderClientesList: o que cada perfil ve', () => {
     await flush();
 
     expect(container.textContent).toContain('Novo cliente');
+
+    cleanup();
+  });
+});
+
+// AS DUAS TELAS DE RISCO DA LISTA: excluir em lote e criar duplicata.
+describe('renderClientesList: a lista nomeia o que apaga e recusa o duplicado', () => {
+  const COM_SIGLA = [
+    { ...CLIENTES[0], sigla: '1º CGEO', tipo_cliente_id: 1 },
+    { ...CLIENTES[1], sigla: null, tipo_cliente_id: 5 },
+  ];
+
+  beforeEach(() => {
+    logarComo({ mapoteca: GERENTE });
+    svc.getClientes.mockResolvedValue(COM_SIGLA);
+    svc.getDominioTipoCliente.mockResolvedValue([
+      { code: 1, nome: 'OM EB' }, { code: 5, nome: 'Órgão público' },
+    ]);
+  });
+
+  afterEach(() => {
+    document.body.textContent = '';
+  });
+
+  // A TELA ENTRA NO DOCUMENTO, e nao fica num `div` solto: o jsdom so dispara o
+  // `change` do checkbox em no CONECTADO, e a selecao da tabela vive nesse
+  // evento. Num container solto as caixas ficam marcadas e a selecao, vazia.
+  async function montar() {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const cleanup = await renderClientesList(container, { params: {}, query: new URLSearchParams() });
+    await flush();
+    return { container, cleanup };
+  }
+
+  /** O campo do diálogo aberto, pelo rótulo. */
+  const campo = (rotulo) => [...document.querySelectorAll('.modal .form-field')]
+    .find(f => f.querySelector('.form-field__label')?.textContent.startsWith(rotulo));
+
+  /** Botão do rodapé do diálogo aberto, pelo texto. */
+  const botaoDoModal = (texto) => [...document.querySelectorAll('.modal__footer button')]
+    .find(b => b.textContent.trim() === texto);
+
+  // A EXCLUSAO EM LOTE NOMEIA QUEM VAI SAIR. A tabela e paginada e a selecao
+  // atravessa a paginacao: a contagem sozinha nao devolve o que se marcou tres
+  // paginas atras, e a acao e irreversivel.
+  test('a confirmação em lote nomeia os clientes marcados', async () => {
+    const { container, cleanup } = await montar();
+
+    for (const caixa of container.querySelectorAll('tbody input[type="checkbox"]')) {
+      caixa.click();
+    }
+    await flush();
+
+    [...container.querySelectorAll('.btn--danger')]
+      .find(b => b.textContent.includes('Excluir selecionados')).click();
+    await flush();
+
+    const mensagem = document.querySelector('.modal').textContent;
+    expect(mensagem).toContain('1º CGEO');
+    expect(mensagem).toContain('Prefeitura de Porto Alegre');
+    expect(mensagem).toContain('Esta ação não pode ser desfeita');
+
+    cleanup();
+  });
+
+  // O PAR IDENTICO NAO GANHA "CRIAR ASSIM MESMO". O banco tem
+  // `unique_cliente_nome_sigla UNIQUE NULLS NOT DISTINCT (nome, sigla)` sobre o
+  // texto CRU: com o par igual, o POST devolve 409 sempre. Oferecer a criacao e
+  // prometer uma saida que nao existe.
+  test('nome e sigla idênticos param no campo, sem oferecer "Criar assim mesmo"', async () => {
+    const { container, cleanup } = await montar();
+
+    [...container.querySelectorAll('button')]
+      .find(b => b.textContent.includes('Novo cliente')).click();
+    await flush();
+
+    campo('Nome').querySelector('input').value = '1º CGEO';
+    campo('Sigla').querySelector('input').value = '1º CGEO';
+    campo('Tipo de cliente').querySelector('select').value = '1';
+    campo('Tipo de cliente').querySelector('select')
+      .dispatchEvent(new Event('change', { bubbles: true }));
+    botaoDoModal('Criar').click();
+    await flush();
+
+    expect(botaoDoModal('Criar assim mesmo')).toBeUndefined();
+    expect(campo('Nome').textContent).toContain('Já existe este cliente');
+    expect(svc.createCliente).not.toHaveBeenCalled();
+
+    cleanup();
+  });
+
+  // O QUASE-HOMONIMO CONTINUA SENDO CONFIRMACAO: '1o CGEO' e '1º CGEO' sao o
+  // mesmo para o `normalizar` e DIFERENTES para o UNIQUE, entao "criar assim
+  // mesmo" funciona de verdade ali. E o caso decidido em docs/decisoes.md.
+  test('o quase-homônimo continua abrindo a confirmação', async () => {
+    const { container, cleanup } = await montar();
+
+    [...container.querySelectorAll('button')]
+      .find(b => b.textContent.includes('Novo cliente')).click();
+    await flush();
+
+    campo('Nome').querySelector('input').value = '1o CGEO';
+    campo('Tipo de cliente').querySelector('select').value = '1';
+    campo('Tipo de cliente').querySelector('select')
+      .dispatchEvent(new Event('change', { bubbles: true }));
+    botaoDoModal('Criar').click();
+    await flush();
+
+    expect(botaoDoModal('Criar assim mesmo')).toBeTruthy();
 
     cleanup();
   });

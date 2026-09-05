@@ -519,3 +519,37 @@ describe('o refresh das views de acompanhamento', () => {
     expect(alvo).not.toContain('mv_produto')
   })
 })
+
+describe('o furo de fila parcial diz o que ficou de fora', () => {
+  // O INSERT filtra `a.tipo_situacao_atividade_id = 1` ('Não iniciada'), e o
+  // gerente que selecionou cinco na tela nao tem como saber que duas ja estavam
+  // em execucao: tres linhas, 201 e "criadas com sucesso" e indistinguivel do
+  // desfecho certo. E a mesma regua que `avancaAtividade` ja aplica ao ZERO
+  // ("'avancei' sobre zero linhas e a resposta que ele nao tem como distinguir
+  // da certa"); ate aqui, o PARCIAL escapava dela.
+  //
+  // O duble devolve UMA linha por INSERT, com `atividade_id` 7: mandar [7, 9] e
+  // o caso parcial, e o 9 e o que nao entrou.
+  it('devolve nao_incluidas com o que o filtro de situacao cortou', async () => {
+    const dados = await ctrl.criaFilaPrioritaria([7, 9], UUID, 1, UUID, CONTEXTO)
+
+    expect(dados.ids).toEqual([1])
+    expect(dados.nao_incluidas).toEqual([9])
+  })
+
+  it('e a lista vem VAZIA quando tudo entrou, para a rota nao inventar recado', async () => {
+    const dados = await ctrl.criaFilaPrioritaria([7], UUID, 1, UUID, CONTEXTO)
+
+    expect(dados.nao_incluidas).toEqual([])
+  })
+
+  // A FILA DE GRUPO E A MESMA FUNCAO, com a tabela e a coluna trocadas: o
+  // recado tem de valer para as duas, senao a metade que ninguem olhasse
+  // continuaria mentindo.
+  it('a fila de grupo devolve o mesmo par', async () => {
+    const dados = await ctrl.criaFilaPrioritariaGrupo([7, 9], 2, 1, UUID, CONTEXTO)
+
+    expect(dados.ids).toEqual([1])
+    expect(dados.nao_incluidas).toEqual([9])
+  })
+})

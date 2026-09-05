@@ -447,7 +447,13 @@ const movimentoMaterialBase = {
   quantidade: Joi.number().integer().positive().required(),
   // Dia de CALENDÁRIO: `.iso()` para '01/08/2026' não virar 8 de janeiro, e
   // `.raw()` para a coluna não guardar o dia anterior em UTC-3.
-  data_movimento: Joi.date().iso().raw().required(),
+  //
+  // `.max('now')` porque o livro registra o que JÁ ACONTECEU. Sem ele, um
+  // consumo digitado com o ano errado ('2027-08-01') derruba o saldo HOJE, pelo
+  // gatilho, e some do consumo do mês na 7.2 do RPCMTec, que filtra por período:
+  // o material sumia da prateleira sem aparecer em relatório nenhum. A recusa é
+  // 400 com frase, e o diálogo do client põe o mesmo limite no campo.
+  data_movimento: Joi.date().iso().raw().max('now').required(),
   localizacao_origem_id: ORIGEM_POR_TIPO,
   localizacao_destino_id: DESTINO_POR_TIPO,
   motivo: MOTIVO
@@ -620,8 +626,14 @@ models.etiquetaPedidoParams = Joi.object().keys({
 // Só o destinatário é obrigatório. O endereço pode faltar de verdade (etiqueta
 // que sai com o endereço colado à mão no pacote), e exigi-lo travaria o registro
 // da correção que já existe.
+//
+// O `.trim()` do destinatário NÃO é enfeite: a coluna é NOT NULL e o controller
+// converte "só espaço" em NULL (`vazioVirouNulo`), então um destinatário com
+// três espaços passava por aqui e morria no banco como 500 "Erro no servidor" --
+// enquanto o destinatário VAZIO, que é o mesmo engano, já saía como 400 com a
+// frase certa. Com o trim os dois casos caem na mesma recusa.
 models.etiquetaEnvio = Joi.object().keys({
-  destinatario: Joi.string().max(255).required(),
+  destinatario: Joi.string().trim().max(255).required(),
   aos_cuidados: Joi.string().max(255).allow(null, ''),
   endereco: Joi.string().max(2000).allow(null, ''),
   cep: Joi.string().max(9).allow(null, '')

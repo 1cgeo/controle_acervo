@@ -19,7 +19,10 @@
  *   - item com declaração conta na META DELE, e sai da do pedido;
  *   - a soma das duas metas continua sendo o total do pedido (nada some, nada
  *     conta duas vezes);
- *   - declarar meta em item de pedido fora do PIT é 400, e não vínculo órfão.
+ *   - declarar meta em item de pedido fora do PIT é 400, e não vínculo órfão;
+ *   - o RELATÓRIO detalhado (a aba META4_DETALHADA do RTM que sobe para a DSG)
+ *     rotula a linha com a meta do ITEM, e não com a do pedido;
+ *   - meta do PIT que não existe é 404 nas duas portas do pedido, e não 500.
  */
 
 const request = require('supertest')
@@ -325,5 +328,166 @@ describe('a meta do PIT declarada no item do pedido', () => {
       'SELECT id FROM pit.meta_item WHERE id = $1', [metaTyvek]
     )
     expect(ainda).not.toBeNull()
+  })
+
+  /**
+   * O RELATÓRIO DETALHADO CONCORDA COM A TELA DO PIT.
+   *
+   * Esta é a leitura que vira a aba META4_DETALHADA do RTM mensal enviado à
+   * DSG, por três portas: `GET /relatorio/impressao_detalhada` (CSV e JSON),
+   * `GET /relatorio/impressao_detalhada_ods` e `GET /api/rpcmtec/rtm/ods`.
+   * Enquanto ela juntava a meta só pelo PEDIDO, o mesmo pedido misto do caso
+   * acima saía com as 8 folhas de tyvek rotuladas 4.1 no documento e contadas
+   * na 4.2 na tela. Não havia erro, aviso nem divergência de total: só duas
+   * respostas para a mesma pergunta.
+   */
+  test('o relatório detalhado rotula a linha com a meta do ITEM', async () => {
+    const metaSulfite = await criaMetaPit('4.1')
+    const metaTyvek = await criaMetaPit('4.2')
+    const cliente = await criaCliente()
+    const pedido = await criaPedido(cliente, {
+      previsto_pit: true,
+      meta_pit_id: metaSulfite,
+      data_prevista: '2026-07-01'
+    })
+
+    expect((await postItem({
+      pedido_id: pedido.id,
+      uuid_versao: await criaVersao(),
+      quantidade: 32,
+      tipo_midia_id: 5
+    })).status).toBe(201)
+
+    expect((await postItem({
+      pedido_id: pedido.id,
+      uuid_versao: await criaVersao(),
+      quantidade: 8,
+      tipo_midia_id: 8,
+      meta_pit_id: metaTyvek
+    })).status).toBe(201)
+
+    const res = await request(app)
+      .get(`/api/mapoteca/relatorio/impressao_detalhada?ano=${ANO}&formato=json`)
+      .set('Authorization', admin())
+    expect(res.status).toBe(200)
+
+    const linhas = (res.body.dados || []).filter(
+      l => Number(l.pedido_id) === Number(pedido.id)
+    )
+    // VARIÂNCIA PRIMEIRO: as duas linhas TÊM de estar na resposta. Com uma só,
+    // um `find` que não achasse nada devolveria undefined e o teste aprovaria
+    // qualquer implementação.
+    expect(linhas).toHaveLength(2)
+
+    const porQuantidade = q =>
+      linhas.find(l => Number(l.quantidade_prevista) === q)
+
+    // A linha do tyvek é a que REPROVA o estado anterior: ela saía '4.1'.
+    expect(porQuantidade(8).meta).toBe('4.2')
+    // E a do sulfite continua na meta do pedido, que é o caso comum.
+    expect(porQuantidade(32).meta).toBe('4.1')
+  })
+
+  /**
+   * META QUE NÃO EXISTE É 404, E NÃO 500.
+   *
+   * `mapoteca.pedido.meta_pit_id` é REFERENCES pit.meta_item (id), e o Joi só
+   * sabe que o valor é um inteiro: quais ids existem é pergunta de banco. O
+   * cenário real é a tela aberta enquanto o administrador do PIT apaga o item
+   * de meta; sem a conferência, o operador recebe "Erro no servidor" para um
+   * engano que ele conserta escolhendo outra meta.
+   *
+   * AS DUAS PORTAS, e não só a criação: `atualizaPedido` reescreve a linha
+   * inteira, e a conferência dele roda DEPOIS do preserveOmitted, que é quem
+   * resolve o valor final da chave ausente.
+   */
+  describe('meta do PIT inexistente', () => {
+    // Um id que nenhuma meta tem. MAX + 1 em vez de um literal grande: literal
+    // vira teste que passa por acaso no dia em que a sequência o alcançar.
+    const idInexistente = async () => {
+      const linha = await conn.one(
+        'SELECT COALESCE(MAX(id), 0) + 1000 AS id FROM pit.meta_item'
+      )
+      return Number(linha.id)
+    }
+
+    test('na CRIAÇÃO do pedido: 404, e nada é gravado', async () => {
+      const cliente = await criaCliente()
+      const inexistente = await idInexistente()
+
+      const res = await request(app)
+        .post('/api/mapoteca/pedido')
+        .set('Authorization', admin())
+        .send({
+          data_pedido: '2026-06-01T10:00:00-03:00',
+          cliente_id: cliente,
+          situacao_pedido_id: 2,
+          previsto_pit: true,
+          meta_pit_id: inexistente
+        })
+
+      expect(res.status).toBe(404)
+      expect(res.body.message).toMatch(/Meta do PIT/i)
+
+      const pedidos = await conn.any(
+        'SELECT id FROM mapoteca.pedido WHERE cliente_id = $1',
+        [cliente]
+      )
+      expect(pedidos).toHaveLength(0)
+    })
+
+    test('na ATUALIZAÇÃO do pedido: 404, e a meta anterior fica', async () => {
+      const meta = await criaMetaPit('4.1')
+      const cliente = await criaCliente()
+      const pedido = await criaPedido(cliente, {
+        previsto_pit: true,
+        meta_pit_id: meta
+      })
+      const inexistente = await idInexistente()
+
+      const res = await request(app)
+        .put('/api/mapoteca/pedido')
+        .set('Authorization', admin())
+        .send({
+          id: pedido.id,
+          data_pedido: '2026-06-01T10:00:00-03:00',
+          cliente_id: cliente,
+          situacao_pedido_id: 2,
+          previsto_pit: true,
+          meta_pit_id: inexistente
+        })
+
+      expect(res.status).toBe(404)
+      expect(res.body.message).toMatch(/Meta do PIT/i)
+
+      // Recusa que grava metade é pior que recusa: a transação inteira volta.
+      const gravado = await conn.one(
+        'SELECT meta_pit_id FROM mapoteca.pedido WHERE id = $1',
+        [pedido.id]
+      )
+      expect(Number(gravado.meta_pit_id)).toBe(meta)
+    })
+
+    test('meta que EXISTE continua passando nas duas portas', async () => {
+      const meta = await criaMetaPit('4.1')
+      const cliente = await criaCliente()
+      const pedido = await criaPedido(cliente, {
+        previsto_pit: true,
+        meta_pit_id: meta
+      })
+
+      const res = await request(app)
+        .put('/api/mapoteca/pedido')
+        .set('Authorization', admin())
+        .send({
+          id: pedido.id,
+          data_pedido: '2026-06-01T10:00:00-03:00',
+          cliente_id: cliente,
+          situacao_pedido_id: 2,
+          previsto_pit: true,
+          meta_pit_id: meta
+        })
+      expect(res.status).toBe(200)
+    })
   })
 })

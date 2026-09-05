@@ -51,7 +51,7 @@ USUARIOS  (exigem ADMINISTRADOR)
 
 O PROPRIO CADASTRO  (basta estar logado)
   efetivo usuario meu-perfil
-  efetivo usuario trocar-senha --senha-atual X --senha-nova Y
+  SCA_SENHA_ATUAL=... SCA_SENHA_NOVA=... efetivo usuario trocar-senha
 
 ACESSOS  (exigem ADMINISTRADOR)
   efetivo acessos resumo
@@ -90,6 +90,7 @@ AMBIENTE  (nunca ponha senha na linha de comando)
   SCA_URL     URL do backend, ex.: http://IP:porta
   SCA_USER    login de admin        SCA_SENHA   senha
   SCA_TOKEN   JWT pronto (dispensa login)
+  SCA_SENHA_ATUAL / SCA_SENHA_NOVA    as duas do usuario trocar-senha
 
 FLAGS GLOBAIS
   --json          saida crua e completa (para encadear)

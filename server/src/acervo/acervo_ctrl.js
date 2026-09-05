@@ -632,7 +632,19 @@ controller.prepareDownload = async (arquivosIds, usuarioUuid) => {
   }));
 };
 
-controller.confirmDownload = async (downloadConfirmations) => {
+// O DONO DO TOKEN FECHA O PROPRIO DOWNLOAD, e ninguem mais.
+//
+// O controlador nao recebia `usuarioUuid` e casava so por `download_token`:
+// qualquer conta com perfil `consulta` no acervo que conhecesse um token
+// pendente de outra pessoa podia fecha-lo como `completed` ou `failed`, e o dono
+// recebia depois "Download nao encontrado, ja processado ou com token expirado"
+// sem entender por que. As duas rotas irmas ja conferiam o dono (`confirmUpload`
+// e `cancelUpload`), e a assimetria era gratuita.
+//
+// O `acervo_cli` e o plugin continuam funcionando: os dois preparam e confirmam
+// com a MESMA sessao, e o token so sai no corpo do `prepare-download` de quem
+// pediu.
+controller.confirmDownload = async (downloadConfirmations, usuarioUuid) => {
   return db.conn.tx(async t => {
     const results = [];
 
@@ -648,15 +660,21 @@ controller.confirmDownload = async (downloadConfirmations) => {
          FROM acervo.download d
          JOIN acervo.arquivo a ON d.arquivo_id = a.id
          WHERE d.download_token = $1 AND d.status = 'pending'
+           AND d.usuario_uuid = $2
            AND (d.expiration_time IS NULL OR d.expiration_time > NOW())`,
-        [download_token]
+        [download_token, usuarioUuid]
       );
       
       if (!download) {
         results.push({
           download_token,
           status: 'error',
-          message: 'Download record not found or already processed'
+          // Em português, como toda mensagem de erro do sistema. Hoje o plugin
+          // não mostra este campo (ele monta a própria frase a partir de
+          // `status === 'error'`), e o texto existe para quem lê o corpo da
+          // resposta, inclusive o `acervo_cli`.
+          message: 'Download não encontrado, já processado, de outro usuário '
+            + 'ou com token expirado'
         });
         continue;
       }

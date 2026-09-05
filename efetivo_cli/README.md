@@ -82,7 +82,7 @@ efetivo usuario excluir --uuid U --confirmar U
 
 # o próprio cadastro (basta estar logado)
 efetivo usuario meu-perfil
-efetivo usuario trocar-senha --senha-atual X --senha-nova Y
+SCA_SENHA_ATUAL=... SCA_SENHA_NOVA=... efetivo usuario trocar-senha
 
 # acessos (exigem ADMINISTRADOR)
 efetivo acessos resumo

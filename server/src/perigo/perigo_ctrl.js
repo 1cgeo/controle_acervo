@@ -32,6 +32,48 @@ const SITUACAO_SOLTAVEL = [
   SITUACAO_ATIVIDADE.PAUSADA
 ]
 
+// --- Erros do banco que viram resposta amigavel ------------------------------
+//
+// O CRUD DESTE MODULO ERA O UNICO DA TRAVESSIA SEM TRADUCAO, e a falta doia no
+// caso MAIS COMUM da tela: `producao.propriedades_camada` tem
+// `UNIQUE (camada_id, subfase_id)`, entao acrescentar a mesma camada duas vezes
+// na mesma subfase -- o erro de quem monta a grade -- respondia 500 "Erro no
+// servidor". O mesmo valia para o `camada_id` ou a `subfase_id` que nao existem,
+// e para o `tipo_insumo_id` e o `grupo_insumo_id` do insumo. Os irmaos (os
+// controladores do modulo `producao` e o `microcontrole_ctrl.js`) ja traduziam
+// os dois codigos.
+//
+// A SEQUENCIA DE ABERTURA DE COMENTARIO DE BLOCO NAO SE ESCREVE AQUI, nem dentro
+// de crase: `routes/perigo/rotas.test.js` le este fonte apagando comentarios com
+// uma expressao regular, e um `barra asterisco` solto engole o codigo ate o
+// proximo fechamento -- inclusive os `DELETE FROM` que aquele arquivo conta.
+const UNIQUE_VIOLATION = '23505'
+const FK_VIOLATION = '23503'
+
+const comTraducao = async (promessa, mensagens) => {
+  try {
+    return await promessa()
+  } catch (err) {
+    // O `AppError` sai inteiro: o 404 do `lerAntes` nao tem `code` do
+    // PostgreSQL, mas deixar a guarda escrita e o que impede a proxima recusa
+    // de virar 409 por acidente.
+    if (err instanceof AppError) throw err
+    const frase = err && err.code ? mensagens[err.code] : null
+    if (!frase) throw err
+    throw new AppError(frase, httpCode.Conflict, err)
+  }
+}
+
+const ERROS_PROPRIEDADES_CAMADA = {
+  [UNIQUE_VIOLATION]:
+    'Esta camada já tem propriedades cadastradas nesta subfase',
+  [FK_VIOLATION]: 'A camada ou a subfase informada não existe'
+}
+
+const ERROS_INSUMO = {
+  [FK_VIOLATION]: 'Tipo de insumo ou grupo de insumo inexistente'
+}
+
 // A geometria entra por `ST_GeomFromGeoJSON`, que nasce SEM SRID: sem o
 // `ST_SetSRID` o PostGIS recusa a coluna tipada e a mensagem fala de SRID 0. O
 // `::text` e obrigatorio porque `ST_GeomFromGeoJSON` tem sobrecarga para text e
@@ -55,7 +97,7 @@ controller.getPropriedadesCamada = async () => {
 }
 
 controller.criaPropriedadesCamada = async (propriedades, usuarioUuid, contexto) => {
-  return db.conn.tx(async t => {
+  return comTraducao(() => db.conn.tx(async t => {
     const criadas = []
 
     for (const p of propriedades) {
@@ -101,11 +143,11 @@ controller.criaPropriedadesCamada = async (propriedades, usuarioUuid, contexto) 
     }
 
     return criadas
-  })
+  }), ERROS_PROPRIEDADES_CAMADA)
 }
 
 controller.atualizaPropriedadesCamada = async (propriedades, usuarioUuid, contexto) => {
-  return db.conn.tx(async t => {
+  return comTraducao(() => db.conn.tx(async t => {
     for (const p of propriedades) {
       const antes = await auditoriaCtrl.lerAntes(
         t, 'producao.propriedades_camada', p.id, 'Propriedade de camada'
@@ -148,7 +190,7 @@ controller.atualizaPropriedadesCamada = async (propriedades, usuarioUuid, contex
         contexto
       })
     }
-  })
+  }), ERROS_PROPRIEDADES_CAMADA)
 }
 
 controller.deletePropriedadesCamada = async (ids, usuarioUuid, contexto) => {
@@ -196,7 +238,7 @@ controller.getInsumo = async () => {
 }
 
 controller.criaInsumo = async (insumos, usuarioUuid, contexto) => {
-  return db.conn.tx(async t => {
+  return comTraducao(() => db.conn.tx(async t => {
     const criados = []
 
     for (const i of insumos) {
@@ -235,11 +277,11 @@ controller.criaInsumo = async (insumos, usuarioUuid, contexto) => {
     }
 
     return criados
-  })
+  }), ERROS_INSUMO)
 }
 
 controller.atualizaInsumo = async (insumos, usuarioUuid, contexto) => {
-  return db.conn.tx(async t => {
+  return comTraducao(() => db.conn.tx(async t => {
     for (const i of insumos) {
       const antes = await auditoriaCtrl.lerAntes(t, 'producao.insumo', i.id, 'Insumo')
 
@@ -280,7 +322,7 @@ controller.atualizaInsumo = async (insumos, usuarioUuid, contexto) => {
         contexto
       })
     }
-  })
+  }), ERROS_INSUMO)
 }
 
 controller.deleteInsumo = async (ids, usuarioUuid, contexto) => {
@@ -387,11 +429,31 @@ controller.limpaAtividades = async (usuarioUuid, usuarioAtorUuid, contexto, moti
       )
     }
 
+    // SOLTAR A ATIVIDADE NAO DEVOLVE A UNIDADE A FILA quando ela foi tirada de
+    // circulacao por apontamento de problema: `POST /distribuicao/problema_atividade`
+    // faz DUAS coisas, encerra a atividade e poe `unidade_trabalho.disponivel =
+    // FALSE`, e `distribuicao/sql/calcula_fila.sql` cobra `ut.disponivel IS TRUE`.
+    // Esta rota solta a atividade e responde sucesso; a unidade continua fora da
+    // fila para sempre, sem nada dizer que sobrou um passo.
+    //
+    // NAO SE RELIGA A COLUNA AQUI, e a omissao e deliberada: ela foi desligada por
+    // decisao de quem apontou o problema, e quem a religa e a Gerencia da Producao
+    // (`gerencia_producao_ctrl.js`, a rota de `disponivel`). O que faltava era
+    // DIZER, e e o que este numero faz -- no resumo, na trilha e na resposta.
+    const indisponiveis = await t.one(
+      `SELECT COUNT(DISTINCT ut.id)::int AS total
+         FROM producao.atividade AS a
+         INNER JOIN producao.unidade_trabalho AS ut ON ut.id = a.unidade_trabalho_id
+        WHERE a.id IN ($<ids:csv>) AND ut.disponivel IS FALSE`,
+      { ids: soltas.map(a => a.id) }
+    )
+
     const resumo = {
       operacao: 'atividades_do_usuario',
       alvo: `${alvo.usuario} (${usuarioUuid})`,
       removidos: soltas.length,
       preservados: preservadas.total,
+      unidades_indisponiveis: indisponiveis.total,
       detalhe: soltas.map(a => String(a.id))
     }
 
@@ -435,27 +497,50 @@ controller.limpaLog = async (usuarioUuid, contexto, motivo) => {
     )
   }
 
-  const conteudo = await fs.promises.readFile(arquivo, 'utf8')
+  return db.conn.tx(async t => {
+    // A LEITURA MORA DENTRO DA TRANSACAO, e nao antes dela. Tudo o que o winston
+    // escrever entre o `readFile` e o `writeFile` e truncado junto, porque a
+    // escrita substitui o arquivo pelo conteudo lido ANTES -- e as entradas mais
+    // recentes sao justamente as que alguem estava investigando. Ler aqui tira
+    // da janela a espera pela conexao do pool e deixa nela so o INSERT da
+    // trilha. FECHAR a janela de vez exige ROTACAO de arquivo (renomear e deixar
+    // o winston abrir um novo) em vez de reescrita, e isso e DECISAO.
+    const conteudo = await fs.promises.readFile(arquivo, 'utf8')
 
-  const linhas = conteudo.split('\n')
-  const mantidas = []
-  let mantendo = true
-  for (const linha of linhas) {
-    const data = new Date(linha.split('|')[0])
-    if (!Number.isNaN(data.getTime())) {
-      mantendo = data > corte
+    // O ELEMENTO VAZIO DO FIM SAI ANTES DO LACO. Um arquivo que termina em
+    // quebra de linha produz um `''` no `split`, e era ele que sumia com a
+    // quebra de linha final quando a ultima entrada era antiga: a proxima linha
+    // do winston grudava na anterior. A quebra volta na escrita, sempre.
+    const linhas = conteudo.split('\n')
+    if (linhas.length > 0 && linhas[linhas.length - 1] === '') linhas.pop()
+
+    // CONTA ENTRADA, E NAO LINHA. O `alvo` diz "entradas anteriores a N dias", e
+    // uma entrada pode ser multilinha (um stack trace): um log com 100 entradas
+    // de 5 linhas registrava `removidos: 500` para 100 entradas, e a trilha e
+    // append-only. As linhas continuam contadas ao lado, com o nome delas.
+    const mantidas = []
+    let mantendo = true
+    let entradasRemovidas = 0
+    let entradasPreservadas = 0
+    for (const linha of linhas) {
+      const data = new Date(linha.split('|')[0])
+      if (!Number.isNaN(data.getTime())) {
+        mantendo = data > corte
+        if (mantendo) entradasPreservadas += 1
+        else entradasRemovidas += 1
+      }
+      if (mantendo) mantidas.push(linha)
     }
-    if (mantendo) mantidas.push(linha)
-  }
 
-  const resumo = {
-    operacao: 'log_combinado',
-    alvo: `entradas anteriores a ${DIAS} dias`,
-    removidos: linhas.length - mantidas.length,
-    preservados: mantidas.length
-  }
+    const resumo = {
+      operacao: 'log_combinado',
+      alvo: `entradas anteriores a ${DIAS} dias`,
+      removidos: entradasRemovidas,
+      preservados: entradasPreservadas,
+      linhas_removidas: linhas.length - mantidas.length,
+      linhas_preservadas: mantidas.length
+    }
 
-  await db.conn.tx(async t => {
     await auditoriaCtrl.registrar(t, {
       tabela: ZONA_PERIGO,
       operacao: 'D',
@@ -465,10 +550,14 @@ controller.limpaLog = async (usuarioUuid, contexto, motivo) => {
       motivo
     })
 
-    await fs.promises.writeFile(arquivo, mantidas.join('\n'), 'utf8')
-  })
+    await fs.promises.writeFile(
+      arquivo,
+      mantidas.length > 0 ? `${mantidas.join('\n')}\n` : '',
+      'utf8'
+    )
 
-  return resumo
+    return resumo
+  })
 }
 
 /**
@@ -501,15 +590,39 @@ const detalheComTeto = alvos => {
     : mostrados
 }
 
-controller.deleteUtSemAtividade = async (usuarioUuid, contexto, motivo) => {
+// A CONTAGEM POR LOTE E O QUE TORNA A VARREDURA SEM ALVO AUDITAVEL. O `detalhe`
+// para nos primeiros vinte e o resto vira "e mais N", entao quem le o evento
+// depois nao consegue dizer de ONDE saiu o que sumiu. `por_lote` cabe sempre no
+// evento (um numero por lote) e responde exatamente a pergunta que se faz quando
+// alguem nota a falta.
+const contarPorLote = alvos => {
+  const contagem = {}
+  for (const alvo of alvos) {
+    const chave = String(alvo.lote_id)
+    contagem[chave] = (contagem[chave] || 0) + 1
+  }
+  return contagem
+}
+
+controller.deleteUtSemAtividade = async (usuarioUuid, contexto, motivo, loteId) => {
+  const comLote = loteId != null
+  const alvo = comLote
+    ? `unidades de trabalho sem atividade do lote ${loteId}`
+    : 'unidades de trabalho sem atividade'
+
   return db.conn.tx(async t => {
+    // O FILTRO DE LOTE ENTRA NA CONSULTA, e nao depois: filtrar em JS traria a
+    // instalacao inteira para a memoria so para descartar quase tudo, e o
+    // `LIMIT` que protege o evento nao protege a leitura.
     const alvos = await t.any(
       `SELECT ut.id, ut.nome, ut.lote_id
          FROM producao.unidade_trabalho AS ut
         WHERE NOT EXISTS (
           SELECT 1 FROM producao.atividade AS a WHERE a.unidade_trabalho_id = ut.id
         )
-        ORDER BY ut.id`
+        ${comLote ? 'AND ut.lote_id = $<loteId>' : ''}
+        ORDER BY ut.id`,
+      { loteId }
     )
 
     // VARREDURA SEM ALVO TAMBEM DEIXA RASTRO, e a saida antecipada que morava
@@ -522,7 +635,7 @@ controller.deleteUtSemAtividade = async (usuarioUuid, contexto, motivo) => {
     if (alvos.length === 0) {
       const vazio = {
         operacao: 'unidade_trabalho_sem_atividade',
-        alvo: 'unidades de trabalho sem atividade',
+        alvo,
         removidos: 0,
         detalhe: []
       }
@@ -554,10 +667,12 @@ controller.deleteUtSemAtividade = async (usuarioUuid, contexto, motivo) => {
 
     const resumo = {
       operacao: 'unidade_trabalho_sem_atividade',
-      alvo: 'unidades de trabalho sem atividade',
+      alvo,
       removidos: removidas.length,
       detalhe: detalheComTeto(alvos)
     }
+
+    if (!comLote) resumo.por_lote = contarPorLote(alvos)
 
     await auditoriaCtrl.registrar(t, {
       tabela: ZONA_PERIGO,

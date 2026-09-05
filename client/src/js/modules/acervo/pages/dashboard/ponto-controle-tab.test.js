@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from 'vitest';
+import { describe, test, expect, vi, afterEach } from 'vitest';
 
 vi.mock('chart.js', async () => await import('@components/charts/chart-stub.js'));
 
@@ -31,13 +31,28 @@ import { renderPontoControleTab } from './ponto-controle-tab.js';
 import * as servico from '@modules/acervo/services/ponto-controle-service.js';
 
 describe('aba de ponto de controle do dashboard', () => {
+  // Toda aba montada aqui e DESCARTADA no fim do caso. Os graficos dela assinam
+  // a troca de tema na `window`, e uma aba que ninguem solta continua se
+  // repintando dentro dos casos seguintes: o caso do final, que conta as
+  // instancias do Chart.js, contava o lixo dos outros.
+  const montadas = [];
+  const montar = async (container) => {
+    const controle = await renderPontoControleTab(container);
+    montadas.push(controle);
+    return controle;
+  };
+
+  afterEach(() => {
+    montadas.splice(0).forEach(c => c.cleanup());
+  });
+
   test('monta a aba inteira, com as DUAS tabelas no DOM', async () => {
     // Esta prova existe por causa de um defeito real: a aba passava o objeto
     // devolvido pelo createDataTable ao appendChild, em vez do `.element` dele.
     // O clique na aba morria com "parameter 1 is not of type 'Node'" e a aba
     // ficava pela metade, sem erro visivel na tela.
     const container = document.createElement('div');
-    await renderPontoControleTab(container);
+    await montar(container);
 
     expect(container.querySelectorAll('table').length).toBe(2);
     expect(container.querySelectorAll('.data-table-wrapper').length).toBe(2);
@@ -51,7 +66,7 @@ describe('aba de ponto de controle do dashboard', () => {
 
   test('os quatro cartões trazem o número que veio do servidor', async () => {
     const container = document.createElement('div');
-    await renderPontoControleTab(container);
+    await montar(container);
 
     const texto = container.textContent;
     expect(texto).toContain('3.490');   // pontos
@@ -61,7 +76,7 @@ describe('aba de ponto de controle do dashboard', () => {
 
   test('a linha da missão e a da importação chegam à tabela', async () => {
     const container = document.createElement('div');
-    await renderPontoControleTab(container);
+    await montar(container);
 
     const linhas = Array.from(container.querySelectorAll('tbody tr'))
       .map(tr => Array.from(tr.children).map(td => td.textContent).join(' '));
@@ -77,7 +92,7 @@ describe('aba de ponto de controle do dashboard', () => {
   test('erro do servidor vira estado de erro, e nao tabela vazia', async () => {
     servico.getDashboardPontoControle.mockRejectedValueOnce(new Error('sem rede'));
     const container = document.createElement('div');
-    await renderPontoControleTab(container);
+    await montar(container);
 
     expect(container.querySelector('.dashboard-erro')).not.toBeNull();
     // A mensagem do SERVIDOR: ela distingue "sem permissao" de "erro no banco".
@@ -90,7 +105,7 @@ describe('aba de ponto de controle do dashboard', () => {
   test('"Tentar de novo" devolve os paineis da aba', async () => {
     servico.getDashboardPontoControle.mockRejectedValueOnce(new Error('sem rede'));
     const container = document.createElement('div');
-    await renderPontoControleTab(container);
+    await montar(container);
 
     container.querySelector('.dashboard-erro .btn').click();
     await new Promise(r => setTimeout(r, 0));
@@ -105,7 +120,7 @@ describe('aba de ponto de controle do dashboard', () => {
   test('a carga seguinte devolve os paineis sozinha, sem clique', async () => {
     servico.getDashboardPontoControle.mockRejectedValueOnce(new Error('sem rede'));
     const container = document.createElement('div');
-    const controle = await renderPontoControleTab(container);
+    const controle = await montar(container);
     expect(container.querySelector('.dashboard-erro')).not.toBeNull();
 
     await controle.refresh();
@@ -116,12 +131,34 @@ describe('aba de ponto de controle do dashboard', () => {
 
   test('refresh recarrega sem remontar o DOM', async () => {
     const container = document.createElement('div');
-    const controle = await renderPontoControleTab(container);
+    const controle = await montar(container);
     const antes = container.querySelectorAll('table').length;
 
     await controle.refresh();
 
     expect(container.querySelectorAll('table').length).toBe(antes);
     expect(servico.getDashboardPontoControle).toHaveBeenCalledTimes(2);
+  });
+
+  // C1-N02: a aba criava dois graficos e duas tabelas e o `cleanup` dela so
+  // levantava uma bandeira. Depois que os graficos passaram a assinar a troca de
+  // tema na `window`, o cartao de uma aba descartada continuava vivo e se
+  // repintava a cada clique no botao de tema -- uma instancia nova de Chart.js
+  // por visita anterior a esta aba.
+  test('depois do cleanup, trocar o tema nao repinta a aba descartada', async () => {
+    const { instanciasChart } = await import('@components/charts/chart-stub.js');
+    const { toggleTheme } = await import('@utils/theme.js');
+
+    // Sem o `montar`: esta aba e descartada aqui dentro, na hora, e nao no
+    // `afterEach`.
+    const container = document.createElement('div');
+    const controle = await renderPontoControleTab(container);
+
+    controle.cleanup();
+    instanciasChart.length = 0;
+
+    toggleTheme();
+
+    expect(instanciasChart.length).toBe(0);
   });
 });

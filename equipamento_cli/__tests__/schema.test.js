@@ -228,11 +228,39 @@ test('o PUT do modulo e por id na URL, e o DELETE e um por vez', () => {
   assert.ok(texto.includes('DELETE /api/equipamento/:id'))
 })
 
-test('o contrato do PUT AVISA dos campos com default, com o valor de cada um', () => {
+test('o contrato do PUT nao anuncia default onde o PUT nao tem nenhum', () => {
+  // Ate 2026-09-05 os schemas de ATUALIZACAO deste modulo tinham default, e o
+  // contrato precisava gritar. Eles sairam (achado S3-05) e o servidor passou a
+  // preservar a coluna, entao gritar aqui seria anunciar um risco que nao
+  // existe mais -- e aviso que nao descreve nada e o que faz os outros pararem
+  // de ser lidos.
   const texto = esquema.contrato('transferencia', RECURSOS.transferencia)
-  assert.ok(texto.includes('ATENÇÃO, campos com default'))
-  assert.ok(texto.includes('transferido_siafi=false'))
-  assert.ok(texto.includes('apropriado_siafi=false'))
+  assert.ok(
+    !texto.includes('ATENÇÃO, campos com default'),
+    'o PUT da transferencia voltou a ter default, ou o contrato o inventou'
+  )
+  // E o contrato continua mandando o corpo INTEIRO, que e o que protege a linha
+  // dos campos que o PUT de fato substitui.
+  assert.ok(texto.includes('o PUT SUBSTITUI a linha'), texto)
+})
+
+test('o AVISO de default continua sendo renderizado onde ha default', () => {
+  // A maquinaria nao morreu com a mudanca do schema, e este caso e o que impede
+  // que ela apodreca sem ninguem notar: um recurso cujo schema de ATUALIZACAO
+  // tenha default volta a produzir a linha inteira, com o valor de cada campo.
+  // O banco de ensaio e o proprio schema de CRIACAO da transferencia, que e o
+  // unico lugar do modulo onde os dois SIAFI ainda tem `false` declarado.
+  const comDefaultNoPut = {
+    ...RECURSOS.transferencia,
+    schema: () => {
+      const m = RECURSOS.transferencia.schema()
+      return { ...m, atualizar: m.criar }
+    }
+  }
+  const texto = esquema.contrato('transferencia', comDefaultNoPut)
+  assert.ok(texto.includes('ATENÇÃO, campos com default'), texto)
+  assert.ok(texto.includes('transferido_siafi=false'), texto)
+  assert.ok(texto.includes('apropriado_siafi=false'), texto)
 })
 
 test('o contrato do PUT diz o que MUDA em relacao ao POST, e nao "os mesmos"', () => {

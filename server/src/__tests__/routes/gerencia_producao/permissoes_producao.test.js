@@ -502,6 +502,52 @@ describe('revogar o acesso de uma atividade', () => {
       permissoes.revogarAcesso({ atividadeId: 7, usuarioUuid: UUID, contexto: CONTEXTO })
     ).resolves.toBeNull()
   })
+
+  // O PAPEL SUMIU DO BANCO DE EDICAO, e o caminho e comum: o banco foi
+  // restaurado de um backup (papel efemero nao volta) ou o papel venceu e
+  // alguem o removeu a mao. Ate aqui, a "revogacao" CRIAVA um papel novo -- com
+  // senha valida por cinco dias e capaz de abrir sessao, porque o
+  // `REVOKE CONNECT` nao tira o CONNECT que o Postgres da a PUBLIC -- e ainda
+  // respondia `revogou: true`.
+  it('nao cria papel nenhum quando ele nao existe mais no banco de edicao', async () => {
+    const f = ligar({
+      'FROM producao.atividade AS a': DADO,
+      'FROM producao.login_temporario': { login: 'sap_fulano', senha: 'senha-guardada' },
+      'FROM pg_catalog.pg_roles': null
+    })
+
+    const r = await permissoes.revogarAcesso({
+      atividadeId: 7, usuarioUuid: UUID, contexto: CONTEXTO
+    })
+
+    expect(r).toEqual({ login: 'sap_fulano', revogou: false })
+
+    const ddl = f.registro.producao.join('\n')
+    expect(ddl).not.toContain('CREATE USER')
+    expect(ddl).not.toContain('ALTER USER')
+    expect(ddl).not.toContain('GRANT')
+  })
+
+  // O UNICO EFEITO QUE RESTA e apagar a linha guardada: a senha ali dentro nao
+  // abre mais nada, e deixa-la faria o proximo pedido partir de um estado que o
+  // banco de edicao nao tem. Nenhuma linha NOVA entra -- gravar uma senha para
+  // um papel inexistente e a mesma mentira, so que no outro banco.
+  it('apaga a linha guardada, sem gravar outra, e audita a revogacao', async () => {
+    const f = ligar({
+      'FROM producao.atividade AS a': DADO,
+      'FROM producao.login_temporario': { login: 'sap_fulano', senha: 'senha-guardada' },
+      'FROM pg_catalog.pg_roles': null
+    })
+
+    await permissoes.revogarAcesso({
+      atividadeId: 7, usuarioUuid: UUID, contexto: CONTEXTO
+    })
+
+    const sca = f.registro.sca.join('\n')
+    expect(sca).toContain('DELETE FROM producao.login_temporario')
+    expect(sca).not.toContain('INSERT INTO producao.login_temporario')
+    expect(sca).toContain('Revoga')
+  })
 })
 
 describe('a revogacao de uma pessoa pela gerencia', () => {

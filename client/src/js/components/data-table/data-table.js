@@ -250,8 +250,21 @@ export function createDataTable({
         const vb = valorDe(b);
         // Nulo vai para o FIM, independente da direção: a linha sem valor não
         // é "a menor", é a que não responde ao critério.
-        if (va === null || va === undefined) return 1;
-        if (vb === null || vb === undefined) return -1;
+        //
+        // OS DOIS NULOS EMPATAM. Sem o empate, `cmp(a,b)` e `cmp(b,a)` valiam os
+        // DOIS 1, o que quebra a antissimetria que o `Array.prototype.sort`
+        // exige: com um comparador inconsistente, a ordem que sai é escolha da
+        // implementação, e não do código. Na prática o TimSort do V8 hoje deixa
+        // os nulos na ordem de entrada assim mesmo (sondado de 4 a 60 linhas,
+        // com nulos no fim e intercalados, sem divergência) -- o que este empate
+        // faz é transformar esse acerto de sorte em GARANTIA, para as colunas
+        // que quase só têm nulo (`data_fim` de um bem em uso, `prazo` sem prazo,
+        // `data_entrega` do que não entregou).
+        const aNulo = va === null || va === undefined;
+        const bNulo = vb === null || vb === undefined;
+        if (aNulo && bNulo) return 0;
+        if (aNulo) return 1;
+        if (bNulo) return -1;
         if (typeof va === 'number' && typeof vb === 'number') {
           return (va - vb) * sortDir;
         }
@@ -327,11 +340,32 @@ export function createDataTable({
     render();
   }
 
+  /**
+   * A caixa "selecionar todos da página" e as linhas que ela representa.
+   *
+   * Guardadas porque marcar UMA linha não repinta a tabela, de propósito: o
+   * `onChange` da linha só mexe na classe do <tr>, e repintar ali custaria o
+   * foco de quem marca pelo teclado. Sem esta referência a caixa do cabeçalho
+   * ficaria congelada no estado do último render.
+   */
+  let caixaDaPagina = null;
+  let linhasDaPagina = [];
+
+  function sincronizarCaixaDaPagina() {
+    if (!caixaDaPagina) return;
+    const todas = linhasDaPagina.length > 0 && linhasDaPagina.every(isSelected);
+    caixaDaPagina.checked = todas;
+    // INDETERMINADO com parte da página escolhida. Sem isso, 3 de 10 linhas
+    // marcadas desenham a caixa VAZIA, que é o mesmo desenho de "nada
+    // escolhido": quem clica esperando "marcar o resto" marca as 10 (certo) e,
+    // no clique seguinte, desmarca as 10, inclusive as 3 que já estavam.
+    caixaDaPagina.indeterminate = !todas && linhasDaPagina.some(isSelected);
+  }
+
   function buildHeader(pageRows) {
     const cells = [];
 
     if (selectable) {
-      const allOnPageSelected = pageRows.length > 0 && pageRows.every(isSelected);
       const headerCheckbox = el('input', {
         className: 'data-table__checkbox',
         type: 'checkbox',
@@ -346,7 +380,9 @@ export function createDataTable({
           render();
         },
       });
-      headerCheckbox.checked = allOnPageSelected;
+      caixaDaPagina = headerCheckbox;
+      linhasDaPagina = pageRows;
+      sincronizarCaixaDaPagina();
       cells.push(el('th', { className: 'data-table__checkbox-cell' }, [headerCheckbox]));
     }
 
@@ -451,6 +487,8 @@ export function createDataTable({
           }
           notifySelection();
           tr.classList.toggle('data-table__row--selected', selected.has(chave));
+          // A caixa do cabeçalho fala da PÁGINA, e acabou de mudar de estado.
+          sincronizarCaixaDaPagina();
         },
       });
       cells.push(el('td', { className: 'data-table__checkbox-cell' }, [estado.checkbox]));

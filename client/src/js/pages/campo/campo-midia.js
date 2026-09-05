@@ -24,6 +24,17 @@ const dia = (valor) => (valor
   ? String(valor).slice(0, 10).split('-').reverse().join('/')
   : '-');
 
+/**
+ * O maior arquivo que o servidor aceita, em bytes CRUS.
+ *
+ * ESPELHA `campo_schema.MAX_BASE64` (58.720.256 caracteres): base64 cresce o
+ * binário em um terço, então o teto do arquivo é três quartos daquele número --
+ * 42 MiB. O teto de lá existe porque ele TEM de caber no `express.json` de
+ * 60mb; com o corpo maior que isso, o body parser responde 413 e o Joi nunca
+ * roda, e a mensagem que sobra não fala nem de foto nem de campo.
+ */
+export const MAX_BYTES_ARQUIVO = 44040192;
+
 const bytesLegiveis = (n) => {
   if (n == null) return '-';
   if (n < 1024) return `${n} B`;
@@ -118,14 +129,38 @@ export function abrirTelaCheia({ itens, indice = 0 }) {
 
   const fechar = () => {
     soltarUrl();
-    document.removeEventListener('keydown', aoTeclar);
+    window.removeEventListener('keydown', aoTeclar, true);
+    window.removeEventListener('hashchange', fechar);
     fundo.remove();
   };
 
+  /**
+   * O TECLADO DA TELA CHEIA VEM ANTES DO MODAL DE BAIXO, e é por isso que o
+   * ouvinte mora na CAPTURA da `window`.
+   *
+   * Esta tela cheia é aberta SEMPRE de dentro de um modal (a ficha do campo ou o
+   * formulário de edição), e ela NÃO está na pilha de `modal-base.js` -- é um
+   * `<div>` solto no `body`. O modal registra o Escape dele na captura do
+   * `document` e chama `stopPropagation`, então o Escape morria lá: a tela cheia
+   * continuava na frente e o que fechava era o formulário ATRÁS dela, com tudo o
+   * que estivesse digitado. A captura da `window` roda ANTES da do `document`, e
+   * o `stopPropagation` daqui é o que faz a camada de cima ganhar a tecla, que é
+   * o que se espera de quem está por cima.
+   */
   function aoTeclar(evento) {
-    if (evento.key === 'Escape') { evento.preventDefault(); fechar(); }
-    else if (evento.key === 'ArrowRight') { evento.preventDefault(); ir(1); }
-    else if (evento.key === 'ArrowLeft') { evento.preventDefault(); ir(-1); }
+    // A TELA CHEIA PODE TER MORRIDO SEM PASSAR POR `fechar`: o `<div>` mora no
+    // `body`, e o Voltar do navegador troca a página sem tirá-lo de lá. Sem
+    // esta saída o ouvinte órfão come a tecla de todas as telas seguintes, e na
+    // CAPTURA da `window` ele ganha até do Escape do modal.
+    if (!fundo.isConnected) { fechar(); return; }
+    if (evento.key !== 'Escape' && evento.key !== 'ArrowRight' && evento.key !== 'ArrowLeft') {
+      return;
+    }
+    evento.preventDefault();
+    evento.stopPropagation();
+    if (evento.key === 'Escape') fechar();
+    else if (evento.key === 'ArrowRight') ir(1);
+    else ir(-1);
   }
 
   const anterior = el('button', {
@@ -173,7 +208,12 @@ export function abrirTelaCheia({ itens, indice = 0 }) {
     legenda,
   ]);
 
-  document.addEventListener('keydown', aoTeclar);
+  window.addEventListener('keydown', aoTeclar, true);
+  // A NAVEGAÇÃO FECHA A TELA CHEIA. Ela cobre a tela inteira e não deixa nenhum
+  // menu clicável, então o gesto natural para sair é o Voltar do navegador --
+  // que troca a rota sem passar por `fechar` e deixaria o `<div>` por cima da
+  // tela seguinte.
+  window.addEventListener('hashchange', fechar);
   document.body.appendChild(fundo);
   desenhar();
 
@@ -196,12 +236,30 @@ export function criarGaleriaCampo({ campoId, podeEditar = false, aoMudar = null 
   const blobs = [];
   let disposed = false;
   let itens = [];
+  // A TELA CHEIA ABERTA, para fechá-la no `cleanup`. Ela mora no `body`, fora
+  // desta árvore: sem esta referência, sair da página deixaria o
+  // `<div class="campo-luz">` cobrindo a tela seguinte.
+  let luz = null;
+
+  const abrirLuz = (indice) => {
+    if (luz) luz.fechar();
+    luz = abrirTelaCheia({ itens, indice });
+  };
 
   const grade = el('div', { className: 'campo-galeria' });
   const acoes = el('div', { className: 'campo-detalhe__acoes' });
   const element = el('div', {}, [acoes, grade]);
 
   if (podeEditar) {
+    // O RÓTULO É UM `<span>` PRÓPRIO: ele troca por "Enviando..." durante a
+    // subida, e escrever no `textContent` do botão inteiro levaria o ícone junto.
+    const rotuloEnviar = el('span', { textContent: 'Enviar foto ou vídeo' });
+    const botaoEnviar = el('button', {
+      className: 'btn btn--secondary btn--sm',
+      type: 'button',
+      onClick: () => entrada.click(),
+    }, [svgIcon(ICONS.add, 16), rotuloEnviar]);
+
     const entrada = el('input', {
       type: 'file',
       accept: 'image/*,video/*',
@@ -210,28 +268,62 @@ export function criarGaleriaCampo({ campoId, podeEditar = false, aoMudar = null 
       onChange: async (e) => {
         const arquivos = [...(e.target.files || [])];
         if (!arquivos.length) return;
+
+        // O TETO É CONFERIDO ANTES DE LER O ARQUIVO, e espelha o
+        // `campo_schema.MAX_BASE64` do servidor. É a mesma regra do teto de
+        // 50.000 pontos de `campo-trajetos.js`: sem ela, quem escolhe um vídeo
+        // de 45 MB espera o navegador montar 60 MB de base64 para receber um
+        // 413 do body parser, cuja mensagem não fala nem do arquivo nem do
+        // campo. Nomear o arquivo aqui é o que diz QUAL deles reprovou.
+        const grande = arquivos.find(a => a.size > MAX_BYTES_ARQUIVO);
+        if (grande) {
+          showError(`"${grande.name}" tem ${bytesLegiveis(grande.size)} e o teto é `
+            + `${bytesLegiveis(MAX_BYTES_ARQUIVO)} por arquivo. Nenhum arquivo foi enviado.`);
+          e.target.value = '';
+          return;
+        }
+
+        // A TELA DIZ QUE ESTÁ SUBINDO. São até 37 MB por arquivo, e sem isto
+        // nada mudava entre o clique e o aviso de sucesso: a pessoa clicava de
+        // novo, e a segunda escolha subia junto com a primeira.
+        botaoEnviar.disabled = true;
+        rotuloEnviar.textContent = arquivos.length > 1
+          ? `Enviando ${arquivos.length} arquivos...`
+          : 'Enviando...';
+        // QUANTOS JÁ ENTRARAM. É o que separa "nada subiu" de "metade subiu", e
+        // o que diz QUAL arquivo reprovou: o que falhou é o de índice `enviados`.
+        let enviados = 0;
         try {
           // UM DE CADA VEZ, e não `Promise.all`: são até 37 MB por arquivo, e
           // três subidas simultâneas competem pela mesma conexão e pelo teto de
           // 60mb do body parser.
-          for (const arquivo of arquivos) await subir(campoId, arquivo);
+          for (const arquivo of arquivos) {
+            await subir(campoId, arquivo);
+            enviados += 1;
+          }
           showSuccess(arquivos.length > 1
             ? `${arquivos.length} arquivos enviados`
             : 'Arquivo enviado com sucesso');
-          if (aoMudar) aoMudar();
-          await recarregar();
         } catch (err) {
-          showError(err.message || 'Erro ao enviar o arquivo');
+          // O QUE JÁ SUBIU TEM DE APARECER. A subida é uma por vez, então a
+          // falha na segunda de três deixa a primeira GRAVADA. Sem repintar, a
+          // pessoa escolhe as três de novo e a primeira entra pela segunda vez:
+          // `campo.imagem` não tem chave por conteúdo que a recuse.
+          const qual = arquivos[enviados] ? ` ao enviar "${arquivos[enviados].name}"` : '';
+          showError(`${err.message || 'Erro'}${qual}. `
+            + `${enviados} de ${arquivos.length} foram enviados.`);
         } finally {
+          if (enviados) {
+            if (aoMudar) aoMudar();
+            await recarregar();
+          }
           e.target.value = '';
+          botaoEnviar.disabled = false;
+          rotuloEnviar.textContent = 'Enviar foto ou vídeo';
         }
       },
     });
-    acoes.append(entrada, el('button', {
-      className: 'btn btn--secondary btn--sm',
-      type: 'button',
-      onClick: () => entrada.click(),
-    }, [svgIcon(ICONS.add, 16), 'Enviar foto ou vídeo']));
+    acoes.append(entrada, botaoEnviar);
   }
 
   /**
@@ -265,11 +357,11 @@ export function criarGaleriaCampo({ campoId, podeEditar = false, aoMudar = null 
       role: 'button',
       tabindex: '0',
       title: 'Abrir em tela cheia',
-      onClick: () => abrirTelaCheia({ itens, indice }),
+      onClick: () => abrirLuz(indice),
       onKeyDown: (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          abrirTelaCheia({ itens, indice });
+          abrirLuz(indice);
         }
       },
     }, [el('span', { className: 'campo-galeria__carregando', textContent: 'carregando...' })]);
@@ -451,6 +543,7 @@ export function criarGaleriaCampo({ campoId, podeEditar = false, aoMudar = null 
 
   function cleanup() {
     disposed = true;
+    if (luz) { luz.fechar(); luz = null; }
     for (const url of blobs) URL.revokeObjectURL(url);
     blobs.length = 0;
   }

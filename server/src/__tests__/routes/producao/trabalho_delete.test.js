@@ -349,7 +349,8 @@ describe('DELETE /unidade_trabalho/atividades', () => {
       .send({ unidade_trabalho_ids: [101, 102] })
 
     expect(res.status).toBe(200)
-    expect(res.body.dados).toEqual({ apagadas: 2 })
+    // As duas unidades pedidas tinham atividade apagavel: nada ficou de fora.
+    expect(res.body.dados).toEqual({ apagadas: 2, ignoradas: [] })
     expect(apagamentosNormalizados()).toEqual([
       'DELETE FROM producao.atividade WHERE unidade_trabalho_id IN (101,102) ' +
         'AND tipo_situacao_atividade_id IN (1, 5) RETURNING *'
@@ -377,16 +378,34 @@ describe('DELETE /unidade_trabalho/atividades', () => {
     expect(eventos().every(e => e.valores.entidadeId === '55')).toBe(true)
   })
 
-  it('não audita nada quando não havia o que limpar', async () => {
+  // ZERO APAGADAS E RECUSA, e nao um 200 com `apagadas: 0`. O filtro por
+  // situacao pode nao alcancar nada, e a mensagem de sucesso mandava a pessoa
+  // de volta para a grade com as mesmas linhas e nada explicando por que.
+  // CONTRATO MUDADO EM 2026-09-05 (S6-04): antes eram 200 e `{ apagadas: 0 }`.
+  it('recusa com 400 quando não havia o que limpar, e não audita nada', async () => {
     dublarLimpeza([])
 
     const res = await request(app)
       .delete('/api/producao/unidade_trabalho/atividades')
       .send({ unidade_trabalho_ids: [101] })
 
-    expect(res.status).toBe(200)
-    expect(res.body.dados).toEqual({ apagadas: 0 })
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('Nenhuma atividade foi apagada')
+    expect(res.body.message).toContain('Não finalizada')
     expect(eventos()).toEqual([])
+  })
+
+  // A EXCLUSAO PARCIAL NOMEIA O QUE FICOU: pediu duas unidades, so uma tinha
+  // atividade apagavel, e a outra precisa aparecer para a tela poder dizer.
+  it('a exclusão parcial devolve as unidades que ficaram de fora', async () => {
+    dublarLimpeza([ATIVIDADES_LIMPAS[0]])
+
+    const res = await request(app)
+      .delete('/api/producao/unidade_trabalho/atividades')
+      .send({ unidade_trabalho_ids: [101, 102] })
+
+    expect(res.status).toBe(200)
+    expect(res.body.dados).toEqual({ apagadas: 1, ignoradas: [102] })
   })
 })
 
@@ -424,7 +443,27 @@ describe('DELETE /atividades', () => {
       'DELETE FROM producao.atividade WHERE id IN (11,12) ' +
         'AND tipo_situacao_atividade_id = 1 RETURNING *'
     ])
-    expect(res.body.dados).toEqual({ apagadas: 1 })
+    // DOIS PEDIDOS, UMA APAGADA: a 12 ja tinha comecado, e a resposta a nomeia
+    // em vez de sumir com ela em silencio.
+    expect(res.body.dados).toEqual({ apagadas: 1, ignoradas: [12] })
+  })
+
+  // ZERO APAGADAS E RECUSA. Marcar tres linhas Finalizadas e mandar apagar
+  // respondia 200 com `Atividades nao iniciadas excluidas com sucesso` e
+  // `apagadas: 0`: a pessoa voltava para a grade com as tres no lugar. A irma
+  // `criarAtividades` ja lancava 400 quando nada era criado.
+  // CONTRATO MUDADO EM 2026-09-05 (S6-04): antes eram 200 e `{ apagadas: 0 }`.
+  it('recusa com 400 quando nenhuma das informadas está Não iniciada', async () => {
+    dublarAtividades({ apagadas: [] })
+
+    const res = await request(app)
+      .delete('/api/producao/atividades')
+      .send({ atividades_ids: [11, 12] })
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain('Nenhuma atividade foi apagada')
+    expect(res.body.message).toContain('Não iniciada')
+    expect(eventos()).toEqual([])
   })
 
   // A REVISAO E A CORRECAO CAEM JUNTAS OU NAO CAEM: uma revisao sem a correcao

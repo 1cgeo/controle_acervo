@@ -120,7 +120,12 @@ export async function renderPedidoWizard(container, _ctx) {
     // um pedido cumpre meta do proprio exercicio. O PIT e reescrito todo ano.
     [clientes, situacoes, canais, formasEntrega, metas] = await Promise.all([
       getClientes(), getDominioSituacaoPedido(), getDominioCanalRecebimento(),
-      getDominioFormaEntrega(), getMetasPit(new Date().getFullYear()),
+      getDominioFormaEntrega(),
+      // AS METAS CARREGAM SOZINHAS, com o proprio `catch`: elas sao de OUTRO
+      // modulo (GET /pit/metas) e nada mais do pedido depende do PIT. Dentro do
+      // `Promise.all` a queda do PIT deixava a tela de criar pedido sem montar,
+      // e devolvia um bloco de erro no lugar dela. O combo abre vazio.
+      getMetasPit(new Date().getFullYear()).catch(() => []),
     ]);
   } catch (err) {
     if (disposed) return;

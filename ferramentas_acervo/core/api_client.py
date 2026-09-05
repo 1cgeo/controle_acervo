@@ -109,6 +109,10 @@ class APIClient:
         url = urljoin(self.base_url.rstrip('/') + '/', f"api/{endpoint}")
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
         timeout = timeout or self.REQUEST_TIMEOUT
+        # A mensagem do envelope da ULTIMA falha HTTP, para quem chamou decidir o
+        # que fazer (o `_make_request` devolve None em erro e a frase morria no
+        # dialogo). Zerada a cada requisicao.
+        self.ultima_mensagem_do_servidor = None
 
         try:
             if method == 'GET':
@@ -130,7 +134,12 @@ class APIClient:
         except Timeout:
             self.show_error("Tempo Esgotado", "O servidor demorou muito para responder. Tente novamente mais tarde.")
         except HTTPError as e:
-            if e.response.status_code == 401 and _retry and self._try_relogin():
+            # `e.response` pode ser None (redirecionamento inválido, adaptador que
+            # falha depois de montar a exceção). Sem esta guarda a desreferência
+            # estoura AttributeError DENTRO do except, o `except Exception` irmão
+            # não o pega, e o erro sobe cru sem passar pelo _handle_http_error.
+            if (e.response is not None and e.response.status_code == 401
+                    and _retry and self._try_relogin()):
                 return self._make_request(method, endpoint, data=data, params=params, timeout=timeout, _retry=False)
             self._handle_http_error(e, method)
         except ValueError as e:
@@ -153,7 +162,21 @@ class APIClient:
 
     def _handle_http_error(self, e, method):
         """Método interno para lidar com erros HTTP."""
+        # HTTPError sem resposta acontece (redirecionamento inválido, adaptador
+        # que falha depois de montar a exceção). Sem esta guarda, o
+        # `e.response.status_code` estourava AttributeError DENTRO do bloco
+        # `except`, então nem o `except Exception` de quem chamou o pegava: o
+        # erro subia cru e o diálogo morria calado.
+        if e.response is None:
+            self.show_error(
+                "Erro de HTTP",
+                f"A requisição {method} falhou sem resposta do servidor. "
+                "Verifique a conexão com a rede e tente novamente."
+            )
+            return
+
         server_msg = self._extract_server_message(e.response)
+        self.ultima_mensagem_do_servidor = server_msg
         if e.response.status_code == 401:
             self.show_error("Não Autorizado", "Sua sessão expirou e não foi possível reconectar. Feche o plugin e faça login novamente.")
         elif e.response.status_code == 403:
@@ -197,6 +220,16 @@ class APIClient:
                 # servidor) não pode herdar a lista da sessão anterior.
                 self.dominios.invalidar()
                 return True
+            if response is not None:
+                # Respondeu, mas fora do envelope esperado: o _make_request só
+                # avisa quando há erro de HTTP, e sem isto a tela de login
+                # ficava muda (é o que acontece quando a URL aponta para outro
+                # serviço, ou para um proxy que devolve HTML).
+                self.show_error(
+                    "Falha no Login",
+                    "O servidor respondeu sem os dados da sessão. Confira o "
+                    "endereço do servidor e tente novamente."
+                )
         except Exception as e:
             self.show_error("Falha no Login", f"Não foi possível fazer login: {str(e)}")
         return False

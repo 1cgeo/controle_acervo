@@ -19,6 +19,25 @@ const {
 
 const UUID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'
 
+// O RELÓGIO CONGELA NO ARQUIVO INTEIRO, e não dentro de um describe.
+//
+// O `.max('now')` de `data_movimento` lê o relógio a cada `validate`, e um caso
+// que monte "o dia de amanhã" com o Date real passa por ser hoje hoje. Com a
+// data fixa, "2026-09-06" é futuro para sempre e "2026-09-04" é passado para
+// sempre, e os dois casos abaixo medem a REGRA em vez do calendário.
+//
+// A data escolhida é posterior a todas as datas fixas deste arquivo (a mais
+// recente é 2026-08-08), então nenhum caso antigo muda de lado.
+const HOJE = '2026-09-05T12:00:00Z'
+
+beforeAll(() => {
+  jest.useFakeTimers().setSystemTime(new Date(HOJE))
+})
+
+afterAll(() => {
+  jest.useRealTimers()
+})
+
 describe('Schemas da mapoteca', () => {
   // -------------------------------------------------------------------------
   // Material se conta em UNIDADE
@@ -383,6 +402,64 @@ describe('Schemas da mapoteca', () => {
       )
     })
 
+    /**
+     * O LIVRO REGISTRA O QUE JÁ ACONTECEU, e por isso o dia não passa de hoje.
+     *
+     * O saldo é DERIVADO do livro por gatilho: um consumo lançado com o ano
+     * errado ('2027-08-01') derruba o estoque HOJE e some do consumo do mês na
+     * 7.2 do RPCMTec, que filtra por período. O material sumia da prateleira sem
+     * aparecer em relatório nenhum, e o conserto era achar a linha errada.
+     *
+     * HOJE ENTRA, e é a fronteira que interessa: o lançamento do dia é o caso
+     * comum, e um `.less('now')` recusaria justamente ele.
+     */
+    it('recusa data de movimento no FUTURO', () => {
+      recusaPor(
+        mapotecaSchema.movimentoMaterial.validate({
+          ...base,
+          data_movimento: '2026-09-06',
+          tipo_movimento_id: TIPO_MOVIMENTO.CONSUMO,
+          localizacao_origem_id: LOCAL.SECAO
+        }),
+        'data_movimento',
+        'date.max'
+      )
+    })
+
+    it('aceita o dia de HOJE e o dia anterior', () => {
+      const consumo = {
+        ...base,
+        tipo_movimento_id: TIPO_MOVIMENTO.CONSUMO,
+        localizacao_origem_id: LOCAL.SECAO
+      }
+      // O `.raw()` continua valendo com o `.max()` ao lado: o valor aceito sai
+      // como a STRING que entrou, e não como o Date que o Joi usou para comparar.
+      const hoje = aceita(
+        mapotecaSchema.movimentoMaterial.validate({ ...consumo, data_movimento: '2026-09-05' })
+      )
+      expect(hoje.data_movimento).toBe('2026-09-05')
+
+      aceita(
+        mapotecaSchema.movimentoMaterial.validate({ ...consumo, data_movimento: '2026-09-04' })
+      )
+    })
+
+    it('o mesmo limite vale na ATUALIZAÇÃO do movimento', () => {
+      // A guarda numa porta só é a assimetria que este módulo já pagou uma vez:
+      // o corretor lançaria pelo POST recusado e gravaria pelo PUT.
+      recusaPor(
+        mapotecaSchema.movimentoMaterialAtualizacao.validate({
+          id: 1,
+          ...base,
+          data_movimento: '2027-08-01',
+          tipo_movimento_id: TIPO_MOVIMENTO.CONSUMO,
+          localizacao_origem_id: LOCAL.SECAO
+        }),
+        'data_movimento',
+        'date.max'
+      )
+    })
+
     it('o motivo e opcional nos tres tipos', () => {
       // A exigencia que existia era da Contagem, e saiu com ela: os tres que
       // ficaram se explicam pelo proprio tipo. Sem esta prova, um `.required()`
@@ -427,6 +504,45 @@ describe('Schemas da mapoteca', () => {
 
     it.each(Object.keys(corpos))('%s recusa corpo sem id', (schema) => {
       recusaPor(mapotecaSchema[schema].validate(corpos[schema]), 'id', 'any.required')
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // A etiqueta de envio precisa de um destinatario DE VERDADE
+  // -------------------------------------------------------------------------
+  // `mapoteca.etiqueta_envio.destinatario` e NOT NULL, e o controller converte
+  // "so espaco" em NULL (`vazioVirouNulo`, em etiqueta_envio_ctrl.js) para o CEP
+  // apagado na tela nao virar string vazia. As duas coisas juntas faziam um
+  // destinatario com tres espacos passar pelo Joi e morrer no banco como 500
+  // "Erro no servidor" -- enquanto o destinatario VAZIO, que e o mesmo engano da
+  // mesma pessoa, ja saia como 400 com a frase certa.
+  describe('etiqueta de envio', () => {
+    const etiqueta = { endereco: 'Av. Ipiranga, 1000', cep: '90160-091' }
+
+    it('recusa destinatario vazio', () => {
+      recusaPor(
+        mapotecaSchema.etiquetaEnvio.validate({ ...etiqueta, destinatario: '' }),
+        'destinatario',
+        'string.empty'
+      )
+    })
+
+    it('recusa destinatario so com espaco, como o vazio', () => {
+      recusaPor(
+        mapotecaSchema.etiquetaEnvio.validate({ ...etiqueta, destinatario: '   ' }),
+        'destinatario',
+        'string.empty'
+      )
+    })
+
+    it('apara o espaco da ponta do destinatario', () => {
+      const value = aceita(
+        mapotecaSchema.etiquetaEnvio.validate({
+          ...etiqueta,
+          destinatario: '  4º Centro de Geoinformação  '
+        })
+      )
+      expect(value.destinatario).toBe('4º Centro de Geoinformação')
     })
   })
 })

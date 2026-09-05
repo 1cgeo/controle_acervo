@@ -6,6 +6,7 @@ import Router, {
   acessoLoader, adminLoader, authLoader, gerenteLoader, perfilLoader, rotaRaiz,
 } from './router.js';
 import { createMainLayout } from '@components/layout/main-layout.js';
+import { estadoErro } from '@components/estado-erro.js';
 import { modulosPortados } from '@modules/registry.js';
 import { renderLogin } from '@pages/login.js';
 import { renderUnauthorized } from '@pages/unauthorized.js';
@@ -52,18 +53,43 @@ function clearLayout() {
   app.innerHTML = '';
 }
 
+/**
+ * Monta uma pagina no container, e a TELA EM BRANCO vira estado de erro.
+ *
+ * O render de uma pagina que REJEITA na montagem (a primeira chamada sem
+ * `catch`, o servidor fora do ar, o 403 de uma rota que a tela nao devia ter
+ * pedido) deixava a area de conteudo vazia: o container ja tinha sido esvaziado
+ * aqui em cima, a excecao subia ate o `hashchange` e morria no console. Quem
+ * abriu a tela via um retangulo branco, sem o motivo e sem o caminho de volta.
+ *
+ * O "Tentar de novo" passa pelo `router.resolve()`, e nao chama `renderFn`
+ * direto: a remontagem tem de devolver a limpeza PARA O ROUTER, senao a pagina
+ * que se recupera deixaria para tras o `setInterval` e os ouvintes dela.
+ *
+ * @param {Function} renderFn
+ * @param {HTMLElement} destino
+ * @param {Object} ctx
+ * @returns {Promise<Function|undefined>} a limpeza da pagina, quando ela monta
+ */
+async function montar(renderFn, destino, ctx) {
+  destino.innerHTML = '';
+  try {
+    return await renderFn(destino, ctx);
+  } catch (err) {
+    console.error('Falha ao montar a página:', err);
+    destino.replaceChildren(estadoErro(err, () => router.resolve()));
+    return undefined;
+  }
+}
+
 function withLayout(renderFn) {
-  return async (_container, ctx) => {
-    const contentArea = getContentArea();
-    contentArea.innerHTML = '';
-    return await renderFn(contentArea, ctx);
-  };
+  return (_container, ctx) => montar(renderFn, getContentArea(), ctx);
 }
 
 function standalone(renderFn) {
-  return async (_container, ctx) => {
+  return (_container, ctx) => {
     clearLayout();
-    return await renderFn(app, ctx);
+    return montar(renderFn, app, ctx);
   };
 }
 
@@ -282,14 +308,12 @@ for (const modulo of modulosPortados()) {
 // Paginas de erro: com layout quando ha sessao, soltas quando nao ha.
 // ---------------------------------------------------------------------------
 function errorPage(renderFn) {
-  return async (_container, ctx) => {
+  return (_container, ctx) => {
     if (isAuthenticated()) {
-      const contentArea = getContentArea();
-      contentArea.innerHTML = '';
-      return await renderFn(contentArea, ctx);
+      return montar(renderFn, getContentArea(), ctx);
     }
     clearLayout();
-    return await renderFn(app, ctx);
+    return montar(renderFn, app, ctx);
   };
 }
 

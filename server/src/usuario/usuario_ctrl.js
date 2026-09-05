@@ -15,10 +15,15 @@ const { auditoriaCtrl } = require("../auditoria");
 const controller = {};
 
 // Codigos de erro do PostgreSQL que esta feature traduz para frase de gente.
-// Erro cru de banco vira 500 e esconde a causa, que aqui e sempre uma das duas
+// Erro cru de banco vira 500 e esconde a causa, que aqui e sempre uma das tres
 // abaixo. Mesmo padrao do `isUniqueViolation` do modulo orcamento.
 const PG_UNIQUE_VIOLATION = "23505";
 const PG_FOREIGN_KEY_VIOLATION = "23503";
+// O impasse e o preco ACEITO da trava do ultimo administrador (ver
+// `verificaUltimoAdmin`). Aceitar o preco nao e motivo para entrega-lo como
+// "Erro no servidor": e a unica das tres em que tentar de novo resolve, e quem
+// le a mensagem precisa saber disso.
+const PG_DEADLOCK_DETECTED = "40P01";
 
 const ehCodigo = (err, code) =>
   typeof err === "object" && err !== null && err.code === code;
@@ -126,7 +131,14 @@ const gravaPerfis = async (t, usuarioId, perfis, autorUuid, contexto) => {
   const modulos = await t.any(
     "SELECT code, nome_abrev FROM dominio.modulo ORDER BY code"
   );
-  const porNome = {};
+  // SEM PROTOTIPO, e nao um `{}`. O nome do modulo vem do CORPO da requisicao, e
+  // num objeto comum `porNome['constructor']` devolve a funcao herdada -- ou
+  // seja, um valor VERDADEIRO. A recusa logo abaixo passava batido, e o valor
+  // seguia para o SQL como `modulo_id`, onde virava 500 ("invalid input syntax
+  // for type smallint") no lugar do 400 que diz qual modulo nao existe. O Joi
+  // nao cobre: `Joi.object().pattern(Joi.string(), ...)` poda `__proto__` mas
+  // aceita `constructor` como chave qualquer.
+  const porNome = Object.create(null);
   modulos.forEach(m => { porNome[m.nome_abrev] = m.code; });
 
   for (const [nomeModulo, nivel] of Object.entries(perfis)) {
@@ -191,14 +203,54 @@ const gravaPerfis = async (t, usuarioId, perfis, autorUuid, contexto) => {
 
 // Garante que a alteração não deixa o sistema sem nenhum administrador ativo
 // (lockout operacional, só recuperável via SQL direto no banco)
+//
+// `FOR UPDATE`, E ELE E A TRAVA INTEIRA. Sem ele a conta era um `SELECT` sem
+// lock seguido de um `UPDATE`, e duas requisições simultâneas passavam as duas:
+// com A e B os dois últimos administradores, "rebaixar A" e "rebaixar B"
+// disparados juntos leem, cada um, o OUTRO ainda administrador (em READ
+// COMMITTED nenhum enxerga a mudança que o outro ainda não confirmou), os dois
+// contam 1 e os dois gravam. O sistema termina sem administrador nenhum, que é
+// exatamente o lockout que esta função existe para impedir -- e o único conserto
+// é `psql`. Com o lock, o segundo espera o primeiro confirmar e o Postgres
+// REAVALIA a linha travada: A já não é administrador, sai da contagem, e a
+// segunda requisição é recusada com a frase certa.
+//
+// CONTA AS LINHAS EM JS, e não por `COUNT(*)`: o Postgres recusa `FOR UPDATE`
+// junto de função de agregação. Não custa nada -- em 2026-08-06 havia 5
+// administradores em 28 contas, e a lista ainda exclui os que estão mudando.
+//
+// O PREÇO ACEITO É O IMPASSE (40P01) no caso simétrico, e ele é o lado bom da
+// troca: duas requisições que travem os administradores em ordens opostas fazem
+// o Postgres abortar UMA delas, que responde erro e não grava nada. Erro que se
+// resolve tentando de novo é melhor do que um sistema sem administrador.
+//
+// E ELE SAI COMO 409, e não como 500. O `deadlock detected` sobe cru do driver,
+// o `errorHandler` o trata como erro interno e o `sendJsonAndLog` mascara a
+// mensagem ("Erro no servidor") e zera o campo `error` -- que é o comportamento
+// certo para 500 e o errado para este caso. Quem rebaixou dois colegas ao mesmo
+// tempo ficava sem saber se gravou, e só descobria reabrindo a tela. É a única
+// falha desta função em que TENTAR DE NOVO é a resposta, então a frase tem de
+// dizer isso.
 const verificaUltimoAdmin = async (t, uuidsAlterados) => {
-  const adminsRestantes = await t.one(
-    `SELECT COUNT(*) AS n FROM dgeo.usuario
-     WHERE administrador IS TRUE AND ativo IS TRUE
-       AND uuid NOT IN ($<uuidsAlterados:csv>)`,
-    { uuidsAlterados }
-  );
-  return parseInt(adminsRestantes.n, 10);
+  let adminsRestantes;
+  try {
+    adminsRestantes = await t.any(
+      `SELECT id FROM dgeo.usuario
+       WHERE administrador IS TRUE AND ativo IS TRUE
+         AND uuid NOT IN ($<uuidsAlterados:csv>)
+       FOR UPDATE`,
+      { uuidsAlterados }
+    );
+  } catch (err) {
+    if (ehCodigo(err, PG_DEADLOCK_DETECTED)) {
+      throw new AppError(
+        "Outra alteração de administrador está em andamento. Tente novamente.",
+        httpCode.Conflict
+      );
+    }
+    throw err;
+  }
+  return adminsRestantes.length;
 };
 
 /**

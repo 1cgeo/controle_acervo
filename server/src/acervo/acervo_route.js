@@ -276,7 +276,8 @@ router.post(
   schemaValidation({ body: acervoSchema.downloadConfirmations }),
   asyncHandler(async (req, res, next) => {
     const dados = await acervoCtrl.confirmDownload(
-      req.body.confirmations
+      req.body.confirmations,
+      req.usuarioUuid
     )
 
     const msg = 'Status de download atualizado com sucesso'

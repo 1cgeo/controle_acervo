@@ -395,7 +395,18 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
   function areaVisivel() {
     if (!mapa) return null;
     const b = mapa.getBounds();
-    return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    // A CAIXA SAI RECORTADA AO MUNDO. O MapLibre repete o globo na horizontal, e
+    // o mapa nasce sem `minZoom` e sem `maxBounds`: afastado o bastante numa tela
+    // larga, `getBounds()` devolve oeste menor que -180 e leste maior que 180. O
+    // servidor recusa a caixa com 400 ("bbox fora do intervalo de coordenadas
+    // geograficas") e a busca INTEIRA vira estado de erro, sem que nada na tela
+    // diga que bastava aproximar o zoom.
+    return [
+      Math.max(-180, b.getWest()),
+      Math.max(-90, b.getSouth()),
+      Math.min(180, b.getEast()),
+      Math.min(90, b.getNorth()),
+    ];
   }
 
   function ligarMovimento(callback) {

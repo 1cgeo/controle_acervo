@@ -163,6 +163,31 @@ describe('mapoteca-service: clientes e pedidos', () => {
     });
   });
 
+  // A ETIQUETA NAO TEM CACHE na leitura (o diálogo só libera o Imprimir quando a
+  // tela bate com o SALVO), e a GRAVACAO derruba o cache da LISTA de pedidos: a
+  // coluna CEP dela sai de `mapoteca.etiqueta_envio`, e sem isto o CEP corrigido
+  // levava até cinco minutos para aparecer, com a busca por ele sem achar nada.
+  test('a etiqueta le sem cache e a gravacao derruba a lista de pedidos', async () => {
+    await svc.getEtiquetaEnvio(42);
+    await svc.getEtiquetaEnvio(42);
+    expect(apiGet).toHaveBeenCalledTimes(2);
+
+    apiGet.mockClear();
+    await svc.getPedidos(2026);
+    expect(apiGet).toHaveBeenCalledTimes(1);
+    // Servida do cache: prova que a chave estava guardada.
+    await svc.getPedidos(2026);
+    expect(apiGet).toHaveBeenCalledTimes(1);
+
+    await svc.salvarEtiquetaEnvio(42, { destinatario: '18º BI Mtz', cep: '90850-240' });
+    expect(apiPut).toHaveBeenCalledWith('/mapoteca/pedido/42/etiqueta', {
+      destinatario: '18º BI Mtz', cep: '90850-240',
+    });
+
+    await svc.getPedidos(2026);
+    expect(apiGet).toHaveBeenCalledTimes(2);
+  });
+
   test('anexos do pedido', async () => {
     await svc.getAnexosPedido(7);
     expect(apiGet).toHaveBeenCalledWith('/mapoteca/pedido/7/anexos');

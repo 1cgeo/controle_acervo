@@ -215,7 +215,15 @@ const INVARIANTES = [
     codigo: '3e',
     severidade: 'DEFECT',
     titulo: 'rotulo fora do padrao (Nª Edicao / N-XXXXX)',
-    sql: "select id,versao,produto_id from acervo.versao where versao !~ '^[0-9]+ª Edição' and versao !~ '^[0-9]+-'"
+    // ANCORADO DOS DOIS LADOS, como o gatilho `acervo.validate_version`
+    // (`er/acervo.sql:227` e `:243`), que aceita `^[0-9]+ª Edição$` ou
+    // `^[0-9]+-[A-Z]{1,5}$`. Sem o `$` final e sem o sufixo de maiusculas, um
+    // rotulo como `1-dsg2026x` ou `12ª Edição-rascunho` batia no prefixo e nao
+    // era acusado, embora violasse o padrao que o titulo promete cobrar. O
+    // gatilho impede que isso entre pelo caminho normal; o invariante e a rede
+    // para quem grava direto no schema (COPY, carga, gatilho desabilitado), e a
+    // rede nao pode ter malha maior que a regra.
+    sql: "select id,versao,produto_id from acervo.versao where versao !~ '^[0-9]+ª Edição$' and versao !~ '^[0-9]+-[A-Z]{1,5}$'"
   },
   {
     codigo: '3f',
@@ -234,13 +242,26 @@ const INVARIANTES = [
     codigo: '3h',
     severidade: 'REVISAR',
     titulo: 'subtipo da versao fora do esperado para o tipo_produto',
+    // A REGRA VEM DO DOMINIO, e nao de uma lista copiada. A versao anterior
+    // enumerava a combinacao aceita para CINCO tipos de produto (1, 2, 3, 7 e
+    // 8): os outros nove (4 Ortoimagem, 5 MDS, 6 MDT, 9 Modelo 3D, 10, 11, 12,
+    // 13 e 14 Panoramica) nao apareciam em clausula nenhuma, entao uma versao
+    // com `tipo_produto_id=9` e `subtipo_produto_id=5` nunca era acusada. O
+    // `join` com `dominio.subtipo_produto.tipo_id` e a MESMA regra que a tela ja
+    // aplica ao montar a lista de subtipos, e toda combinacao nova entra na
+    // conta sozinha.
+    //
+    // As TRES tolerancias legadas ficam VISIVEIS, e nao escondidas dentro da
+    // lista de aceitos: (1,22) CDGV para Ortoimagem num produto CDGV, (1,23)
+    // CDGV para Trafegabilidade no mesmo, e (7,16) Rede de transporte numa Carta
+    // Tematica. Sao pares cujo `tipo_id` diverge do tipo do produto e que o
+    // acervo carrega de proposito.
     sql: `select p.tipo_produto_id tp,v.subtipo_produto_id sub,count(*) n,array_agg(v.id) ids
-       from acervo.versao v join acervo.produto p on p.id=v.produto_id
-       where (p.tipo_produto_id=1 and v.subtipo_produto_id not in (1,7,8,20,22,23))
-          or (p.tipo_produto_id=2 and v.subtipo_produto_id not in (2,12,24,28))
-          or (p.tipo_produto_id=3 and v.subtipo_produto_id not in (3))
-          or (p.tipo_produto_id=7 and v.subtipo_produto_id not in (13,14,15,16,17,19,27,29))
-          or (p.tipo_produto_id=8 and v.subtipo_produto_id not in (16,23,30))
+       from acervo.versao v
+       join acervo.produto p on p.id=v.produto_id
+       join dominio.subtipo_produto sp on sp.code=v.subtipo_produto_id
+       where sp.tipo_id<>p.tipo_produto_id
+         and (p.tipo_produto_id,v.subtipo_produto_id) not in ((1,22),(1,23),(7,16))
        group by 1,2`
   },
   // A SÉRIE, e não a linha. O 3c e o 3d olham uma versão isolada (data invertida
@@ -470,11 +491,18 @@ const INVARIANTES = [
     codigo: '5g',
     severidade: 'DEFECT',
     titulo: 'Insumo 1:N (a mesma versao ligada a mais de uma)',
-    sql: `select 'versao_id_1' ponta,versao_id_1 versao_id,count(*) n,array_agg(id) ids
-       from acervo.versao_relacionamento where tipo_relacionamento_id=1 group by 1,2 having count(*)>1
-     union all
-     select 'versao_id_2',versao_id_2,count(*),array_agg(id)
-       from acervo.versao_relacionamento where tipo_relacionamento_id=1 group by 1,2 having count(*)>1`
+    // AS DUAS PONTAS SE UNIFICAM ANTES DE AGRUPAR. Agrupando `versao_id_1` e
+    // `versao_id_2` em separado, a versao ligada a uma como ponta ESQUERDA e a
+    // outra como ponta DIREITA aparecia uma vez em cada grupo e nenhum
+    // `count(*)>1` disparava: o invariante dava zero num acervo com o defeito
+    // dentro. A ordem das pontas nao e canonica (o POST grava a ordem que veio
+    // no corpo) e o `unique_versao_relacionamento` so impede o PAR exato
+    // repetido, entao esse era o caso comum, e nao o raro.
+    sql: `select versao_id,count(*) n,array_agg(id) ids from (
+       select id,versao_id_1 versao_id from acervo.versao_relacionamento where tipo_relacionamento_id=1
+       union all
+       select id,versao_id_2 from acervo.versao_relacionamento where tipo_relacionamento_id=1
+     ) t group by versao_id having count(*)>1`
   },
   // A LACUNA, e não o erro: carta e vetor da mesma folha, escala e LOTE que
   // deveriam estar ligados e não estão. O lote é a chave (mesma produção),
@@ -483,6 +511,12 @@ const INVARIANTES = [
     codigo: '5h',
     severidade: 'REVISAR',
     titulo: 'par Carta-CDGV do MESMO lote sem relacionamento de Insumo',
+    // O `left join` casa AS DUAS DIRECOES. A ordem das pontas nao e canonica: o
+    // POST de `versao_relacionamento` grava a ordem que veio no corpo, e a
+    // leitura da ficha ja trata o par como nao direcionado. Casando so
+    // (carta, cdgv), o par cadastrado ao contrario aparecia como "sem
+    // relacionamento" mesmo ja tendo um -- um REVISAR falso, que manda a triagem
+    // religar o que ja esta ligado.
     sql: `with ctv as (select v.id vid,p.inom,p.tipo_escala_id esc,v.lote_id
              from acervo.versao v join acervo.produto p on p.id=v.produto_id
              where p.tipo_produto_id=2 and p.inom is not null and v.lote_id is not null),
@@ -493,7 +527,9 @@ const INVARIANTES = [
              from ctv join cdv on cdv.inom=ctv.inom and cdv.esc=ctv.esc and cdv.lote_id=ctv.lote_id),
        rel as (select versao_id_1,versao_id_2 from acervo.versao_relacionamento where tipo_relacionamento_id=1)
      select pares.carta,pares.cdgv,pares.inom,pares.esc,pares.lote_id
-     from pares left join rel r on r.versao_id_1=pares.carta and r.versao_id_2=pares.cdgv
+     from pares left join rel r
+       on (r.versao_id_1=pares.carta and r.versao_id_2=pares.cdgv)
+       or (r.versao_id_1=pares.cdgv and r.versao_id_2=pares.carta)
      where r.versao_id_1 is null`
   },
   // Mesma edição com data ou rótulo divergente entre carta e vetor. Não é erro

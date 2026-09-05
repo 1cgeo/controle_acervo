@@ -9,6 +9,8 @@ import {
   baixarCartaDoPedido,
 } from '@modules/mapoteca/services/mapoteca-service.js';
 import { estaNaFilaDeImpressao, estaEmFechamento } from '@modules/mapoteca/situacao-pedido.js';
+import { ehDeAlgumPerfil } from '@store/auth-store.js';
+import { PERFIS_DA_LISTA_DE_PEDIDOS } from '@modules/mapoteca/index.js';
 import { criarAvisoDeErro } from '@modules/mapoteca/pages/aviso-carga.js';
 import { openEtiquetaEnvioDialog } from '@modules/mapoteca/pages/pedidos/etiqueta-envio.js';
 // O dialogo de registrar impressao mora em pedidos/ e serve as DUAS telas. Ele
@@ -16,6 +18,13 @@ import { openEtiquetaEnvioDialog } from '@modules/mapoteca/pages/pedidos/etiquet
 // o erro de somar.
 import { openRegistrarImpressaoDialog } from '@modules/mapoteca/pages/pedidos/dialog-impressao.js';
 import { openModal } from '@components/modal/modal-base.js';
+
+// ESTA TELA É DO OPERADOR ('/atendimento' declara perfis ['operador','gerente']),
+// e os caminhos daqui para a lista e para o detalhe do pedido (o botão "Abrir o
+// pedido" das duas tabelas e do painel, mais os dois links da seção de baixo)
+// levavam-no a '#/unauthorized' toda vez. Quem entra naquelas duas telas está em
+// PERFIS_DA_LISTA_DE_PEDIDOS, no manifesto do módulo, porque o dashboard tem os
+// mesmos caminhos e a decisão é uma só.
 
 /**
  * Repinta um chip JA na tela, sem trocar o nó.
@@ -71,6 +80,18 @@ export async function renderAtendimento(container) {
   // tem o que preservar) da RECARGA (que não pode mexer no layout).
   let montado = false;
   const cleanups = [];
+  // Ver PERFIS_DA_LISTA_DE_PEDIDOS: o operador não abre '/pedidos' nem
+  // '/pedidos/:id', e para ele os caminhos até lá não aparecem.
+  const podeAbrirPedidos = ehDeAlgumPerfil(PERFIS_DA_LISTA_DE_PEDIDOS, 'mapoteca');
+
+  /** A ação "Abrir o pedido" das tabelas, só para quem consegue abri-lo. */
+  const acaoAbrirPedido = podeAbrirPedidos
+    ? [{
+      icon: ICONS.description,
+      title: 'Abrir o pedido',
+      onClick: (p) => { location.hash = `/mapoteca/pedidos/${p.id}`; },
+    }]
+    : [];
 
   const contador = el('span', { className: 'page__meta' });
   const corpo = el('div');
@@ -181,16 +202,35 @@ export async function renderAtendimento(container) {
     // SEM GATE DE PERFIL, ao contrario do detalhe do pedido: a rota
     // '/atendimento' e de EXECUCAO (operador e gerente, ver modules/mapoteca/
     // index.js), entao quem so consulta nao chega aqui.
+    /**
+     * Relê o pedido depois de um registro de impressão, e repinta o painel.
+     *
+     * O `catch` NÃO é decoração: `openRegistrarImpressaoDialog` chama o `onDone`
+     * sem `await` e sem `catch`, então uma falha aqui morria como rejeição não
+     * tratada. A gravação já tinha dado certo, o diálogo já tinha fechado, e o
+     * painel ficava com os números velhos sem uma palavra na tela.
+     * @param {boolean} limparSelecao - verdadeiro depois de um registro em lote
+     */
+    async function reler(limparSelecao) {
+      let novo;
+      try {
+        novo = await getImpressaoDoPedido(pedido.id);
+      } catch (err) {
+        if (disposed) return;
+        showError(err.message || 'A impressão foi registrada, mas não foi possível'
+          + ' atualizar a tela. Recarregue a fila.');
+        return;
+      }
+      if (disposed) return;
+      if (limparSelecao) tabela.clearSelection();
+      pintar(novo);
+      recarregar();
+    }
+
     function registrarSelecionados() {
       const selecionados = tabela.getSelected();
       if (!selecionados.length) return;
-      openRegistrarImpressaoDialog(selecionados, async () => {
-        const novo = await getImpressaoDoPedido(pedido.id);
-        if (disposed) return;
-        tabela.clearSelection();
-        pintar(novo);
-        recarregar();
-      });
+      openRegistrarImpressaoDialog(selecionados, () => reler(true));
     }
 
     const registrarLoteBtn = el('button', {
@@ -267,12 +307,7 @@ export async function renderAtendimento(container) {
         {
           icon: ICONS.print,
           title: 'Registrar impressão',
-          onClick: (r) => openRegistrarImpressaoDialog(r, async () => {
-            const novo = await getImpressaoDoPedido(pedido.id);
-            if (disposed) return;
-            pintar(novo);
-            recarregar();
-          }),
+          onClick: (r) => openRegistrarImpressaoDialog(r, () => reler(false)),
         },
       ],
     });
@@ -353,14 +388,14 @@ export async function renderAtendimento(container) {
           variant: 'secondary',
           onClick: () => openEtiquetaEnvioDialog(pedido),
         },
-        {
+        ...(podeAbrirPedidos ? [{
           label: 'Abrir o pedido',
           variant: 'text',
           onClick: ({ close }) => {
             close();
             location.hash = `/mapoteca/pedidos/${pedido.id}`;
           },
-        },
+        }] : []),
         { label: 'Fechar', variant: 'text', onClick: ({ close }) => close() },
       ],
       onClose: () => tabela._cleanup(),
@@ -421,11 +456,7 @@ export async function renderAtendimento(container) {
         title: 'Etiqueta de envio',
         onClick: (p) => openEtiquetaEnvioDialog(p),
       },
-      {
-        icon: ICONS.description,
-        title: 'Abrir o pedido',
-        onClick: (p) => { location.hash = `/mapoteca/pedidos/${p.id}`; },
-      },
+      ...acaoAbrirPedido,
     ],
   });
   cleanups.push(() => tabelaFila._cleanup());
@@ -488,11 +519,16 @@ export async function renderAtendimento(container) {
           el('span', { className: 'detail-card__label', textContent: p.documento_solicitacao || '-' }),
         ]),
       },
+      // `total_itens`, e NAO `quantidade_produtos`: quem alimenta as duas
+      // tabelas desta tela e GET /pedido/em_aberto, e essa rota conta os itens
+      // na coluna `total_itens` (a fila de cima ja a le, em `textoProgresso`).
+      // `quantidade_produtos` e da lista de pedidos e do painel de pendentes, e
+      // nao chega aqui: a coluna vinha em branco em toda linha, em silencio.
       {
-        key: 'quantidade_produtos',
+        key: 'total_itens',
         label: 'Produtos',
         sortable: true,
-        render: (p) => formatNumber(p.quantidade_produtos),
+        render: (p) => formatNumber(p.total_itens),
       },
       // A COLUNA QUE SEPARA OS DOIS ESTÁGIOS. Sem ela, "Aguardando envio" e
       // "Remetido" seriam a mesma linha cinza, e a próxima ação de cada um é
@@ -523,11 +559,7 @@ export async function renderAtendimento(container) {
         title: 'Etiqueta de envio',
         onClick: (p) => openEtiquetaEnvioDialog(p),
       },
-      {
-        icon: ICONS.description,
-        title: 'Abrir o pedido',
-        onClick: (p) => { location.hash = `/mapoteca/pedidos/${p.id}`; },
-      },
+      ...acaoAbrirPedido,
     ],
   });
   cleanups.push(() => tabelaFechamento._cleanup());
@@ -548,22 +580,35 @@ export async function renderAtendimento(container) {
         // DOIS LINKS, e não um: a lista de pedidos filtra por UMA situação, e
         // esta seção mostra duas. Um link só mandaria metade da seção para uma
         // tela que não a contém.
-        el('a', {
-          className: 'btn btn--text btn--sm',
-          href: '#/mapoteca/pedidos?filtro=aguardando_envio',
-          textContent: 'Ver os que aguardam envio',
-        }),
-        el('a', {
-          className: 'btn btn--text btn--sm',
-          href: '#/mapoteca/pedidos?filtro=remetido',
-          textContent: 'Ver os remetidos',
-        }),
+        //
+        // Os dois somem para quem não abre '/pedidos' (o operador): ver
+        // PERFIS_DA_LISTA_DE_PEDIDOS, no manifesto do módulo.
+        ...(podeAbrirPedidos ? [
+          el('a', {
+            className: 'btn btn--text btn--sm',
+            href: '#/mapoteca/pedidos?filtro=aguardando_envio',
+            textContent: 'Ver os que aguardam envio',
+          }),
+          el('a', {
+            className: 'btn btn--text btn--sm',
+            href: '#/mapoteca/pedidos?filtro=remetido',
+            textContent: 'Ver os remetidos',
+          }),
+        ] : []),
       ]),
     ]),
     el('p', {
       className: 'dashboard__escopo',
-      textContent: 'O pedido impresso sai da fila acima. Marque Remetido ao despachar,'
-        + ' e Concluído para fechá-lo.',
+      // A frase muda com quem lê. Marcar Remetido e Concluído é
+      // PUT /pedido/:id/situacao, que o servidor cobra de GERENTE, e a tela onde
+      // isso se faz é a lista de pedidos. Mandar o operador marcar o que ele não
+      // pode marcar, numa tela que ele não pode abrir, é instrução que só
+      // produz tentativa frustrada.
+      textContent: podeAbrirPedidos
+        ? 'O pedido impresso sai da fila acima. Marque Remetido ao despachar,'
+          + ' e Concluído para fechá-lo.'
+        : 'O pedido impresso sai da fila acima. Marcar Remetido e Concluído é do'
+          + ' gerente, na lista de pedidos.',
     }),
     avisoFechamento.element,
   ]));

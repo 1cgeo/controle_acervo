@@ -215,7 +215,17 @@ async function executar (args, cfg) {
       }
 
       const r = await http.autenticada(cfg, metodo, caminho, { corpo })
-      const texto = r.dados && typeof r.dados === 'object'
+      const temDados = r.dados && typeof r.dados === 'object'
+      // Com `--json` o stdout e so o JSON: a mensagem do servidor ia colada
+      // ANTES do objeto e quebrava o `JSON.parse` de quem le o id recem-criado
+      // para a chamada seguinte. Ela desce para os AVISOS, que saem em stderr.
+      if (opcoesSaida.formato === 'json') {
+        return {
+          texto: saida.registro(temDados ? r.dados : null, opcoesSaida),
+          avisos: [r.message || 'ok', ...avisos]
+        }
+      }
+      const texto = temDados
         ? `${r.message || 'ok'}\n${saida.registro(r.dados, opcoesSaida)}`
         : (r.message || 'ok')
       return { texto, avisos }
@@ -264,13 +274,25 @@ async function executar (args, cfg) {
 
       const criado = await http.autenticada(cfg, 'POST', recurso.caminho, { corpo })
       const registroCriado = criado.dados || {}
-      const linhas = [criado.message || `${chave} criado.`]
-      if (Object.keys(registroCriado).length) {
+      // Com `--json` o stdout e so o registro criado, que e de onde sai o id da
+      // proxima chamada; a prosa (mensagem do servidor e desfecho do anexo) vai
+      // para os AVISOS, que ja saem em stderr. Colada em volta do objeto, ela
+      // quebrava o `JSON.parse` de quem encadeia.
+      const jsonPuro = opcoesSaida.formato === 'json'
+      const linhas = []
+      const contar = texto => (jsonPuro ? avisos : linhas).push(texto)
+      const responder = () => ({
+        texto: jsonPuro ? saida.registro(registroCriado, opcoesSaida) : linhas.join('\n'),
+        avisos
+      })
+
+      contar(criado.message || `${chave} criado.`)
+      if (!jsonPuro && Object.keys(registroCriado).length) {
         linhas.push(saida.registro(registroCriado, opcoesSaida))
       }
 
       if (!anexo) {
-        return { texto: linhas.join('\n'), avisos }
+        return responder()
       }
 
       // O vinculo do PDR e por ANO, nao pelo id do item recem-criado.
@@ -281,7 +303,7 @@ async function executar (args, cfg) {
           `(a resposta do POST nao trouxe o id). Anexe a parte: ` +
           `orcamento ${chave} anexar --id <${vinculo}> --file ${anexo}`
         )
-        return { texto: linhas.join('\n'), avisos }
+        return responder()
       }
 
       const bytesArquivo = fs.readFileSync(anexo)
@@ -292,7 +314,7 @@ async function executar (args, cfg) {
           cfg, 'POST', CAMINHO_ARQUIVO + http.query({ [vinculo]: alvo }),
           { bytes: mp.bytes, contentType: mp.contentType }
         )
-        linhas.push(`${anexado.message || 'anexo enviado'} (${path.basename(anexo)}, ${bytesArquivo.length} bytes)`)
+        contar(`${anexado.message || 'anexo enviado'} (${path.basename(anexo)}, ${bytesArquivo.length} bytes)`)
       } catch (err) {
         // O registro JA foi criado: nao existe transacao entre as duas rotas.
         // Dizer isso e obrigatorio, senao o agente reexecuta o lancar inteiro e
@@ -304,7 +326,7 @@ async function executar (args, cfg) {
         )
       }
 
-      return { texto: linhas.join('\n'), avisos }
+      return responder()
     }
 
     // -----------------------------------------------------------------------

@@ -346,11 +346,24 @@ controller.grade = async ano => {
             -- calculado e o digitado, entao a tela e o calculo nunca divergem.
             ${ORIGEM_CALCULA_PLANEJADA} AS planejada_calculada,
             ${ORIGEM_CALCULA_REALIZADA} AS realizada_calculada,
+            -- O TERCEIRO MOTIVO DE NAO ABRIR A CELULA, pela mesma razao das duas
+            -- flags acima: o salvar e o deletar recusam lancamento em ano
+            -- Encerrado (code 3 de dominio.situacao_exercicio), e sem esse booleano a
+            -- grade de 2025 seguia oferecendo o campo de digitacao em 2027 -- a
+            -- pessoa escrevia o numero, tirava o foco e so entao levava o 400.
+            --
+            -- COALESCE porque o JOIN e EXTERNO: ano sem linha em pit.pit daria
+            -- NULO, e a tela receberia tres estados onde a pergunta so tem dois.
+            -- pit.pit.ano e PRIMARY KEY (er/pit.sql), entao o JOIN nao duplica
+            -- linha nenhuma da grade.
+            -- (Sem crase neste comentario: ele vive dentro de um template literal.)
+            COALESCE(ex.situacao_id = 3, FALSE) AS ano_encerrado,
             m.cancelada, m.revisao, m.revisao_id,
             COALESCE(mes.lista, '[]'::json) AS meses,
             COALESCE(tot.realizado, 0) AS realizado,
             COALESCE(tot.planejado, 0) AS planejado
      FROM pit.meta_vigente AS m
+     LEFT JOIN pit.pit AS ex ON ex.ano = m.ano
      LEFT JOIN LATERAL (
        SELECT json_agg(json_build_object(
                 'id', x.id,
@@ -725,16 +738,40 @@ const vazia = linha =>
 controller.salvar = async (dados, usuarioUuid, contexto) => {
   return db.conn.tx(async t => {
     const meta = await t.oneOrNone(
+      // `pit.pit` entra pela MESMA ida ao banco, e nao por uma consulta a mais:
+      // o ano ja vem do grupo, e a situacao dele mora ao lado. Ver a guarda do
+      // exercicio encerrado logo abaixo.
       `SELECT mi.id, g.ano, g.numero_meta, mi.item, mi.origem_id,
-              o.nome AS origem
+              o.nome AS origem,
+              ex.situacao_id AS exercicio_situacao_id
        FROM pit.meta_item AS mi
        INNER JOIN pit.meta AS g ON g.id = mi.meta_id
        INNER JOIN dominio.origem_meta AS o ON o.code = mi.origem_id
+       LEFT JOIN pit.pit AS ex ON ex.ano = g.ano
        WHERE mi.id = $<metaId>`,
       { metaId: dados.meta_id }
     )
     if (!meta) {
       throw new AppError('Item do PIT não encontrado', httpCode.NotFound)
+    }
+
+    // ANO ENCERRADO NAO RECEBE LANCAMENTO, e essa e a razao de `pit.pit`
+    // existir: "em ano Encerrado o servidor recusa lançamento, e hoje nada
+    // impede alguém corrigir 2025 em 2027" (er/pit.sql). A guarda estava em
+    // `pit_ctrl` (meta e transcricao) e em `pit_revisao_ctrl` (revisao), e
+    // faltava justamente no LANCAMENTO -- a unica escrita que a frase nomeia.
+    // Sem ela, encerrar o exercicio nao fechava nada: a grade de 2025 seguia
+    // aceitando numero novo em 2027, e a subsecao 2.1 daquele mes mudava
+    // sozinha.
+    //
+    // `=== 3` (Encerrado), e nao `!== 2`: 'Em elaboração' e ano aberto que
+    // ainda nao virou vigente, e recusar lancamento nele travaria o cadastro
+    // do PIT do ano seguinte.
+    if (meta.exercicio_situacao_id === 3) {
+      throw new AppError(
+        `O exercício de ${meta.ano} está encerrado e não aceita lançamento.`,
+        httpCode.BadRequest
+      )
     }
 
     // A COLUNA QUE A ORIGEM CALCULA NÃO SE DIGITA.
@@ -880,6 +917,24 @@ controller.deletar = async (id, usuarioUuid, contexto) => {
     const antes = await auditoriaCtrl.lerAntes(
       t, 'pit.execucao', id, 'Lançamento do mês'
     )
+
+    // MESMA GUARDA DO `salvar`: ano encerrado nao aceita lancamento, e apagar o
+    // que ja foi reportado muda a 2.1 daquele mes tanto quanto lancar. O ano vem
+    // do item, pelo grupo -- `pit.execucao` nao o guarda, de proposito.
+    const exercicio = await t.oneOrNone(
+      `SELECT g.ano, ex.situacao_id
+         FROM pit.meta_item AS mi
+         INNER JOIN pit.meta AS g ON g.id = mi.meta_id
+         LEFT JOIN pit.pit AS ex ON ex.ano = g.ano
+        WHERE mi.id = $<metaId>`,
+      { metaId: antes.meta_id }
+    )
+    if (exercicio && exercicio.situacao_id === 3) {
+      throw new AppError(
+        `O exercício de ${exercicio.ano} está encerrado e não aceita alteração.`,
+        httpCode.BadRequest
+      )
+    }
 
     await t.none('DELETE FROM pit.execucao WHERE id = $<id>', { id })
 

@@ -93,6 +93,8 @@ export async function renderPontoControle(container, ctx) {
   let pagina = 1;
   // Respostas voltam fora de ordem; so a mais recente pode pintar a tela.
   let requisicao = 0;
+  /** Alguma faceta ja chegou? Enquanto nao, o filtro vazio precisa se explicar. */
+  let facetasVieram = false;
   let seguirMapa = false;
   // Recorte por área DESENHADA. Exclui o "só na área do mapa": os dois são
   // recortes espaciais, e cruzá-los devolveria a interseção de um retângulo com
@@ -149,8 +151,16 @@ export async function renderPontoControle(container, ctx) {
     codigoInput,
   ]);
 
-  /** Lista de codigos que veio na URL, como '1,3'. */
-  const daUrl = (campo) => (query.get(campo) || '').split(',').filter(v => v !== '');
+  /**
+   * Lista de codigos que veio na URL, nas DUAS formas que o servidor aceita:
+   * `?tipo_produto_id=1,3` e `?tipo_produto_id=1&tipo_produto_id=3` (as tres
+   * formas estao em `server/src/utils/lista_schema.js`). Com `query.get`, a
+   * segunda forma perdia tudo depois da primeira ocorrencia em silencio -- e a
+   * primeira busca ainda reescrevia a barra de endereco sem o que foi perdido.
+   */
+  const daUrl = (campo) => query.getAll(campo)
+    .flatMap(v => String(v).split(','))
+    .filter(v => v !== '');
 
   // Marcacao MULTIPLA, igual a busca do acervo: as duas
   // telas andam juntas, e um filtro que se usa de um jeito aqui e de outro la
@@ -199,6 +209,12 @@ export async function renderPontoControle(container, ctx) {
     type: 'checkbox',
     id: 'pc-seguir-mapa',
     onChange: () => {
+      // A caixa do link vale so ate alguem mexer no interruptor: dali em diante
+      // quem manda no recorte e a area visivel do mapa que a pessoa esta vendo.
+      // Sem esta linha, desmarcar e remarcar antes de o mapa montar (ou depois
+      // de ele falhar, quando `caixaVisivel()` devolve null para sempre) voltava
+      // a consultar pela area do LINK, invisivel e que ninguem pediu.
+      bboxDoLink = '';
       seguirMapa = areaCheck.checked;
       // Marcar "só na área do mapa" tira a área desenhada: são dois recortes
       // espaciais, e o último gesto é o que vale.
@@ -280,11 +296,25 @@ export async function renderPontoControle(container, ctx) {
     limparBtn, codigosBtn, exportarSelecaoBtn, exportarTudoBtn,
   ]);
 
+  // AS FACETAS SAO A UNICA FONTE das opcoes de projeto, lote, estado e
+  // municipio nesta tela: ao contrario da busca do acervo, nao ha carga de
+  // dominio ao lado. Quando elas falham na PRIMEIRA consulta, a lista e o mapa
+  // aparecem certos e os quatro filtros abrem dizendo "Nenhuma opcao para este
+  // recorte" -- um fato que nao e o que aconteceu. Esta linha diz o que
+  // aconteceu, e some assim que alguma faceta chega.
+  const avisoFacetas = el('p', {
+    className: 'busca-filtros__aviso hidden',
+    role: 'status',
+    textContent: 'As opções dos filtros não carregaram. A lista e o mapa '
+      + 'continuam valendo; recarregue a página para tentar de novo.',
+  });
+
   const filtros = el('div', { className: 'busca-filtros' }, [
     projetoFiltro.element,
     loteFiltro.element,
     estadoFiltro.element,
     municipioFiltro.element,
+    avisoFacetas,
     el('label', { className: 'busca-filtros__area' }, [
       areaCheck,
       el('span', { textContent: 'Só na área do mapa' }),
@@ -515,6 +545,7 @@ export async function renderPontoControle(container, ctx) {
 
   async function consultar() {
     const meu = ++requisicao;
+    let falhaFaceta = false;
     const atuais = filtrosAtuais();
     gravarNaUrl(atuais);
 
@@ -526,10 +557,32 @@ export async function renderPontoControle(container, ctx) {
       const [dados, posicoes, facetas] = await Promise.all([
         buscarPontos({ ...atuais, pagina, por_pagina: POR_PAGINA }),
         buscarPosicoes(atuais),
-        getFacetas(atuais),
+        // As facetas nao derrubam a consulta se falharem: elas so acrescentam o
+        // quantitativo ao lado de cada opcao, e a lista e o mapa (que sao o
+        // conteudo) nao dependem delas. E a mesma regra da busca do acervo, que
+        // tambem as carrega com `catch` proprio.
+        getFacetas(atuais).catch(() => { falhaFaceta = true; return null; }),
       ]);
       if (disposed || meu !== requisicao) return;
-      pintarFacetas(facetas);
+
+      // PAGINA FORA DO INTERVALO: o link guardado com `pagina=7` envelheceu, ou
+      // o resultado encolheu. Sem o corte, o contador anuncia "60 pontos" ao
+      // lado de uma lista que diz "Nenhum ponto de controle com esses filtros",
+      // e o rodape mostra "Página 7 de 3".
+      const paginasDoTotal = Math.max(1, Math.ceil((dados.total || 0) / POR_PAGINA));
+      if (pagina > paginasDoTotal) {
+        pagina = paginasDoTotal;
+        return consultar();
+      }
+
+      if (facetas) {
+        facetasVieram = true;
+        pintarFacetas(facetas);
+      }
+      // O aviso so vale enquanto NENHUMA faceta chegou. Depois da primeira, os
+      // filtros ja tem opcao e a falha seguinte apenas deixa o quantitativo
+      // envelhecido, que nao merece uma frase na tela.
+      avisoFacetas.classList.toggle('hidden', !(falhaFaceta && !facetasVieram));
       pintar(dados, posicoes);
     } catch (erro) {
       if (disposed || meu !== requisicao) return;
@@ -565,6 +618,7 @@ export async function renderPontoControle(container, ctx) {
     destacarLugar();
     areaCheck.checked = false;
     seguirMapa = false;
+    bboxDoLink = '';
     removerArea();
     selecao.limpar();
     reiniciar();

@@ -337,9 +337,15 @@ const getInfoLinhagem = async (t, subfaseId, atividadeId, tipoEtapaId, loteId) =
     }
   )
 
+  // O LOCALE E EXPLICITO, e nao o do processo. `toLocaleString()` sem argumento
+  // usa o locale do Node, e num servico sob PM2 ou systemd com `LANG` nao
+  // definido ele cai em `en-US`: a atividade concluida em 1 de agosto de 2026 as
+  // 17h chegaria ao plugin como "8/1/2026, 5:00:00 PM", e o revisor que abre a
+  // folha le "8/1" e entende 8 de janeiro. E a mesma armadilha do `Joi.date()`
+  // sem `.iso()`, agora na saida -- e a interface passaria a falar ingles.
   linhagem.forEach(r => {
-    if (r.data_inicio) r.data_inicio = new Date(r.data_inicio).toLocaleString()
-    if (r.data_fim) r.data_fim = new Date(r.data_fim).toLocaleString()
+    if (r.data_inicio) r.data_inicio = new Date(r.data_inicio).toLocaleString('pt-BR')
+    if (r.data_fim) r.data_fim = new Date(r.data_fim).toLocaleString('pt-BR')
   })
 
   return linhagem
@@ -707,6 +713,36 @@ controller.inicia = async (usuarioUuid, contexto) => {
   if (!prioridade) return null
 
   await db.conn.tx(async t => {
+    // A TRAVA DA PESSOA VEM ANTES DA CONFERENCIA, e sem ela a conferencia nao
+    // vale nada: "esta pessoa ja tem atividade em andamento?" e um SELECT, e
+    // dois `/inicia` simultaneos da MESMA pessoa (o duplo clique do plugin, ou
+    // um reenvio da rede) leem "nenhuma" ao mesmo tempo e iniciam atividades
+    // DIFERENTES. O indice unico de `producao.atividade` e por (etapa, unidade
+    // de trabalho) e nao impede isso: as duas atividades sao de pares distintos.
+    // O estrago fica: a pessoa passa a ter duas em execucao, `/verifica` so
+    // devolve uma (`LIMIT 1`), e a outra prende a unidade de trabalho ate um
+    // gerente pausa-la.
+    //
+    // E A LINHA DA PESSOA, E NAO UMA TRAVA GLOBAL. Ela serializa so os pedidos
+    // daquele operador, e nao toca na corrida ENTRE dois operadores, que
+    // continua sendo resolvida pelo `WHERE` do UPDATE la embaixo. A linha
+    // existe sempre: `verifyPerfil` acabou de le-la.
+    //
+    // O MODO E `NO KEY UPDATE`, E NAO `FOR UPDATE`. `FOR UPDATE` e o unico modo
+    // de trava de linha que conflita com `FOR KEY SHARE`, e `FOR KEY SHARE` e o
+    // que TODA transacao alheia toma nesta mesma linha de `dgeo.usuario` ao
+    // inserir ou atualizar uma linha que a referencia por chave estrangeira --
+    // so `er/producao.sql` tem 73 dessas referencias. Com `FOR UPDATE`, o
+    // `POST /atividade/pausar` de um gerente sobre dezenas de unidades ficaria
+    // esperando este `/inicia`, e o `/inicia` ficaria pendurado atras da
+    // transacao longa do gerente. `FOR NO KEY UPDATE` conflita CONSIGO MESMO
+    // (dois `/inicia` da mesma pessoa continuam serializados, que e a regra
+    // inteira desta trava) e NAO conflita com `FOR KEY SHARE`.
+    await t.oneOrNone(
+      'SELECT 1 FROM dgeo.usuario WHERE uuid = $<usuarioUuid> FOR NO KEY UPDATE',
+      { usuarioUuid }
+    )
+
     const emAndamento = await t.oneOrNone(
       `SELECT id FROM producao.atividade
        WHERE usuario_uuid = $<usuarioUuid> AND tipo_situacao_atividade_id = $<emExecucao>
@@ -1037,6 +1073,16 @@ controller.finaliza = async (
     // evento: quem abrir a proxima atividade precisa ver que o recado veio de
     // quem fechou a anterior.
     if (observacaoProximaAtividade) {
+      // A DESCARTADA (code 5) FICA DE FORA, e a ausencia do filtro era um
+      // sumico silencioso do recado. Uma etapa acumula MUITAS linhas de code 5
+      // -- o indice unico parcial de `producao.atividade` so cobre os codes 1 a
+      // 4 de proposito --, e cada pausa, reinicio ou apontamento de problema
+      // deixa mais uma. Sem o filtro, `LIMIT 1` sobre linhas de MESMA
+      // `eprox.ordem` escolhia qualquer uma delas: o texto que o operador
+      // escreveu para quem viesse a seguir ia parar numa tentativa que nao
+      // vingou, e a proxima pessoa abria a folha sem recado nenhum.
+      //
+      // O `aprox.id` no `ORDER BY` e o desempate estavel do que sobra.
       const proxima = await t.oneOrNone(
         `SELECT aprox.id FROM producao.atividade AS a
          INNER JOIN producao.atividade AS aprox
@@ -1044,9 +1090,10 @@ controller.finaliza = async (
          INNER JOIN producao.etapa AS e ON e.id = a.etapa_id
          INNER JOIN producao.etapa AS eprox ON eprox.id = aprox.etapa_id
          WHERE a.id = $<atividadeId> AND eprox.ordem > e.ordem
-         ORDER BY eprox.ordem
+           AND aprox.tipo_situacao_atividade_id <> $<naoFinalizada>
+         ORDER BY eprox.ordem, aprox.id
          LIMIT 1`,
-        { atividadeId }
+        { atividadeId, naoFinalizada: SITUACAO_ATIVIDADE.NAO_FINALIZADA }
       )
 
       if (!proxima) {

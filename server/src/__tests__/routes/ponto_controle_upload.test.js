@@ -324,6 +324,43 @@ describe('Ponto de controle - confirmar a importação', () => {
     expect(Number(p.latitude)).toBeCloseTo(-28.635164, 5)
   })
 
+  // AS DUAS COISAS SAO DUAS, e o teste vizinho nao conseguia separa-las: la os
+  // dois numeros sao o mesmo ponto, e a tolerancia de 5 casas escondia a
+  // diferenca. Aqui a coordenada de `atributos` e OUTRA, e o caso mostra que a
+  // coluna guarda o que o plugin mandou enquanto a geometria guarda a posicao de
+  // dupla precisao da sessao. Enquanto o `ST_MakePoint` lia o mesmo parametro
+  // `$<latitude>` que a lista de colunas, a coluna recebia a posicao da SESSAO e
+  // o valor do plugin sumia sem erro nenhum.
+  it('a COLUNA guarda o atributo do plugin, e a geometria a posição da sessão', async () => {
+    const lote = await criaLote()
+    const prep = await preparar({
+      lote_id: lote.id,
+      pontos: [{
+        cod_ponto: 'RJ-HV-2',
+        latitude: -28.5,
+        longitude: -53.5,
+        atributos: {
+          data_rastreio: '2026-05-12',
+          tipo_situacao: 3,
+          // Deliberadamente OUTRO ponto, e nao o mesmo truncado.
+          latitude: -10.25,
+          longitude: -40.75
+        },
+        arquivos: []
+      }]
+    })
+    await confirmar(prep.body.dados.session_uuid)
+
+    const p = await conn.one(
+      `SELECT ST_Y(geom) AS lat, ST_X(geom) AS lon, latitude, longitude
+       FROM ponto_controle.ponto WHERE cod_ponto = 'RJ-HV-2'`
+    )
+    expect(Number(p.lat)).toBeCloseTo(-28.5, 12)
+    expect(Number(p.lon)).toBeCloseTo(-53.5, 12)
+    expect(Number(p.latitude)).toBeCloseTo(-10.25, 5)
+    expect(Number(p.longitude)).toBeCloseTo(-40.75, 5)
+  })
+
   it('o tamanho MEDIDO vence o tamanho declarado', async () => {
     const lote = await criaLote()
     const prep = await preparar({
@@ -743,6 +780,32 @@ describe('Ponto de controle - só o APROVADO entra', () => {
     const confirmado = await confirmar(res.body.dados.session_uuid)
     expect(confirmado.body.dados.inseridos).toEqual(['RJ-HV-1'])
     expect(await contarPontos()).toBe(1)
+  })
+
+  // `data_rastreio` E `DATE NOT NULL` sem DEFAULT, e nada nesta fase a cobrava:
+  // o ponto sem ela passava com 201, quem importa copiava centenas de MB para o
+  // volume, e so na fase 2 o INSERT estourava -- derrubando a transacao INTEIRA,
+  // ou seja, TODOS os pontos da missao, com os arquivos de todos eles orfaos no
+  // volume e fora ate do relatorio de `arquivos_orfaos`.
+  it('ponto sem data_rastreio e recusado no PREPARE, e a missao segue', async () => {
+    const lote = await criaLote()
+    const semData = pontoDe('RJ-HV-2', [])
+    delete semData.atributos.data_rastreio
+
+    const res = await preparar({
+      lote_id: lote.id,
+      pontos: [pontoDe('RJ-HV-1', []), semData]
+    })
+
+    expect(res.status).toBe(201)
+    expect(res.body.dados.pontos_novos).toEqual(['RJ-HV-1'])
+    expect(res.body.dados.recusados.map(r => r.cod_ponto)).toEqual(['RJ-HV-2'])
+    expect(res.body.dados.recusados[0].motivo).toMatch(/data_rastreio/)
+
+    // A parte boa da missao entra inteira, sem a transacao 2 cair.
+    const confirmado = await confirmar(res.body.dados.session_uuid)
+    expect(confirmado.status).toBe(200)
+    expect(confirmado.body.dados.inseridos).toEqual(['RJ-HV-1'])
   })
 
   it('ponto SEM situação nenhuma não entra', async () => {

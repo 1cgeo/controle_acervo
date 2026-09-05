@@ -232,6 +232,22 @@ describe('perfil: troca de senha', () => {
     if (typeof cleanup === 'function') cleanup();
   });
 
+  test('a senha trocada ENCERRA a sessao e leva ao login', async () => {
+    // O token carrega o carimbo da senha (servidor, 2026-09-05): com a senha
+    // nova, a proxima requisicao deste token e 401. A tela nao espera por ele.
+    const { container, cleanup } = await montar();
+    window.location.hash = '#/perfil';
+
+    preencherSenhas(container, 'velha', 'nova', 'nova');
+    await enviarSenha(container);
+
+    expect(window.location.hash).toBe('#/login');
+    expect(localStorage.getItem('@sca-token') ?? localStorage.getItem('sca-token')).toBeNull();
+
+    window.location.hash = '';
+    if (typeof cleanup === 'function') cleanup();
+  });
+
   test('a recusa do servidor sobe para a tela como ela veio', async () => {
     alterarMinhaSenha.mockRejectedValueOnce(new Error('Senha atual incorreta'));
     const { container, cleanup } = await montar();
@@ -652,6 +668,58 @@ describe('perfil: a grade do proprio ano', () => {
     // AS LISTAS NAO SE REFAZEM: as rotas do proprio nao tem recorte de ano, e
     // pedi-las de novo seria a mesma resposta.
     expect(getMeuPeriodoEfetivo).toHaveBeenCalledTimes(chamadasDaLista);
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  // TOKEN DE REQUISICAO. Trocar de ano depressa com a rede lenta dispara duas
+  // `getMeuAproveitamento`, e sem o guarda quem pinta e a que CHEGA por ultimo,
+  // que nao e a que foi pedida por ultimo: o seletor mostrando um ano e a grade
+  // mostrando outro, com o resumo escrito por cima das celulas do ano errado.
+  // Nada na tela denuncia. E o mesmo guarda de `#/acessos` e `#/rastreabilidade`.
+  test('a resposta ATRASADA do ano anterior nao pinta por cima do ano novo', async () => {
+    getMeuPeriodoEfetivo.mockResolvedValue([{
+      id: 7, usuario_uuid: 'u-1', data_inicio: `${ANO - 2}-01-01`,
+      data_fim: null, observacao: null,
+    }]);
+    const respostaDo = (ano) => ({
+      ano,
+      semanas: SEMANAS,
+      anual: [{ ...ANUAL[0], aproveitamento: ano === ANO - 2 ? '10.0' : '90.0' }],
+    });
+    comGrade();
+
+    const { container, cleanup } = await montar();
+
+    // As duas respostas ficam presas, e sao soltas na ORDEM INVERTIDA da pedida.
+    const presas = new Map();
+    getMeuAproveitamento.mockImplementation((ano) => new Promise((resolver) => {
+      presas.set(ano, () => resolver(respostaDo(ano)));
+    }));
+
+    const select = seletorDeAno(container);
+    select.value = String(ANO - 2);
+    select.dispatchEvent(new Event('change'));
+    await flush();
+    select.value = String(ANO - 1);
+    select.dispatchEvent(new Event('change'));
+    await flush();
+
+    expect(presas.size).toBe(2);
+    // O ano NOVO chega primeiro, o VELHO depois: e a corrida que o defeito perdia.
+    presas.get(ANO - 1)();
+    await flush();
+    presas.get(ANO - 2)();
+    await flush();
+    await flush();
+
+    // A grade e o resumo falam do ano que o seletor mostra, e nao do ultimo a
+    // chegar.
+    expect(select.value).toBe(String(ANO - 1));
+    const resumo = container.querySelector('.efetivo-resumo');
+    expect(resumo.textContent).toContain(`em ${ANO - 1}`);
+    expect(resumo.textContent).not.toContain(`em ${ANO - 2}`);
+    expect(resumo.textContent).toContain('90%');
 
     if (typeof cleanup === 'function') cleanup();
   });

@@ -82,3 +82,23 @@ test('o rodape conta os registros e diz quantas colunas ficaram de fora', () => 
   )
   assert.ok(r.texto.includes('(1 registro, 2 de 3 colunas)'), r.texto)
 })
+
+// ---------------------------------------------------------------------------
+// `--json` puro: quem encadeia faz JSON.parse do stdout INTEIRO
+// ---------------------------------------------------------------------------
+//
+// A ficha do bem e a lista de dominios ja devolviam JSON limpo; o buraco que
+// restava era o registro AUSENTE, que saia como a prosa `(vazio)` e quebrava o
+// parse justamente no caso mais comum, a consulta que nao achou nada.
+
+test('registro ausente com --json sai como null, e nao como (vazio)', () => {
+  assert.strictEqual(JSON.parse(saida.registro(null, { formato: 'json' })), null)
+  assert.strictEqual(JSON.parse(saida.registro(undefined, { formato: 'json' })), null)
+  assert.strictEqual(saida.registro(null, {}), '(vazio)')
+})
+
+test('registro presente com --json continua sendo JSON completo', () => {
+  const voltou = JSON.parse(saida.registro({ id: 4, modelo: 'TOPCON', ativo: false }, { formato: 'json' }))
+  assert.strictEqual(voltou.id, 4)
+  assert.strictEqual(voltou.ativo, false)
+})

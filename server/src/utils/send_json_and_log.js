@@ -5,22 +5,28 @@ const httpCode = require('./http_code')
 const { VERSION } = require('../config')
 const redigirTokenDaUrl = require('../login/redigir_token_da_url')
 
-const truncate = dados => {
-  if (!dados || typeof dados !== 'object') return dados
-  if ('senha' in dados) {
-    dados.senha = '*'
-  }
+// O LOG DE RESPOSTA NÃO CARREGA O CORPO DA REQUISIÇÃO, e a ausência é a
+// decisão -- não é esquecimento nem defeito.
+//
+// Até 2026-09-05 este arquivo tinha uma função `truncate(req.body)` que redigia
+// as chaves de senha, cortava as strings em 500 caracteres e era passada ao
+// logger no campo `information`. Ela nunca chegou a logar nada (caía no fim sem
+// `return`, então `information` saía `undefined` em toda linha), e o conserto
+// óbvio -- devolver a cópia -- é que era o defeito: `logs/combined.log` é
+// publicado por `GET /logs` SEM autenticação, por decisão registrada em
+// `docs/decisoes.md`. Com o `return`, o corpo de TODA escrita do sistema ficaria
+// legível naquela rota anônima: número de NUP, nome de OM, o texto do motivo de
+// auditoria, o endereço de entrega da mapoteca. Redigir `senha`, `senha_atual` e
+// `senha_nova` não cobria nada disso.
+//
+// Então o parâmetro saiu inteiro, e não há o que redigir porque não há o que
+// logar. Quem precisar depurar "o que o cliente mandou" faz isso no ambiente de
+// desenvolvimento, e não no log que o mundo lê. Devolver o corpo ao log só faz
+// sentido junto de FECHAR o `/logs`, e as duas coisas andam no mesmo commit.
+//
+// O que continua no log: a mensagem, a URL (com o `token=` redigido), o status,
+// o `success` e o erro. Nada vindo do corpo.
 
-  const MAX_LENGTH = 500
-
-  for (const key in dados) {
-    if (Object.prototype.toString.call(dados[key]) === '[object String]') {
-      if (dados[key].length > MAX_LENGTH) {
-        dados[key] = dados[key].substring(0, MAX_LENGTH)
-      }
-    }
-  }
-}
 const sendJsonAndLogMiddleware = (req, res, next) => {
   res.sendJsonAndLog = (success, message, status, dados = null, error = null, metadata = {}) => {
     // REDIGIDA, e pelo mesmo motivo do middleware de `server/app.js`: o
@@ -35,7 +41,6 @@ const sendJsonAndLogMiddleware = (req, res, next) => {
 
     logger.info(message, {
       url,
-      information: truncate(req.body),
       status,
       success,
       error

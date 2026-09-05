@@ -193,7 +193,14 @@ export async function renderManutencaoTab(container) {
         confirmLabel: 'Limpar',
       },
       executar: limparDownloadsExpirados,
-      feito: () => 'Downloads expirados marcados como falhos.',
+      // O NUMERO que o servidor mediu. `cleanupExpiredDownloads` devolve
+      // `{ fechados }`, e a tela anunciava a mesma frase tendo fechado 0 ou 400:
+      // a confirmacao era eco da chamada, e nao medida do que mudou. Apertar de
+      // novo era o unico jeito de desconfiar. O cartao irmao, de sessoes de
+      // envio, ja faz o certo logo abaixo.
+      feito: (dados) => (Number(dados && dados.fechados) === 1
+        ? '1 download expirado fechado.'
+        : `${formatNumber((dados && dados.fechados) || 0)} downloads expirados fechados.`),
     }),
   }, [svgIcon(ICONS.delete, 16), 'Limpar expirados']);
 

@@ -6,6 +6,14 @@ import logging
 from qgis.PyQt.QtCore import QObject, pyqtSignal, QTimer
 from ...core.file_transfer import FileTransferThread
 
+# Managers cujo shutdown() expirou com threads ainda em execução são retidos
+# aqui até as threads terminarem. Sem isso, o `_descartarDialogo` do main.py
+# solta a última referência Python e o GC destrói uma QThread viva, o que aborta
+# o QGIS inteiro ("QThread: Destroyed while thread is still running", crash
+# nativo, sem traceback). Mesma rede de segurança do DownloadManager do plugin
+# do acervo (`_orphaned_managers`).
+_managers_orfaos = set()
+
 
 class ImpressaoManager(QObject):
     """
@@ -49,6 +57,12 @@ class ImpressaoManager(QObject):
         # cair e o GC destruiria a QThread ainda em execução -> crash nativo.
         self._active_threads = []
         self._shutdown = False
+        # Confirmação já enviada nesta rodada. Cancelar durante a espera de uma
+        # retentativa de checksum fazia `cancel_downloads` confirmar e, logo
+        # depois, o QTimer chamar `_download_next_file`, que confirmava DE NOVO:
+        # os mesmos tokens iam ao servidor duas vezes e a tela mostrava a caixa
+        # de "download concluído" em duplicidade.
+        self._confirmado = False
 
     def prepare_download(self, pedido_id, localizador=None, itens=None):
         """Prepara o download dos PDFs do pedido no servidor (gera tokens).
@@ -85,6 +99,7 @@ class ImpressaoManager(QObject):
 
         self.is_cancelled = False
         self._shutdown = False
+        self._confirmado = False
         self.download_results = []
         self._destination_dir = destination_dir
         self._total_files = len(file_infos)
@@ -98,14 +113,21 @@ class ImpressaoManager(QObject):
                 "Escolha outra pasta, em disco local, e tente de novo.")
             return
 
-        # Montar fila, evitando colisão de nomes de destino
+        # Montar fila, evitando colisão de nomes de destino.
+        #
+        # O laço olha TAMBÉM o disco, e não só os nomes desta rodada: a pasta de
+        # impressão é guardada justamente para ser reusada, e sobrescrever em
+        # silêncio um PDF que já estava lá apaga o que o operador tenha anotado
+        # ou substituído à mão. O download de item, na mesma tela, pergunta antes
+        # de substituir; o download em lote não pode ser mais destrutivo.
         used_names = set()
         self._pending_files = []
         for file_info in file_infos:
             base_name = os.path.basename(file_info['download_path'])
             dest_name = base_name
             suffix = 2
-            while dest_name in used_names:
+            while (dest_name in used_names
+                   or os.path.exists(os.path.join(destination_dir, dest_name))):
                 root, ext = os.path.splitext(base_name)
                 dest_name = f"{root}_{suffix}{ext}"
                 suffix += 1
@@ -165,6 +187,8 @@ class ImpressaoManager(QObject):
             else:
                 ainda_ativas.append(thread)
         self._active_threads = ainda_ativas
+        if not self._active_threads:
+            _managers_orfaos.discard(self)
 
     def _handle_file_transfer_complete(self, success, file_path, identifier, error_msg=None):
         """Trata a conclusão de uma transferência, com retentativa de checksum."""
@@ -242,6 +266,10 @@ class ImpressaoManager(QObject):
         # Em shutdown (janela fechando) não confirmar nem emitir para a UI
         if self._shutdown:
             return
+        # Uma confirmação por rodada: ver o comentário de `_confirmado`.
+        if self._confirmado:
+            return
+        self._confirmado = True
 
         if not self.download_results:
             self.download_complete.emit([], '')
@@ -300,6 +328,12 @@ class ImpressaoManager(QObject):
             if r['success'] and r.get('produto_pedido_id') is not None:
                 arquivos_por_item.setdefault(r['produto_pedido_id'], []).append(r['dest_name'])
 
+        # Itens que CHEGARAM a ser baixados nesta rodada. Sem isto, o item que
+        # tinha PDF e não veio (por cancelamento ou por falha de cópia) era
+        # acusado de "sem PDF no acervo": o CSV que vai para a impressora
+        # afirmava que a carta não está catalogada, e ela está.
+        tentados = {r.get('produto_pedido_id') for r in self.download_results}
+
         manifesto_path = os.path.join(self._destination_dir, self._nome_manifesto())
         cabecalho = ['Arquivo baixado', 'Produto', 'MI', 'Escala', 'Mídia',
                      'Qtd pedida', 'Já impresso', 'Restante a imprimir', 'Observação']
@@ -312,6 +346,12 @@ class ImpressaoManager(QObject):
                         arquivo = ' | '.join(baixados)
                     elif item.get('item_avulso'):
                         arquivo = 'avulso - imprimir do original'
+                    elif not item.get('uuid_arquivo'):
+                        arquivo = 'sem PDF no acervo'
+                    elif item.get('produto_pedido_id') in tentados:
+                        arquivo = 'falha ao baixar'
+                    elif self.is_cancelled:
+                        arquivo = 'cancelado antes de baixar'
                     else:
                         arquivo = 'sem PDF no acervo'
 
@@ -367,6 +407,12 @@ class ImpressaoManager(QObject):
 
         Garante que nenhuma QThread continue viva sem referência após o
         ImpressaoManager/diálogo serem destruídos (causa de crash nativo).
+
+        Devolve True se todas as threads terminaram dentro do prazo. Se o prazo
+        estourar (leitura de rede pendurada num read que não volta), o manager
+        é retido em `_managers_orfaos` e só liberado quando a última thread
+        terminar: esperar não basta, porque quem chama solta a referência
+        logo depois.
         """
         self._shutdown = True
         self.is_cancelled = True
@@ -381,6 +427,15 @@ class ImpressaoManager(QObject):
 
         self._cleanup_finished_threads()
         self.current_transfer = None
+
+        if self._active_threads:
+            logging.warning(
+                "Threads de transferência ainda em execução após o shutdown; "
+                "manager retido até a finalização para evitar crash do QGIS"
+            )
+            _managers_orfaos.add(self)
+            return False
+        return True
 
     @staticmethod
     def calculate_checksum(file_path):

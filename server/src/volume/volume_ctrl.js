@@ -7,6 +7,9 @@ const { auditoriaCtrl } = require("../auditoria");
 
 const controller = {};
 
+/** Violação de chave estrangeira, no vocabulário do Postgres. */
+const FK_VIOLATION = '23503';
+
 // As SEIS funcoes deste controlador trabalham em LOTE (o corpo das rotas e um
 // array), recebem `usuarioUuid` e `contexto`, e gravam UM evento por LINHA, com
 // o `loteId` da requisicao amarrando os N.
@@ -207,6 +210,38 @@ controller.deleteVolumeArmazenamento = async (volumeArmazenamentoIds, usuarioUui
       );
     }
 
+    // O PONTO DE CONTROLE grava no MESMO volume, e as duas tabelas dele apontam
+    // `acervo.volume_armazenamento` com NOT NULL e sem ON DELETE
+    // (`er/ponto_controle.sql:322` e `:368`). Sem estas duas conferências a
+    // violação de FK subia crua e o `error_handler` devolvia 500 com a mensagem
+    // do Postgres, em inglês e citando o nome interno da constraint.
+    const arquivosPontoControle = await t.one(
+      `SELECT COUNT(*)::int as count FROM ponto_controle.arquivo
+      WHERE volume_armazenamento_id in ($<volumeArmazenamentoIds:csv>)`,
+      { volumeArmazenamentoIds }
+    );
+
+    if (arquivosPontoControle.count > 0) {
+      throw new AppError(
+        'Não é possível deletar pois há Arquivos de Ponto de Controle associados ao volume',
+        httpCode.BadRequest
+      );
+    }
+
+    const temporariosPontoControle = await t.one(
+      `SELECT COUNT(*)::int as count FROM ponto_controle.upload_arquivo_temp
+      WHERE volume_armazenamento_id in ($<volumeArmazenamentoIds:csv>)`,
+      { volumeArmazenamentoIds }
+    );
+
+    if (temporariosPontoControle.count > 0) {
+      throw new AppError(
+        'Não é possível deletar pois há sessões de envio de Ponto de Controle '
+        + 'reservando espaço neste volume. Conclua ou cancele essas sessões antes.',
+        httpCode.BadRequest
+      );
+    }
+
     // `SELECT *` no lugar de `SELECT id`: e o `dados_antes` da exclusao, pela
     // mesma ida ao banco que a conferencia de existencia ja custava. Sem ele o
     // evento nao diria qual caminho de volume deixou de existir.
@@ -223,11 +258,25 @@ controller.deleteVolumeArmazenamento = async (volumeArmazenamentoIds, usuarioUui
       );
     }
 
+    // As conferências acima dão a mensagem ESPECÍFICA, e continuam sendo o
+    // caminho normal. Este `.catch` é a rede para o vínculo que ninguém previu:
+    // sem ele a violação vira 500 em inglês com o nome da constraint, e quem
+    // apertou o botão não sabe o que desfazer.
     const apagados = await t.any(
       `DELETE FROM acervo.volume_armazenamento
       WHERE id in ($<volumeArmazenamentoIds:csv>)`,
       { volumeArmazenamentoIds }
-    );
+    ).catch(erro => {
+      if (erro && erro.code === FK_VIOLATION) {
+        throw new AppError(
+          'Não é possível deletar: o volume ainda é referenciado por outros '
+          + 'registros do sistema. Desfaça esses vínculos antes de apagá-lo.',
+          httpCode.BadRequest,
+          erro
+        );
+      }
+      throw erro;
+    });
 
     for (const volume of exists) {
       await auditoriaCtrl.registrar(t, {

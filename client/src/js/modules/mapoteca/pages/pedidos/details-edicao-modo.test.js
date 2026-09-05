@@ -18,6 +18,7 @@ vi.mock('@modules/mapoteca/services/acervo-service.js', async () => {
 
 import { renderPedidoDetails } from '@modules/mapoteca/pages/pedidos/details.js';
 import * as svc from '@modules/mapoteca/services/mapoteca-service.js';
+import * as plataforma from '@services/plataforma-service.js';
 
 const CLIENTES = [
   { id: 7, nome: '1º CGEO', tipo_cliente_id: 1 },
@@ -137,6 +138,40 @@ describe('modo do pedido na edição', () => {
     const { cleanup } = await abrirEdicao(PEDIDO_CIVIL);
 
     expect(svc.updatePedido).not.toHaveBeenCalled();
+
+    if (typeof cleanup === 'function') cleanup();
+  });
+});
+
+// AS METAS DO PIT SAO ACESSORIAS, e a queda delas nao pode fechar a edicao.
+//
+// `GET /pit/metas` e de OUTRO modulo, e nada mais do pedido depende do PIT.
+// Dentro do `Promise.all` de cinco chamadas, um 500 do PIT deixava sem tela quem
+// so queria corrigir o endereco de entrega de um pedido que nem e do PIT. O
+// proprio arquivo ja trata a mesma rota do jeito certo em `metasDoPedido()`.
+describe('a edição do pedido sobrevive à queda do PIT', () => {
+  beforeEach(() => {
+    logarComo({ mapoteca: GERENTE });
+    svc.getAnexosPedido.mockResolvedValue([]);
+    svc.getClientes.mockResolvedValue(CLIENTES);
+    svc.getDominioSituacaoPedido.mockResolvedValue(SITUACOES);
+    svc.getDominioCanalRecebimento.mockResolvedValue(CANAIS);
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    document.querySelectorAll('.modal-overlay').forEach(o => o.remove());
+  });
+
+  test('com GET /metas em 500, o modal de editar abre mesmo assim', async () => {
+    plataforma.getMetasPit.mockRejectedValue(new Error('pit fora'));
+    const { modal, cleanup } = await abrirEdicao(PEDIDO_MILITAR);
+
+    expect(modal).toBeTruthy();
+    expect(modal.textContent).toContain('Pedido militar');
+    // O combo vazio e a escolha: perder as metas e muito melhor que perder a
+    // tela. A mensagem de falha do formulario NAO aparece.
+    expect(modal.textContent).not.toContain('Erro ao carregar os dados do formulário');
 
     if (typeof cleanup === 'function') cleanup();
   });

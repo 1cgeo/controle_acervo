@@ -55,8 +55,6 @@ import {
 export async function renderInsumosList(container, _ctx) {
   let disposed = false;
   const pode = permissoes('mapoteca');
-  const mesAtual = new Date().getMonth() + 1;
-  const anoAtual = new Date().getFullYear();
 
   const newBtn = el('button', {
     className: 'btn btn--primary',
@@ -173,6 +171,15 @@ export async function renderInsumosList(container, _ctx) {
 
   async function load() {
     table.update({ loading: true });
+    // O RELOGIO SE LE AQUI, e nao na montagem da tela. Esta e a tela do
+    // lancamento de todo dia, e fica aberta o turno inteiro: montada em 31/08,
+    // com o mes preso na montagem, todo `load()` depois da virada recalculava a
+    // coluna com AGOSTO enquanto o rodape promete "o mesmo numero da tabela 7.2
+    // do RPCMTec", que em setembro e outro. O consumo lancado agora entrava no
+    // livro e nao aparecia na coluna, e isso se le como lancamento perdido.
+    const agora = new Date();
+    const mesAtual = agora.getMonth() + 1;
+    const anoAtual = agora.getFullYear();
     try {
       // AS TRES LEITURAS DE UMA VEZ, e nao encadeadas: nenhuma depende do
       // resultado da outra, e em serie a tela levaria o triplo para aparecer.

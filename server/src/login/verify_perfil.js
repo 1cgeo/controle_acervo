@@ -8,6 +8,8 @@ const validateToken = require("./validate_token");
 
 const { montarContexto } = require("./contexto");
 
+const { colunaCarimbo, conferirCarimbo } = require("./carimbo_da_senha");
+
 // Niveis DENTRO de um modulo, hierarquicos: quem e gerente satisfaz operador e
 // consulta. O administrador NAO e um nivel daqui, e a flag global
 // dgeo.usuario.administrador, que vale em qualquer modulo.
@@ -89,7 +91,7 @@ const verifyPerfil = (minimo, modulo = "acervo") => {
     // usuario ou rebaixar o perfil dele valer na hora, sem esperar o token
     // expirar. O token so diz quem a pessoa e; o que ela pode vem daqui.
     const usuario = await db.conn.oneOrNone(
-      `SELECT u.id, u.administrador, up.perfil_id
+      `SELECT u.id, u.administrador, up.perfil_id, ${colunaCarimbo("u")}
        FROM dgeo.usuario AS u
        LEFT JOIN dgeo.usuario_perfil AS up
          ON up.usuario_id = u.id AND up.modulo_id = $<moduloId>
@@ -103,6 +105,13 @@ const verifyPerfil = (minimo, modulo = "acervo") => {
         httpCode.Forbidden
       );
     }
+
+    // A SENHA MUDOU? O `carimbo` do token é derivado do hash que valia quando
+    // ele foi emitido, e a coluna acima traz o do hash de HOJE. Divergiu, a
+    // sessão acabou -- é o que faz a troca de senha (e o reset pelo
+    // administrador) expulsar quem já estava dentro. Token sem o claim é legado
+    // e passa; ver `carimbo_da_senha.js`.
+    conferirCarimbo(decoded, usuario);
 
     req.usuarioUuid = decoded.uuid;
     req.usuarioId = usuario.id;

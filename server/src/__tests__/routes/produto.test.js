@@ -224,6 +224,75 @@ describe('Produto Routes', () => {
     })
   })
 
+  // VERSAO INTERMEDIARIA NAO SE APAGA, e a guarda vale nos DOIS formatos.
+  //
+  // Se a versao SEGUINTE existe, ela se apoia nesta: apagar a de baixo deixa a
+  // de cima descrevendo uma edicao que ja nao esta no acervo. Ate 2026-09-05 a
+  // guarda reconhecia so o rotulo NOVO (`N-SIGLA`), e uma "2ª Edição" saia sem
+  // aviso nenhum com a "3ª Edição" presente. Os dois formatos sao igualmente
+  // validos pelo gatilho `acervo.validate_version` (`er/acervo.sql`).
+  //
+  // O caso do formato legado e o que REPROVA o codigo anterior; o do formato
+  // novo e o controle que impede a correcao de quebrar o que ja funcionava.
+  describe('DELETE /api/produtos/versao, a versao intermediaria', () => {
+    const apagar = (ids) => request(app)
+      .delete('/api/produtos/versao')
+      .set('Authorization', generateAdminToken())
+      .send({ versao_ids: ids.map(Number), motivo_exclusao: 'Teste de exclusao' })
+
+    it('recusa apagar a "2ª Edição" com a "3ª Edição" no acervo', async () => {
+      const produto = await createProduto()
+      const segunda = await createVersao(produto.id, { versao: '2ª Edição' })
+      await createVersao(produto.id, { versao: '3ª Edição' })
+
+      const res = await apagar([segunda.id])
+
+      expect(res.status).toBe(400)
+      expect(res.body.message).toContain('2ª Edição')
+      expect(res.body.message).toContain('3ª Edição')
+      expect(res.body.message).toContain('depende dela')
+
+      // E ela CONTINUA no acervo: a recusa nao pode ter apagado nada.
+      const restante = await conn.oneOrNone(
+        'SELECT id FROM acervo.versao WHERE id = $1', [segunda.id]
+      )
+      expect(restante).not.toBeNull()
+    })
+
+    // CONTROLE POSITIVO: sem ele, uma guarda que recusasse TODA exclusao de
+    // versao legada passaria no caso acima.
+    it('deixa apagar a "2ª Edição" quando a seguinte NAO existe', async () => {
+      const produto = await createProduto()
+      const segunda = await createVersao(produto.id, { versao: '2ª Edição' })
+      // A "5ª Edição" nao e a seguinte, e existe so para o produto nao ficar
+      // sem versao nenhuma, que e outra recusa e esconderia esta.
+      await createVersao(produto.id, { versao: '5ª Edição' })
+
+      const res = await apagar([segunda.id])
+
+      expect(res.status).toBe(200)
+      const restante = await conn.oneOrNone(
+        'SELECT id FROM acervo.versao WHERE id = $1', [segunda.id]
+      )
+      expect(restante).toBeNull()
+    })
+
+    // O FORMATO NOVO continua protegido: a correcao trocou o regex embutido por
+    // `controller.versaoSeguinte`, e este caso e quem cobra que a troca nao
+    // perdeu o comportamento que ja existia.
+    it('recusa apagar a "1-DSG" com a "2-DSG" no acervo', async () => {
+      const produto = await createProduto()
+      const primeira = await createVersao(produto.id, { versao: '1-DSG' })
+      await createVersao(produto.id, { versao: '2-DSG' })
+
+      const res = await apagar([primeira.id])
+
+      expect(res.status).toBe(400)
+      expect(res.body.message).toContain('1-DSG')
+      expect(res.body.message).toContain('2-DSG')
+    })
+  })
+
   describe('POST /api/produtos/renumerar-versoes', () => {
     it('should shift existing editions to open a slot for an older one', async () => {
       const produto = await createProduto()

@@ -27,7 +27,7 @@ export const atualizarEdicao = (id, body) => apiPut(`/rpcmtec/${id}`, body);
 export const excluirEdicao = (id) => apiDelete(`/rpcmtec/${id}`);
 
 /**
- * O DOCUMENTO inteiro: os 34 blocos, com o calculado do banco (edicao aberta)
+ * O DOCUMENTO inteiro: os 33 blocos, com o calculado do banco (edicao aberta)
  * ou o congelado (edicao fechada).
  *
  * A tela NAO formata nada por conta: a celula chega em texto, e e a mesma que

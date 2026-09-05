@@ -13,6 +13,8 @@ const senhaUtils = require('./senha')
 
 const { AUDIENCIA } = require('./validate_token')
 
+const { colunaCarimbo } = require('./carimbo_da_senha')
+
 const controller = {}
 
 /**
@@ -243,8 +245,12 @@ const lerInstituicao = async t =>
  */
 controller.login = async (login, senha, cliente, plugins, qgis) => {
   return db.conn.tx(async t => {
+    // O `carimbo` sai da MESMA consulta que já lê o hash, e é o PostgreSQL que
+    // o calcula: as sete guardas conferem exatamente esta expressão, e uma
+    // segunda implementação em JS seria o mesmo número escrito duas vezes. Ver
+    // `carimbo_da_senha.js`.
     const usuarioDb = await t.oneOrNone(
-      `SELECT id, uuid, administrador, senha
+      `SELECT id, uuid, administrador, senha, ${colunaCarimbo()}
        FROM dgeo.usuario WHERE login = $<login> AND ativo IS TRUE`,
       { login }
     )
@@ -279,7 +285,7 @@ controller.login = async (login, senha, cliente, plugins, qgis) => {
       await verificaPlugins(t, plugins)
     }
 
-    const { id, uuid, administrador } = usuarioDb
+    const { id, uuid, administrador, carimbo } = usuarioDb
 
     // O token NAO carrega os perfis de proposito: quem decide o que a pessoa
     // pode e o verifyPerfil, lendo o banco a cada requisicao, senao rebaixar
@@ -298,8 +304,12 @@ controller.login = async (login, senha, cliente, plugins, qgis) => {
     // inteira, e não a tile. Quem confere é `validate_token.js`, e o cabeçalho
     // de lá explica por que o token ANTERIOR a esta data, que não tem o claim,
     // continua valendo nas guardas normais.
+    // `carimbo` ENTROU EM 2026-09-05, e é o que faz trocar a senha derrubar as
+    // sessões abertas: ele é derivado do hash vigente, e as guardas o releem do
+    // banco a cada requisição. Como o `aud`, o token ANTERIOR a esta data não o
+    // tem e continua valendo -- o cabeçalho de `carimbo_da_senha.js` diz por quê.
     const token = await signJWT(
-      { id, uuid, administrador, cliente, aud: AUDIENCIA.SESSAO },
+      { id, uuid, administrador, cliente, carimbo, aud: AUDIENCIA.SESSAO },
       JWT_SECRET
     )
 
@@ -374,12 +384,19 @@ controller.sessao = async uuid => {
  * O `cliente` VIAJA JUNTO para a rastreabilidade não perder a origem: sem ele,
  * `montarContexto` marcaria toda tile como 'desconhecido'.
  *
- * @param {{id:number, uuid:string, administrador:boolean, cliente?:string}} usuario
+ * O `carimbo` VIAJA JUNTO pelo mesmo motivo que ele existe no token de sessão:
+ * trocar a senha tem de derrubar TAMBÉM a camada de tiles que ficou aberta na
+ * tela. Ele vem de `verifyLogin`, que acabou de lê-lo do banco na consulta dele
+ * -- e não de uma segunda consulta aqui, que é justamente o que o cabeçalho
+ * acima explica não fazer. Token de tile sem carimbo (emitido antes de
+ * 2026-09-05) continua valendo os poucos minutos que lhe restam.
+ *
+ * @param {{id:number, uuid:string, administrador:boolean, cliente?:string, carimbo?:string}} usuario
  * @returns {Promise<{token:string, expira_em_segundos:number}>}
  */
-controller.tokenDeTile = async ({ id, uuid, administrador, cliente }) => {
+controller.tokenDeTile = async ({ id, uuid, administrador, cliente, carimbo }) => {
   const token = await signJWT(
-    { id, uuid, administrador, cliente, aud: AUDIENCIA.TILE },
+    { id, uuid, administrador, cliente, carimbo, aud: AUDIENCIA.TILE },
     JWT_SECRET,
     TILE_EXPIRACAO
   )

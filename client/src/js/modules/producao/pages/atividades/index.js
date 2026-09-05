@@ -256,10 +256,19 @@ export async function renderAtividades(container, _ctx) {
           ],
           buscar: getUltimasAtividadesFinalizadas,
           vazio: 'Nenhuma atividade finalizada recentemente',
-          contar: (n) => (n === 1
-            ? '1 atividade finalizada, da mais recente para a mais antiga.'
-            : `As ${formatNumber(n)} últimas atividades finalizadas, da mais recente para a mais `
-              + 'antiga. O limite de 20 é do servidor.'),
+          // O ZERO TEM FRASE PRÓPRIA: "As 0 últimas atividades finalizadas, da
+          // mais recente para a mais antiga" fala de uma ordem que não existe,
+          // logo acima de uma tabela que já diz que não há nada. E ela NÃO
+          // repete o estado vazio: o `vazio` da tabela, dois centímetros abaixo,
+          // já escreve "Nenhuma atividade finalizada recentemente" com essas
+          // palavras. O que só o resumo diz é a régua do limite.
+          contar: (n) => {
+            if (n === 0) return 'A lista traz as 20 últimas finalizadas, e o limite é do servidor.';
+            return n === 1
+              ? '1 atividade finalizada, da mais recente para a mais antiga.'
+              : `As ${formatNumber(n)} últimas atividades finalizadas, da mais recente para a mais `
+                + 'antiga. O limite de 20 é do servidor.';
+          },
           ordem: { key: 'data_fim', dir: 'desc' },
         }),
       },

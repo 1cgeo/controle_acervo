@@ -87,13 +87,15 @@ const CATALOGO = [
   { nome: 'bloco', tipo: 'bloco' },
 ];
 
-async function montar() {
+async function montar(busca = '') {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  const cleanup = renderMapas(container);
+  const cleanup = renderMapas(container, { query: new URLSearchParams(busca) });
   await flush();
   return { container, cleanup };
 }
+
+const urlDaTela = () => window.location.hash.replace(/^#/, '');
 
 const seletorDeCamada = (c) => c.querySelector('.page__filters select');
 const marcaDaTile = (c) => c.querySelector('.page__filters input[type="checkbox"]');
@@ -107,6 +109,10 @@ function escolher(container, nome) {
 
 beforeEach(() => {
   logarComo({ producao: CONSULTA });
+  // A CAMADA VIVE NA URL, e a barra de endereço é estado compartilhado entre os
+  // casos deste arquivo: sem zerar, o `?camada=` que um caso escreveu chega ao
+  // seguinte como se fosse a rota por onde a pessoa entrou.
+  history.replaceState(null, '', '#/producao/mapas');
   instanciasMapa.length = 0;
   getMapaAcompanhamento.mockResolvedValue({ vazio: false, geojson: COLECAO });
   getCatalogoCamadas.mockResolvedValue([]);
@@ -114,13 +120,13 @@ beforeEach(() => {
 
 describe('rotuloDaCamada e linhaProducaoDoNome', () => {
   test('o nome da view vira frase, com projeto e lote quando há', () => {
-    expect(rotuloDaCamada(CATALOGO[0])).toBe('Mapeamento RS / Lote 1 — linha de produção 1');
-    expect(rotuloDaCamada(CATALOGO[1])).toBe('Mapeamento RS / Lote 1 — subfase 9');
+    expect(rotuloDaCamada(CATALOGO[0])).toBe('Mapeamento RS / Lote 1, linha de produção 1');
+    expect(rotuloDaCamada(CATALOGO[1])).toBe('Mapeamento RS / Lote 1, subfase 9');
     expect(rotuloDaCamada({ nome: 'bloco' })).toBe('Blocos (todos os lotes)');
   });
 
   test('sem catálogo, o nome cru ainda vira frase legível', () => {
-    expect(rotuloDaCamada({ nome: 'lote_7_linha_2' })).toBe('lote 7 — linha de produção 2');
+    expect(rotuloDaCamada({ nome: 'lote_7_linha_2' })).toBe('lote 7, linha de produção 2');
   });
 
   // O `_linha_` ancorado no FIM: sem a âncora, `lote_1_subfase_1` casaria.
@@ -191,7 +197,7 @@ describe('a tela', () => {
 
     const rotulos = [...seletorDeCamada(container).options].map(o => o.textContent);
     expect(rotulos).toContain('Blocos (todos os lotes)');
-    expect(rotulos).toContain('Mapeamento RS / Lote 1 — linha de produção 1');
+    expect(rotulos).toContain('Mapeamento RS / Lote 1, linha de produção 1');
     // A `bloco` do catálogo não entra duas vezes.
     expect(rotulos.filter(r => r === 'Blocos (todos os lotes)')).toHaveLength(1);
     cleanup();
@@ -205,6 +211,96 @@ describe('a tela', () => {
     await flush();
 
     expect(getMapaAcompanhamento).toHaveBeenLastCalledWith('lote_3_subfase_9');
+    cleanup();
+  });
+
+  // O ESTADO DE ERRO TIRA O MAPA DO DOCUMENTO, e quem o devolve tem de ser toda
+  // carga que der certo, e não só o "Tentar de novo". Sem isso, quem levava um
+  // erro numa camada e escolhia OUTRA no seletor lia "1 feição(ões) em ..." com
+  // a caixa de erro da camada anterior ainda ocupando o lugar do mapa: a tela
+  // afirmava as duas coisas ao mesmo tempo, e o mapa não voltava mais.
+  test('depois de um erro, escolher outra camada devolve o mapa ao lugar', async () => {
+    getCatalogoCamadas.mockResolvedValue(CATALOGO);
+    getMapaAcompanhamento.mockRejectedValue(new Error('Erro no banco'));
+    const { container, cleanup } = await montar();
+
+    expect(container.querySelector('.dashboard-erro')).toBeTruthy();
+    expect(container.querySelector('.mapas__area .producao-mapa')).toBeNull();
+
+    getMapaAcompanhamento.mockResolvedValue({ vazio: false, geojson: COLECAO });
+    escolher(container, 'lote_3_subfase_9');
+    await flush();
+
+    expect(container.querySelector('.dashboard-erro')).toBeNull();
+    expect(container.querySelector('.mapas__area .producao-mapa')).toBeTruthy();
+    expect(situacao(container).textContent).toMatch(/1 feição\(ões\)/);
+    cleanup();
+  });
+
+  // AS VIEWS NÃO RESPONDEM NO MESMO TEMPO. A de um lote grande demora, e quem
+  // troca o seletor duas vezes depressa recebe a segunda antes da primeira. Sem
+  // a fotografia da camada pedida antes do `await`, a resposta atrasada pinta os
+  // polígonos DELA e o rótulo é remontado com `camadaAtual`, que já é a outra: a
+  // tela mostraria o recorte de um lote afirmando ser o de outro, sem erro
+  // nenhum.
+  test('a resposta que chega atrasada não pinta nem rotula por cima da nova', async () => {
+    getCatalogoCamadas.mockResolvedValue(CATALOGO);
+    const { container, cleanup } = await montar();
+
+    // Uma promessa por camada, que só resolve quando o teste mandar.
+    const pendentes = new Map();
+    getMapaAcompanhamento.mockImplementation(nome => new Promise((resolve) => {
+      pendentes.set(nome, resolve);
+    }));
+
+    escolher(container, 'lote_3_linha_1');    // a lenta
+    await flush();
+    escolher(container, 'lote_3_subfase_9');  // a rápida
+    await flush();
+
+    // A SEGUNDA CHEGA PRIMEIRO, com duas feições.
+    pendentes.get('lote_3_subfase_9')({
+      vazio: false,
+      geojson: { type: 'FeatureCollection', features: [COLECAO.features[0], COLECAO.features[0]] },
+    });
+    await flush();
+    expect(situacao(container).textContent)
+      .toBe('2 feição(ões) em lote 3, subfase 9.');
+
+    // E A PRIMEIRA CHEGA DEPOIS: é descartada, inteira.
+    pendentes.get('lote_3_linha_1')({ vazio: false, geojson: COLECAO });
+    await flush();
+
+    expect(situacao(container).textContent)
+      .toBe('2 feição(ões) em lote 3, subfase 9.');
+    expect(situacao(container).textContent).not.toContain('linha de produção');
+    cleanup();
+  });
+
+  // O MESMO VALE PARA O RAMO "vazio", que não é erro e por isso não passava
+  // por guarda nenhuma: a camada nova e cheia seria apagada por um "ainda não
+  // há o que mostrar" da antiga.
+  test('o "ainda não há o que mostrar" da camada antiga não apaga a nova', async () => {
+    getCatalogoCamadas.mockResolvedValue(CATALOGO);
+    const { container, cleanup } = await montar();
+
+    const pendentes = new Map();
+    getMapaAcompanhamento.mockImplementation(nome => new Promise((resolve) => {
+      pendentes.set(nome, resolve);
+    }));
+
+    escolher(container, 'lote_3_linha_1');
+    await flush();
+    escolher(container, 'lote_3_subfase_9');
+    await flush();
+
+    pendentes.get('lote_3_subfase_9')({ vazio: false, geojson: COLECAO });
+    await flush();
+    pendentes.get('lote_3_linha_1')({ vazio: true, motivo: 'A camada ainda não existe.' });
+    await flush();
+
+    expect(situacao(container).textContent).toMatch(/1 feição\(ões\)/);
+    expect(situacao(container).className).not.toMatch(/--ausente/);
     cleanup();
   });
 });
@@ -290,6 +386,48 @@ describe('abrir camada pelo nome', () => {
 
     expect(getMapaAcompanhamento).toHaveBeenLastCalledWith('lote_12_linha_4');
     expect(seletorDeCamada(container).value).toBe('lote_12_linha_4');
+    cleanup();
+  });
+});
+
+// A CAMADA VIVE NA URL, no molde da lista de pedidos da mapoteca (commit
+// `a8212b9`): sair da tela e voltar devolvia a de blocos, e nao havia como
+// mandar a alguem o recorte de um lote -- so o nome da view e a instrucao de
+// digita-lo no campo.
+describe('a camada vive na URL', () => {
+  test('abre na camada da query, com o seletor ja marcado nela', async () => {
+    getCatalogoCamadas.mockResolvedValue(CATALOGO);
+    const { container, cleanup } = await montar('camada=lote_3_subfase_9');
+
+    expect(getMapaAcompanhamento).toHaveBeenCalledWith('lote_3_subfase_9');
+    expect(seletorDeCamada(container).value).toBe('lote_3_subfase_9');
+    expect(getMapaAcompanhamento).not.toHaveBeenCalledWith('bloco');
+    cleanup();
+  });
+
+  test('trocar de camada escreve a URL, e a de blocos a limpa', async () => {
+    getCatalogoCamadas.mockResolvedValue(CATALOGO);
+    const { container, cleanup } = await montar();
+    expect(urlDaTela()).toBe('/producao/mapas');
+
+    escolher(container, 'lote_3_linha_1');
+    await flush();
+    expect(urlDaTela()).toBe('/producao/mapas?camada=lote_3_linha_1');
+
+    escolher(container, 'bloco');
+    await flush();
+    expect(urlDaTela()).toBe('/producao/mapas');
+    cleanup();
+  });
+
+  // Um `?camada=` torto renderia um 400 do servidor logo na abertura, e a pessoa
+  // leria um erro sobre uma camada que ela nao escolheu.
+  test('camada da URL fora da forma cai na de blocos, sem ir ao servidor', async () => {
+    const { container, cleanup } = await montar('camada=DROP TABLE');
+
+    expect(getMapaAcompanhamento).toHaveBeenCalledWith('bloco');
+    expect(getMapaAcompanhamento).not.toHaveBeenCalledWith('DROP TABLE');
+    expect(seletorDeCamada(container).value).toBe('bloco');
     cleanup();
   });
 });

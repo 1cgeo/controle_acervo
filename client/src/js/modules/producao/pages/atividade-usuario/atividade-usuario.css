@@ -43,14 +43,26 @@
 
 /*
  * A RÉGUA é posicionada em porcento, como as faixas, e por isso ela e as barras
- * compartilham a mesma origem horizontal: a coluna do nome tem largura fixa, e a
- * régua começa depois dela.
+ * precisam compartilhar a mesma origem horizontal E a mesma largura: a coluna do
+ * nome tem largura fixa, e a régua começa depois dela.
+ *
+ * OS DOIS `gap` DA LINHA ENTRAM NA CONTA, e não entravam: `.linha-tempo__pessoa`
+ * é um flex com `gap`, então a barra não começa em 180px, e sim em 180px MAIS um
+ * gap -- e termina um gap antes dos 48px do número. Sem somá-los aqui, a marca
+ * de "mar" caía um gap à esquerda do dia que ela nomeia, em todas as larguras.
+ *
+ * O `min-width` É A MESMA da barra, e é o que segura a tela ESTREITA: abaixo de
+ * ~430px a barra para de encolher (ela tem `min-width: 200px`) e passa a
+ * transbordar para a rolagem de `.linha-tempo`, enquanto a régua, que é um bloco
+ * comum, continuava encolhendo com o contêiner. As duas se descolavam justamente
+ * onde a tela é pequena demais para se notar de onde vem o erro.
  */
 .linha-tempo__regua {
   position: relative;
   height: 18px;
-  margin-left: 180px;
-  margin-right: 48px;
+  min-width: 200px;
+  margin-left: calc(180px + var(--space-sm));
+  margin-right: calc(48px + var(--space-sm));
   border-bottom: 1px solid var(--border-color);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);

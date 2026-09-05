@@ -49,6 +49,59 @@ describe('POST /rpnp', () => {
     expect(res.body.success).toBe(false)
   })
 
+  // O CASO QUE O `.or` DEIXAVA PASSAR, e que a tela produz.
+  //
+  // `rpnp-dialog.js` monta o corpo com as DUAS chaves sempre
+  // (`nota_empenho_id: paraId(...)` e `empenho_label: ... || null`), e o `.or`
+  // do Joi cobra PRESENCA e nao valor: com os dois campos em branco, o RPNP
+  // gravava sem identificacao nenhuma e a lista o mostrava como '-' na coluna
+  // Empenho, sem jeito de descobrir de que resto a pagar ele fala.
+  test('400 quando as duas chaves vem NULAS, que e o que a tela manda', async () => {
+    const res = await request(app)
+      .post('/rpnp')
+      .send({ ano: 2026, nota_empenho_id: null, empenho_label: null })
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/nota de empenho|rótulo/i)
+    expect(mockDb.conn.one).not.toHaveBeenCalled()
+  })
+
+  test('400 quando o rotulo vem VAZIO e nao ha nota de empenho', async () => {
+    const res = await request(app)
+      .post('/rpnp')
+      .send({ ano: 2026, empenho_label: '   ' })
+    expect(res.status).toBe(400)
+    expect(mockDb.conn.one).not.toHaveBeenCalled()
+  })
+
+  // O OUTRO LADO DO MESMO BRANCO, e o `.custom()` sozinho nao o fechava: com
+  // nota de empenho, o rotulo de espacos PASSAVA (ha identificacao) e era
+  // GRAVADO, porque `dados.empenho_label || null` ve '   ' como truthy. A lista
+  // monta `COALESCE(rp.empenho_label, ne.numero)`, entao os espacos apareciam no
+  // lugar de '2023NE000261' e a busca da tabela deixava de achar o resto a pagar
+  // pelo numero. Quem conserta e o `.trim()` do schema.
+  test('com NE, o rotulo em branco vira NULO e nao esconde o numero', async () => {
+    mockDb.conn.one.mockResolvedValueOnce({ id: 26, ano: 2026, nota_empenho_id: 5 })
+    const res = await request(app)
+      .post('/rpnp')
+      .send({ ano: 2026, nota_empenho_id: 5, empenho_label: '   ' })
+
+    expect([200, 201]).toContain(res.status)
+    expect(mockDb.conn.one).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO orcamento.rpnp'),
+      expect.objectContaining({ empenhoLabel: null, notaEmpenhoId: 5 })
+    )
+  })
+
+  // O CONTROLE: a nota de empenho sozinha, com o rotulo NULO ao lado, continua
+  // sendo o caminho normal da tela.
+  test('cria com nota_empenho_id e empenho_label nulo (o corpo da tela)', async () => {
+    mockDb.conn.one.mockResolvedValueOnce({ id: 25, ano: 2026, nota_empenho_id: 5 })
+    const res = await request(app)
+      .post('/rpnp')
+      .send({ ano: 2026, nota_empenho_id: 5, empenho_label: null })
+    expect([200, 201]).toContain(res.status)
+  })
+
   test('cria com empenho_label apenas', async () => {
     mockDb.conn.one.mockResolvedValueOnce({ id: 22, ano: 2026, empenho_label: '2023NE000261' })
     const res = await request(app)

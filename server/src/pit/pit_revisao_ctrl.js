@@ -453,6 +453,62 @@ controller.deletarRevisao = async (id, usuarioUuid, contexto) => {
       )
     }
 
+    // O QUE CAI JUNTO TAMBEM DEIXA RASTRO.
+    //
+    // `pit.anexo_revisao.revisao_id` e `pit.meta_item_revisao.revisao_id` sao
+    // ON DELETE CASCADE (er/pit.sql): o banco leva o PIT assinado e todas as
+    // declaracoes do rascunho sem um DELETE aqui, e ate 2026-09-05 o unico
+    // evento gravado era o de `pit.revisao`. Quem abrisse a ficha do exercicio
+    // lia "anexo cadastrado" e nunca lia que ele foi embora -- o rastro afirmava
+    // que o arquivo existe. `controller.deletarAnexo` audita a exclusao quando
+    // ela e explicita, e era so a assimetria que fazia esta parecer inocente.
+    //
+    // Mesmo desenho de `arquivoCtrl.auditarCascata` (orcamento) e do laco das
+    // declaracoes em `pit_ctrl.deletar`: leitura e eventos ANTES do DELETE do
+    // dono, na MESMA transacao, para as linhas lidas serem as que existiam --
+    // e, no caso do anexo, para o agregado do mapa ainda achar `pit.revisao`.
+    const anexos = await t.any(
+      // `conteudo` fica de FORA do SELECT, como no `SELECT_PARA_AUDITORIA` do
+      // orcamento: o `*` traria o BYTEA inteiro para a memoria so para o
+      // `sanitizar` o descartar na linha seguinte.
+      `SELECT id, revisao_id, tipo_anexo_id, nome_original, extensao, mimetype,
+              tamanho_bytes, descricao,
+              data_cadastramento, usuario_cadastramento_uuid,
+              data_modificacao, usuario_modificacao_uuid
+         FROM pit.anexo_revisao WHERE revisao_id = $<id>`,
+      { id }
+    )
+    for (const anexo of anexos) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'pit.anexo_revisao',
+        registroId: anexo.id,
+        operacao: 'D',
+        antes: anexo,
+        usuarioUuid,
+        contexto,
+        motivo: `Caiu junto com a revisão ${antes.codigo}, apagada como rascunho.`
+      })
+    }
+
+    // A declaracao guarda o que a DSG prometeu no item (descricao, quantidade
+    // prevista, prazo, demandante), e o agregado do evento sai do proprio
+    // `meta_item_id` que o `SELECT *` traz.
+    const declaracoes = await t.any(
+      'SELECT * FROM pit.meta_item_revisao WHERE revisao_id = $<id> ORDER BY id',
+      { id }
+    )
+    for (const declaracao of declaracoes) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'pit.meta_item_revisao',
+        registroId: declaracao.id,
+        operacao: 'D',
+        antes: declaracao,
+        usuarioUuid,
+        contexto,
+        motivo: `Caiu junto com a revisão ${antes.codigo}, apagada como rascunho.`
+      })
+    }
+
     await t.none('DELETE FROM pit.revisao WHERE id = $<id>', { id })
 
     await auditoriaCtrl.registrar(t, {
@@ -471,6 +527,14 @@ controller.deletarRevisao = async (id, usuarioUuid, contexto) => {
 // Mesma forma do anexo do pedido da mapoteca: os bytes vivem na linha, e a
 // listagem NUNCA traz `conteudo` (o PIT assinado tem 300 KB, e uma lista de dez
 // revisões carregaria 3 MB para mostrar nome e tamanho).
+// O multer/busboy entrega `file.originalname` decodificado como latin1; refaz
+// para UTF-8 para nao corromper nome com acento ("Revisão do PIT.pdf" virava
+// "RevisÃ£o do PIT.pdf" no banco, na lista de anexos e no
+// `Content-Disposition` do download). Para nome ASCII e um no-op. Mesma funcao
+// de `orcamento/arquivo/arquivo_ctrl.js` e de `mapoteca/anexo_pedido_ctrl.js`;
+// este era o unico dos tres uploads do sistema sem ela.
+const decodeNome = nome => Buffer.from(nome, 'latin1').toString('utf8')
+
 const colunasAnexo = `a.id, a.revisao_id, a.tipo_anexo_id, t.nome AS tipo_anexo,
   a.nome_original, a.extensao, a.mimetype, a.tamanho_bytes, a.descricao,
   a.data_cadastramento, a.usuario_cadastramento_uuid`
@@ -495,8 +559,9 @@ controller.criarAnexo = async (revisaoId, arquivo, dados, usuarioUuid, contexto)
       throw new AppError('Revisão do PIT não encontrada', httpCode.NotFound)
     }
 
-    const ponto = arquivo.originalname.lastIndexOf('.')
-    const extensao = ponto >= 0 ? arquivo.originalname.slice(ponto) : ''
+    const nomeOriginal = decodeNome(arquivo.originalname)
+    const ponto = nomeOriginal.lastIndexOf('.')
+    const extensao = ponto >= 0 ? nomeOriginal.slice(ponto) : ''
 
     const criado = await t.one(
       `INSERT INTO pit.anexo_revisao
@@ -509,7 +574,7 @@ controller.criarAnexo = async (revisaoId, arquivo, dados, usuarioUuid, contexto)
       {
         revisaoId,
         tipo_anexo_id: dados.tipo_anexo_id === undefined ? 4 : dados.tipo_anexo_id,
-        nome_original: arquivo.originalname,
+        nome_original: nomeOriginal,
         extensao,
         mimetype: arquivo.mimetype || null,
         tamanho_bytes: arquivo.size,

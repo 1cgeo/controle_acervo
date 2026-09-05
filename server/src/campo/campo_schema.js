@@ -201,6 +201,37 @@ models.campoQuery = Joi.object().keys({
 // excedeu. Mexer num dos dois sem o outro reabre esse buraco.
 const MAX_BASE64 = 58720256
 
+// OS TIPOS QUE A ROTA DE ARQUIVO PODE DECLARAR, e a razao de a lista existir.
+//
+// `mime_type` vem do CORPO do pedido (`file.type` do navegador, em
+// `campo-midia.js`), e ate 2026-09-05 ele era texto livre: um operador do modulo
+// `pit` podia gravar `mime_type: 'text/html'` com bytes de uma pagina, e
+// `GET /api/campo/imagem/:id/arquivo` os devolvia com esse `Content-Type` na
+// ORIGEM da propria aplicacao. O CSP esta desligado por decisao
+// (`server/app.js`, "aplicacao de intranet") e o `nosniff` do helmet nao ajuda:
+// ele impede ADIVINHAR o tipo, nao impede honrar o que foi declarado. O que
+// evitava a exploracao era acidental -- a rota exige `Authorization` no
+// cabecalho, e uma navegacao do navegador leva 401 --, e bastaria um fallback de
+// token por query (como a tile MVT ja tem) para o buraco abrir.
+//
+// FOTO E VIDEO, e nada mais: e o que a tela envia e o que a tabela guarda. SVG
+// fica de FORA de proposito, porque ele executa script; `image/gif` entra porque
+// a carga do SAP o adivinha pelo numero magico (`scripts/carregar_campo_sap.py`)
+// e as linhas dele sao antigas e legitimas.
+//
+// A MESMA LISTA e usada na hora de SERVIR (`campo_route.js`): fechar so a
+// entrada deixaria de fora as 143 linhas que ja vieram do dump.
+const MIME_IMAGEM_PERMITIDOS = [
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/heic',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm'
+]
+
 models.imagem = Joi.object().keys({
   descricao: Joi.string().allow(null, ''),
   data_imagem: dia.allow(null),
@@ -208,7 +239,7 @@ models.imagem = Joi.object().keys({
   // ANULAVEL de proposito: 133 das 143 imagens do dump do SAP estao sem, e
   // inventar 'image/jpeg' para todas seria gravar um palpite. Quem nao manda
   // recebe o tipo generico na hora de servir.
-  mime_type: Joi.string().max(100).allow(null, ''),
+  mime_type: Joi.string().valid(...MIME_IMAGEM_PERMITIDOS).allow(null, ''),
   conteudo_base64: Joi.string().base64().max(MAX_BASE64).required()
 })
 
@@ -255,3 +286,4 @@ models.trackUpdate = Joi.object().keys({
 module.exports = models
 module.exports.MAX_VERTICES = MAX_VERTICES
 module.exports.MAX_BASE64 = MAX_BASE64
+module.exports.MIME_IMAGEM_PERMITIDOS = MIME_IMAGEM_PERMITIDOS

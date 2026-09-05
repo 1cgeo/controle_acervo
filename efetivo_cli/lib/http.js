@@ -162,6 +162,13 @@ function lerSessao (cfg) {
     if (!dados.token || !dados.exp || dados.exp - FOLGA_EXPIRACAO_S <= agora) {
       return null
     }
+    // QUEM autenticou faz parte da validade do cache. O arquivo e chaveado so
+    // pelo SERVIDOR, e e o MESMO para os seis CLIs do ~/.sca: sem esta linha,
+    // `SCA_USER=souza <cli> ...` logo depois de `SCA_USER=silva <cli> ...`
+    // reusava o token de SILVA em silencio, e `auditoria.evento`, que e
+    // append-only, gravava a pessoa errada. Cache de versao antiga nao traz o
+    // campo; ele continua servindo ate expirar, e o proximo login o carimba.
+    if (cfg.usuario && dados.usuario && dados.usuario !== cfg.usuario) return null
     return dados.token
   } catch (e) {
     return null
@@ -175,7 +182,13 @@ function gravarSessao (cfg, token) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
     // mode 0600: credencial e so do dono. No Windows o modo e ignorado pelo SO,
     // mas o arquivo fica no perfil do usuario, que ja e o escopo dele.
-    fs.writeFileSync(arquivo, JSON.stringify({ token, exp }), { mode: 0o600 })
+    fs.writeFileSync(
+      arquivo,
+      // O login vai junto do token: e o que permite a lerSessao recusar o
+      // cache de OUTRA conta no mesmo servidor.
+      JSON.stringify({ token, exp, usuario: cfg.usuario || null }),
+      { mode: 0o600 }
+    )
   } catch (e) {
     // Cache e otimizacao, nunca requisito: se nao der para gravar, seguimos
     // autenticando a cada chamada (comportamento antigo) em vez de falhar.
@@ -264,11 +277,13 @@ async function autenticada (cfg, metodo, caminho, opcoes = {}) {
     // Token em cache rejeitado (expirou antes da folga, ou o servidor reiniciou
     // com outro JWT_SECRET): descarta e tenta uma vez com token novo.
     //
-    // Cuidado com o 403 aqui: nesta feature ele tambem significa "voce nao e
-    // administrador", e ai reautenticar nao muda nada. Repetir uma vez custa um
-    // login e devolve o mesmo 403, com a mensagem do servidor intacta, que e o
-    // que quem le precisa ver.
-    if (err instanceof ErroHttp && (err.status === 401 || err.status === 403) && !cfg.token) {
+    // SO O 401, e a restricao e deliberada. Um 403 neste sistema e falta de
+    // PERFIL: o `verifyPerfil` le o BANCO a cada requisicao, e nao o token,
+    // entao o 403 sobrevive intacto a qualquer login novo. Tratar 403 como
+    // token velho custava duas viagens e um login por chamada E APAGAVA O
+    // CACHE, fazendo as chamadas seguintes, a que a pessoa tem direito, pagarem
+    // login de novo.
+    if (err instanceof ErroHttp && err.status === 401 && !cfg.token) {
       limparSessao(cfg)
       const { token: novo } = await autenticar(cfg)
       if (!cfg.semCache) gravarSessao(cfg, novo)

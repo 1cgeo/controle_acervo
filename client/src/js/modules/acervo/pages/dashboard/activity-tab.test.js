@@ -1,15 +1,47 @@
-import { describe, test, expect, vi } from 'vitest';
+// O FUSO CONGELA JUNTO COM O RELOGIO, e antes de qualquer `new Date`: sem esta
+// linha o caso passa em `TZ=UTC` e em `TZ=Asia/Tokyo` COM O DEFEITO DE VOLTA,
+// porque so em fuso NEGATIVO as 23:30 locais ja sao o dia seguinte em UTC, e e
+// exatamente ai que `toIsoDate` e `toISOString().split('T')[0]` divergem. O Node
+// reavalia `process.env.TZ` a cada `Date` desde a 16, entao isto basta e nao
+// exige mexer na configuracao do vitest.
+process.env.TZ = 'America/Sao_Paulo';
+
+import { describe, test, expect, vi, beforeAll, afterAll } from 'vitest';
 
 vi.mock('chart.js', async () => await import('@components/charts/chart-stub.js'));
 
-const hoje = new Date().toISOString().split('T')[0];
+// O RELOGIO CONGELA NO ARQUIVO INTEIRO, e nao dentro de um `describe`: a serie
+// diaria e uma janela de 30 dias que termina HOJE, e um caso que le o relogio de
+// parede so passa porque hoje e hoje. Antes, o dia esperado e o dia da fixture
+// saiam os DOIS de `new Date().toISOString()`, entao eles casavam sempre --
+// inclusive quando os dois estavam errados.
+//
+// A hora e 23:30 LOCAL de proposito. Em UTC-3 esse instante ja e o dia SEGUINTE
+// em UTC, e era ali que a serie ganhava uma barra de amanha, sempre zerada, e
+// perdia o dia mais antigo da janela: as chaves saiam de `toISOString()`, que
+// converte para UTC, enquanto o `dia` que o servidor manda (`DATE(...)`) e o dia
+// de calendario daqui.
+//
+// `toFake: ['Date']` troca SO o relogio. Os casos das sub-abas esperam por
+// `setTimeout`, e o relogio falso inteiro os deixaria pendurados.
+const AGORA = new Date(2026, 8, 5, 23, 30, 0);
+/** O dia LOCAL de AGORA: e o que o servidor manda, e o que o eixo tem de terminar. */
+const hoje = '2026-09-05';
+
+beforeAll(() => {
+  vi.useFakeTimers({ now: AGORA, toFake: ['Date'] });
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 vi.mock('@modules/acervo/services/acervo-service.js', () => ({
   getArquivosDia: vi.fn(() => Promise.resolve([
-    { dia: `${new Date().toISOString().split('T')[0]}T00:00:00.000Z`, quantidade: '7' },
+    { dia: '2026-09-05T00:00:00.000Z', quantidade: '7' },
   ])),
   getDownloadsDia: vi.fn(() => Promise.resolve([
-    { dia: `${new Date().toISOString().split('T')[0]}T00:00:00.000Z`, quantidade: '3' },
+    { dia: '2026-09-05T00:00:00.000Z', quantidade: '3' },
   ])),
   getUltimosProdutos: vi.fn(() => Promise.resolve([
     { nome: 'Carta X', mi: '2965-1', tipo_produto: 'Carta Topográfica', tipo_escala: '1:25.000', total_versoes: '3', data_cadastramento: '2026-07-01T10:00:00.000Z' },
@@ -57,6 +89,14 @@ describe('renderActivityTab', () => {
     aba.cleanup();
   });
 
+  // A REGUA DO ARQUIVO: sem um fuso negativo, o caso abaixo passaria igual com o
+  // `toISOString()` que a correcao veio tirar. Este caso reprova a suite inteira
+  // se o `process.env.TZ` do topo deixar de valer.
+  test('o instante congelado ja e o dia SEGUINTE em UTC', () => {
+    expect(AGORA.toISOString().slice(0, 10)).toBe('2026-09-06');
+    expect(AGORA.toISOString().slice(0, 10)).not.toBe(hoje);
+  });
+
   test('a serie diaria cobre 30 dias e casa o dia de hoje com a quantidade', async () => {
     const { instanciasChart } = await import('@components/charts/chart-stub.js');
     instanciasChart.length = 0;
@@ -68,7 +108,12 @@ describe('renderActivityTab', () => {
       c.data.datasets.some(d => d.label === 'Uploads'));
     expect(grafico).toBeDefined();
     expect(grafico.data.labels).toHaveLength(30);
+    // A ponta da serie e HOJE, e nunca amanha: as 23:30 em UTC-3 o dia em UTC ja
+    // virou, e a janela terminava num dia que ainda nao aconteceu.
     expect(grafico.data.labels[29]).toBe(hoje.slice(5));
+    // E o primeiro dia da janela e 29 dias atras, e nao 28: a barra de amanha
+    // empurrava o dia mais antigo para fora.
+    expect(grafico.data.labels[0]).toBe('08-07');
     expect(grafico.data.datasets[0].data[29]).toBe(7); // uploads
     expect(grafico.data.datasets[1].data[29]).toBe(3); // downloads
     // Dia sem movimento entra como zero, e nao como buraco.

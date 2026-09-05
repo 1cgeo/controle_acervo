@@ -125,3 +125,60 @@ test('registro unico sai como pares chave e valor', () => {
   assert.ok(texto.includes('15.000,00'))
   assert.ok(!texto.includes('arquivo_nome'))
 })
+
+// ---------------------------------------------------------------------------
+// `--json` puro: quem encadeia faz JSON.parse do stdout INTEIRO
+// ---------------------------------------------------------------------------
+//
+// Ate 2026-09-05 a escrita colava a mensagem do servidor ANTES do objeto
+// criado. Quem le o id recem-criado para anexar o PDF na chamada seguinte fazia
+// JSON.parse dessa saida e levava `Unexpected token`.
+
+const http = require('../lib/http')
+const crud = require('../comandos/crud')
+
+/** Troca o transporte por uma resposta fixa, e o devolve ao fim. */
+async function comResposta (resposta, fn) {
+  const antes = http.autenticada
+  http.autenticada = async () => resposta
+  try {
+    return await fn()
+  } finally {
+    http.autenticada = antes
+  }
+}
+
+const CORPO_NC = JSON.stringify({
+  numero: '2026NC000123',
+  ano: 2026,
+  cod_nd: '339040',
+  valor_nc: 1500,
+  classificacao_id: 1
+})
+
+test('criar com --json devolve so o registro criado', async () => {
+  const r = await comResposta(
+    { message: 'Nota de credito criada com sucesso', dados: { id: 91, numero: '2026NC000123' } },
+    () => crud.executar({ _: ['nc', 'criar'], flags: { json: true, data: CORPO_NC } }, {})
+  )
+  const voltou = JSON.parse(r.texto)
+  assert.strictEqual(voltou.id, 91)
+  assert.ok(
+    r.avisos.some(a => a.includes('Nota de credito criada')),
+    'a mensagem do servidor nao pode sumir: ela so muda de stream (stderr)'
+  )
+})
+
+test('criar sem --json continua mostrando a mensagem junto do registro', async () => {
+  const r = await comResposta(
+    { message: 'Nota de credito criada com sucesso', dados: { id: 91, numero: '2026NC000123' } },
+    () => crud.executar({ _: ['nc', 'criar'], flags: { data: CORPO_NC } }, {})
+  )
+  assert.ok(r.texto.includes('Nota de credito criada'), r.texto)
+  assert.ok(r.texto.includes('91'), r.texto)
+})
+
+test('registro ausente com --json sai como null, e nao como (vazio)', () => {
+  assert.strictEqual(JSON.parse(saida.registro(null, { formato: 'json' })), null)
+  assert.strictEqual(saida.registro(null, {}), '(vazio)')
+})

@@ -57,6 +57,30 @@ export async function openNotaEmpenhoDialog({
     label: nc.cod_nd ? `${nc.numero ?? `NC ${nc.id}`} - ${nc.cod_nd}${nc.nd_nome ? ` (${nc.nd_nome})` : ''}` : (nc.numero ?? `NC ${nc.id}`),
   }));
 
+  // A NC DE OUTRO EXERCICIO ENTRA NO COMBO ASSIM MESMO.
+  //
+  // A lista de NCs vem do ano da TELA, e `nota_empenho.ano` e `nota_credito.ano`
+  // sao colunas independentes: nada no DDL impede a NE de 2026 empenhar contra
+  // uma NC de 2025. Sem esta emenda, a linha do rateio abria com o campo de NC
+  // VAZIO (o combo guarda o id mesmo sem opcao que o case) e o valor preenchido
+  // ao lado, sem o saldo e sem a ND herdada: quem olhava lia "linha sem NC" e era
+  // convidado a escolher outra por cima. O saldo daquela NC continua de fora,
+  // porque o rateio nao o traz, e a linha de informacao fica vazia, e nao errada.
+  for (const alocacao of (ne?.notas_credito || [])) {
+    const chave = String(alocacao.nota_credito_id);
+    if (ncPorId.has(chave)) continue;
+    const numero = alocacao.nota_credito_numero ?? `NC ${alocacao.nota_credito_id}`;
+    ncPorId.set(chave, {
+      id: alocacao.nota_credito_id,
+      numero,
+      cod_nd: alocacao.cod_nd ?? null,
+    });
+    ncOptions.push({
+      value: alocacao.nota_credito_id,
+      label: `${numero}${alocacao.cod_nd ? ` - ${alocacao.cod_nd}` : ''} (de outro exercício)`,
+    });
+  }
+
   // ---- Campos simples ----
   const numeroField = createTextField({
     label: 'Número',

@@ -23,6 +23,10 @@
  *   node scripts/gerar_miniaturas.cjs --limite 50 --embaralhar
  *   node scripts/gerar_miniaturas.cjs --concorrencia 4
  *   node scripts/gerar_miniaturas.cjs --versao 7244 --refazer-erros
+ *   node scripts/gerar_miniaturas.cjs --ajuda
+ *
+ * Opcao fora da lista PARA o script, e numero que nao converte tambem: um
+ * `--dryrun` aceito em silencio gravaria no banco acreditando ensaiar.
  *
  * O `--dry-run` LE o volume e RENDERIZA de verdade, e para so antes de gravar.
  * Um ensaio que so imprimisse a intencao nao exercitaria justamente o que
@@ -64,11 +68,45 @@ const {
 
 // --- Argumentos --------------------------------------------------------------
 
+// Chave fora desta lista PARA o script, e a lista existe por um motivo caro: o
+// parser guardava qualquer `--chave` num objeto e nunca reclamava. Quem digitava
+// `--dryrun` (ou `--dry_run`, ou `--dry-run=1`, que vira a chave `dry-run=1`)
+// acreditava estar ensaiando, e a carga GRAVAVA em `acervo.miniatura_versao`.
+// `--limit 50`, sem o `e`, deixava LIMITE em null e processava o acervo INTEIRO.
+const ACEITAS = [
+  'limite', 'concorrencia', 'versao', 'embaralhar', 'refazer-erros', 'dry-run', 'ajuda'
+]
+
+const AJUDA = [
+  'Uso: node scripts/gerar_miniaturas.cjs [opcoes]',
+  '',
+  '  --limite N          processa so as N primeiras candidatas (padrao: todas)',
+  '  --concorrencia N    quantas renderizacoes em paralelo (padrao: 4)',
+  '  --versao ID         so a versao ID',
+  '  --embaralhar        sorteia a ordem ANTES do --limite (para o piloto)',
+  '  --refazer-erros     inclui as versoes cuja ultima tentativa falhou',
+  '  --dry-run           le o volume e RENDERIZA de verdade, e para antes de gravar',
+  '  --ajuda             esta ajuda, sem abrir conexao com o banco',
+  '',
+  'Conexao e binarios saem das chaves de server/config.env (catalogo em .env.example).'
+].join('\n')
+
+/** Para com mensagem, em vez de seguir com uma intencao que nao foi entendida. */
+const recusar = (mensagem) => {
+  console.error(mensagem)
+  process.exit(1)
+}
+
 const argumentos = {}
 for (let i = 2; i < process.argv.length; i += 1) {
   const atual = process.argv[i]
-  if (!atual.startsWith('--')) continue
+  if (!atual.startsWith('--')) {
+    recusar(`Argumento solto: ${atual}. As opcoes vem como --chave [valor]. Veja --ajuda.`)
+  }
   const chave = atual.replace(/^--/, '')
+  if (!ACEITAS.includes(chave)) {
+    recusar(`Opcao desconhecida: --${chave}. Aceitas: ${ACEITAS.map(c => '--' + c).join(', ')}.`)
+  }
   const proximo = process.argv[i + 1]
   if (proximo && !proximo.startsWith('--')) {
     argumentos[chave] = proximo
@@ -78,11 +116,34 @@ for (let i = 2; i < process.argv.length; i += 1) {
   }
 }
 
-const LIMITE = argumentos.limite ? parseInt(argumentos.limite, 10) : null
-const CONCORRENCIA = Math.max(1, parseInt(argumentos.concorrencia || '4', 10))
+// ANTES de qualquer conexao: pedir a ajuda nao pode exigir banco de pe nem
+// credencial. Ate 2026-09-05 `--ajuda` nem existia, e o script conectava e saia
+// executando a consulta.
+if (argumentos.ajuda) {
+  console.log(AJUDA)
+  process.exit(0)
+}
+
+/**
+ * Inteiro de opcao, ou parada. `--limite abc` virava NaN, que e falsy, e o
+ * script processava o acervo INTEIRO acreditando ter recebido um teto.
+ */
+const inteiro = (chave, padrao) => {
+  const bruto = argumentos[chave]
+  if (bruto === undefined) return padrao
+  if (bruto === true) recusar(`--${chave} exige um numero (ex.: --${chave} 50).`)
+  const n = Number(String(bruto).trim())
+  if (!Number.isInteger(n) || n < 1) {
+    recusar(`--${chave} precisa ser um inteiro maior que zero (recebi ${JSON.stringify(bruto)}).`)
+  }
+  return n
+}
+
+const LIMITE = inteiro('limite', null)
+const CONCORRENCIA = inteiro('concorrencia', 4)
 const DRY_RUN = Boolean(argumentos['dry-run'])
 const REFAZER_ERROS = Boolean(argumentos['refazer-erros'])
-const VERSAO = argumentos.versao ? parseInt(argumentos.versao, 10) : null
+const VERSAO = inteiro('versao', null)
 // So faz sentido junto de `--limite`, e existe para o PILOTO: as 50 primeiras
 // candidatas sao as 50 versoes mais antigas do acervo, todas da mesma epoca e
 // do mesmo formato de folha. Medir nelas e medir um canto, e a projecao sairia

@@ -346,9 +346,43 @@ export async function renderRastreabilidade(container, ctx) {
     corpo.appendChild(tabela.element);
   }
 
+  /**
+   * Espelha o recorte na URL.
+   *
+   * O ENDEREÇO É O PRODUTO DESTA TELA. Ela existe para MOSTRAR a alguém o que
+   * mudou, e o gesto seguinte a achar o evento é mandar o endereço da barra ao
+   * colega. Sem isto ele abria a tela no recorte da ROTA de origem
+   * (`?usuario_uuid=...`, vindo da ficha de uma pessoa), e não no que estava na
+   * tela; F5 e o Voltar do navegador faziam o mesmo, e a página em que se
+   * estava se perdia sempre.
+   *
+   * `history.replaceState`, e nunca `location.hash = ...`: mexer no hash
+   * dispara o roteador, que remontaria a tela e refaria a consulta. É o mesmo
+   * desenho da lista de pedidos da mapoteca (commit `a8212b9`) e de
+   * `#/acervo/busca`.
+   *
+   * O QUE VALE O PADRÃO NÃO ENTRA: filtro nulo e página 1 ficam de fora, e a
+   * tela sem recorte volta a ser `#/rastreabilidade` pelado.
+   */
+  function sincronizarUrl() {
+    const params = new URLSearchParams();
+    for (const [nome, valor] of Object.entries(filtros)) {
+      if (valor !== null && valor !== undefined && valor !== '') {
+        params.set(nome, String(valor));
+      }
+    }
+    if (pagina > 1) params.set('pagina', String(pagina));
+    const consulta = params.toString();
+    history.replaceState(null, '', `#/rastreabilidade${consulta ? `?${consulta}` : ''}`);
+  }
+
   async function carregar(tamanho = paginacao.tamanho()) {
     requisicao += 1;
     const meu = requisicao;
+
+    // ANTES da chamada, e não depois: a URL tem de dizer o que a tela está
+    // pedindo mesmo que a resposta não venha.
+    sincronizarUrl();
 
     if (tabela) tabela.update({ loading: true });
 
@@ -527,6 +561,14 @@ export async function renderRastreabilidade(container, ctx) {
           type: 'button',
           onClick: () => {
             Object.values(campos).forEach((c) => { c.value = ''; });
+            // O SUBSISTEMA VOLTA A OFERECER TODOS. Ele e um combo DEPENDENTE, e
+            // escolher "Mapoteca" o reduz aos agregados de la; sem repovoa-lo,
+            // "Limpar" devolvia "Todos" no Sistema e deixava a lista de
+            // Subsistema com os quatro da mapoteca, prometendo que so aqueles
+            // existem. Precisa de `coletarFiltros` antes: e de `filtros.modulo`
+            // que `entidadesVisiveis` decide, e ele so agora ficou nulo.
+            coletarFiltros();
+            repovoarSubsistema();
             aoFiltrar();
           },
         }, [svgIcon(ICONS.close, 14), 'Limpar']),
@@ -577,6 +619,11 @@ export async function renderRastreabilidade(container, ctx) {
     }
     ['entidade', 'usuario_uuid', 'operacao', 'data_inicio', 'data_fim', 'campo']
       .forEach(definirDaRota);
+
+    // A PÁGINA TAMBÉM VOLTA. Ela é 1 na URL e 1 aqui dentro; sem isto, o F5 na
+    // página 7 caía na 1 e a pessoa procurava a linha de novo.
+    const paginaDaRota = Number.parseInt(query.get('pagina'), 10);
+    if (Number.isInteger(paginaDaRota) && paginaDaRota > 1) pagina = paginaDaRota;
 
     return barra;
   }

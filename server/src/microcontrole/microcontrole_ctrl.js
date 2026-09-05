@@ -578,10 +578,21 @@ controller.getCoberturaTela = async (loteId, usuarioUuid, dataInicio, dataFim) =
     ...new Set(usados.map(r => r.usuario_uuid))
   ])
 
+  // O AVISO CITA A JANELA EFETIVA, e nao so o teto. A consulta ordena por `data
+  // DESC`, entao o que sobrevive ao corte sao as amostras MAIS RECENTES: quem
+  // pede um lote inteiro em trinta dias recebe um mapa dos ultimos dias, com o
+  // painel ainda rotulado com o periodo que a pessoa pediu. A leitura natural
+  // ("o operador so cobriu esta area") e exatamente a leitura errada. Como
+  // `usados` ja esta ordenado, os dois extremos saem de graca.
+  const primeira = usados.length > 0 ? usados[usados.length - 1].data : null
+  const ultima = usados.length > 0 ? usados[0].data : null
+
   return {
     type: 'FeatureCollection',
     aviso: truncou
-      ? `Resultado truncado em ${LIMITE_COBERTURA} amostras. Refine o filtro de lote, de operador ou de período.`
+      ? `Resultado truncado em ${LIMITE_COBERTURA} amostras: o mapa mostra apenas de ` +
+        `${primeira} até ${ultima}, e não o período inteiro que você pediu. ` +
+        'Refine o filtro de lote, de operador ou de período.'
       : null,
     features: usados.map(r => ({
       type: 'Feature',

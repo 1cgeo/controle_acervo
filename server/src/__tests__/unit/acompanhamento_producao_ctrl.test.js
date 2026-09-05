@@ -19,6 +19,12 @@
 // usa.
 
 const capturado = []
+// AS DUAS LISTAS SÃO SEPARADAS DE PROPÓSITO: quase toda consulta deste módulo
+// sai por `any`, e `ultimoSql()` conta com isso. `getLayerGeoJSON` é a exceção
+// -- ele sai inteiro por `oneOrNone` (a existência em `pg_matviews` e depois o
+// GeoJSON) --, e misturar as duas faria o `oneOrNone` de projeto de
+// `getInfoProjetoDetalhada` virar "a última consulta".
+const capturadoUm = []
 
 const mockDb = {
   conn: {
@@ -27,8 +33,12 @@ const mockDb = {
       return []
     }),
     // O 404 de projeto sai de um `oneOrNone` ANTES da consulta detalhada: sem
-    // projeto, `getInfoProjetoDetalhada` nem chega a montar o SQL do ano.
-    oneOrNone: jest.fn(async () => ({ id: 1, nome: 'Projeto de teste' })),
+    // projeto, `getInfoProjetoDetalhada` nem chega a montar o SQL do ano. A
+    // mesma linha serve a `camadaExiste`, que só olha se veio algo.
+    oneOrNone: jest.fn(async (sql, params) => {
+      capturadoUm.push({ sql, params })
+      return { id: 1, nome: 'Projeto de teste' }
+    }),
     one: jest.fn(async () => ({})),
     tx: jest.fn()
   },
@@ -47,6 +57,10 @@ const ctrl = require('../../acompanhamento_producao/acompanhamento_producao_ctrl
 const ultimoSql = () =>
   capturado[capturado.length - 1].sql.replace(/\s+/g, ' ').trim()
 
+/** O SQL da última consulta de linha única, com o espaço em branco normalizado. */
+const ultimoSqlUm = () =>
+  capturadoUm[capturadoUm.length - 1].sql.replace(/\s+/g, ' ').trim()
+
 /** A última cláusula de nome `clausula` (o SELECT final é o último). */
 const clausulaFinal = (sql, clausula) => {
   const pedacos = sql.split(new RegExp(`\\b${clausula}\\b`, 'i'))
@@ -55,7 +69,9 @@ const clausulaFinal = (sql, clausula) => {
 
 beforeEach(() => {
   capturado.length = 0
+  capturadoUm.length = 0
   mockDb.conn.any.mockClear()
+  mockDb.conn.oneOrNone.mockClear()
 })
 
 // ---------------------------------------------------------------------------
@@ -171,6 +187,40 @@ describe('a grade da linha do tempo', () => {
 })
 
 // ---------------------------------------------------------------------------
+// UMA LINHA POR PESSOA NO RESUMO
+// ---------------------------------------------------------------------------
+//
+// O `LEFT JOIN producao.atividade` simples que estava aqui devolvia DUAS linhas
+// para quem tivesse ao mesmo tempo uma atividade EM EXECUÇÃO e uma PAUSADA -- e
+// esse par é o desfecho NORMAL de apontar um problema: `/problema_atividade`
+// encerra a viva, abre uma PAUSADA no nome da mesma pessoa e tira a unidade de
+// trabalho da distribuição, e o próximo `/inicia` entrega OUTRA folha. A tela
+// contava a mesma pessoa duas vezes, e o total deixava de bater com o efetivo.
+
+describe('resumoUsuario: a pessoa aparece UMA vez', () => {
+  test('a atividade entra por LATERAL com LIMIT 1, e não por junção que multiplica', async () => {
+    await ctrl.resumoUsuario()
+    const sql = ultimoSql()
+
+    expect(sql).toContain('LEFT JOIN LATERAL (')
+    expect(sql).toContain('LIMIT 1 ) AS a ON TRUE')
+    // Controle negativo do texto exato que estava lá antes.
+    expect(sql).not.toContain('LEFT JOIN producao.atividade AS a ON a.usuario_uuid')
+  })
+
+  test('o desempate é a situação, e a em execução vence a pausada', async () => {
+    await ctrl.resumoUsuario()
+    const sql = ultimoSql()
+
+    // 2 ('Em execução') ordena antes de 3 ('Pausada'), então é ela que sobra:
+    // onde a pessoa ESTÁ agora é onde ela está trabalhando.
+    expect(sql).toContain(
+      'ORDER BY ativ.tipo_situacao_atividade_id, ativ.data_inicio DESC NULLS LAST'
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
 // O FILTRO POR ANO NÃO PODE ZERAR O QUE ESTÁ EM EXECUÇÃO
 // ---------------------------------------------------------------------------
 //
@@ -220,5 +270,97 @@ describe('getInfoProjetoDetalhada: o recorte por ano', () => {
     // Quem muda é o parâmetro, e o `$<ano> IS NULL` é que abre o filtro inteiro.
     expect(capturado[capturado.length - 1].params.ano).toBeNull()
     expect(capturado[capturado.length - 2].params.ano).toBe(2026)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A VIEW VAZIA É UMA COLEÇÃO VAZIA, E NUNCA `features: null`
+// ---------------------------------------------------------------------------
+//
+// A view materializada de acompanhamento nasce JUNTO com a primeira etapa da
+// linha de produção, e nesse instante o lote ainda não tem unidade de trabalho
+// nenhuma -- é a decisão registrada em `er/acompanhamento_producao.sql`, "a
+// etapa existe antes de haver geometria nenhuma, que é exatamente quando a view
+// precisa nascer vazia". `camadaExiste` acha a view, então não há 404; sobre
+// zero linhas `array_agg` devolve NULL e `array_to_json(NULL)` devolve NULL, e a
+// rota respondia `{"type":"FeatureCollection","features":null}`. A tela
+// `#/producao/mapas` lê `resultado.geojson.features.length` logo depois de
+// entregar isso ao MapLibre, e o `catch` da página trocava o mapa inteiro pelo
+// bloco de erro -- para um lote cuja resposta certa é um mapa em branco.
+
+describe('getLayerGeoJSON: a camada sem feição nenhuma', () => {
+  test('o array de feições sai por COALESCE, e nunca nulo', async () => {
+    await ctrl.getLayerGeoJSON('lote_1_linha_2')
+    const sql = ultimoSqlUm()
+
+    expect(sql).toContain(
+      "COALESCE(array_to_json(array_agg(f)), '[]'::json) AS features"
+    )
+    // Controle negativo do texto exato que estava lá antes: o `array_to_json`
+    // cru, sem rede embaixo.
+    expect(sql).not.toMatch(/(?<!COALESCE\()array_to_json\(array_agg\(f\)\) AS features/)
+  })
+
+  test('o tipo continua FeatureCollection, e a consulta é a mesma no resto', async () => {
+    await ctrl.getLayerGeoJSON('lote_1_linha_2')
+    const sql = ultimoSqlUm()
+
+    expect(sql).toContain("SELECT 'FeatureCollection' AS type")
+    expect(sql).toContain('FROM acompanhamento.$<nome:raw> AS lg')
+    expect(sql).toContain('LATERAL ST_Dump(lg.geom) AS d')
+  })
+
+  test('a existência em pg_matviews continua vindo ANTES do GeoJSON', async () => {
+    await ctrl.getLayerGeoJSON('lote_1_linha_2')
+
+    expect(capturadoUm).toHaveLength(2)
+    expect(capturadoUm[0].sql).toContain('FROM pg_matviews')
+    expect(capturadoUm[1].sql).toContain('COALESCE(array_to_json(array_agg(f))')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// O PIT POR SUBFASE TAMBEM AGRUPA PELA CHAVE
+// ---------------------------------------------------------------------------
+//
+// A mesma armadilha de atividadeSubfase, na outra ponta do arquivo: agrupar por
+// (l.nome, s.nome) juntava numa linha so o que sao DUAS series. producao.subfase
+// e UNIQUE (nome, fase_id), entao Edicao existe na linha da Carta Topografica E
+// na do CDGV; acervo.lote so e UNIQUE em (projeto_id, pit), entao dois projetos
+// podem ter lotes homonimos. A secao Por subfase de #/producao/pit somava os
+// dois na mesma linha enquanto a secao Por lote, logo acima, ja os mostrava
+// separados: as duas metades da mesma tela discordavam sem que nada acusasse.
+
+describe('getInfoSubfasePIT: a chave sai junto com o rotulo', () => {
+  test('o GROUP BY comeca pelas chaves, e nao pelos nomes', async () => {
+    await ctrl.getInfoSubfasePIT(2026)
+    const grupo = clausulaFinal(ultimoSql(), 'GROUP BY')
+
+    expect(grupo.startsWith('vs.lote_id, vs.subfase_id, l.nome, s.nome, s.ordem')).toBe(true)
+    // Controle negativo do texto exato que estava la antes.
+    expect(grupo.startsWith('l.nome, s.nome, s.ordem')).toBe(false)
+  })
+
+  test('as chaves SAEM na resposta, que e o que o cliente agrupa', async () => {
+    await ctrl.getInfoSubfasePIT(2026)
+    const sql = ultimoSql()
+
+    expect(sql).toContain('SELECT vs.lote_id, vs.subfase_id, l.nome AS lote, s.nome AS subfase')
+  })
+
+  test('o rotulo, o mes e a quantidade continuam saindo como sempre sairam', async () => {
+    await ctrl.getInfoSubfasePIT(2026)
+    const sql = ultimoSql()
+
+    expect(sql).toContain('l.nome AS lote, s.nome AS subfase')
+    expect(sql).toContain('EXTRACT(MONTH FROM vs.data_fim)::int AS mes')
+    expect(sql).toContain('COUNT(*)::int AS quantidade')
+  })
+
+  test('e a ORDEM continua pelo rotulo, para a tela ler na ordem em que quebra', async () => {
+    await ctrl.getInfoSubfasePIT(2026)
+    const ordem = clausulaFinal(ultimoSql(), 'ORDER BY')
+
+    expect(ordem).toBe('l.nome, s.ordem, mes')
   })
 })

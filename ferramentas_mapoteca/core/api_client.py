@@ -114,6 +114,10 @@ class APIClient:
         url = urljoin(self.base_url.rstrip('/') + '/', f"api/{endpoint}")
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
         timeout = timeout or self.REQUEST_TIMEOUT
+        # A mensagem do envelope da ULTIMA falha HTTP, para quem chamou decidir o
+        # que fazer (o `_make_request` devolve None em erro e a frase morria no
+        # dialogo). Zerada a cada requisicao.
+        self.ultima_mensagem_do_servidor = None
 
         try:
             if method == 'GET':
@@ -135,7 +139,12 @@ class APIClient:
         except Timeout:
             self.show_error("Tempo Esgotado", "O servidor demorou muito para responder. Tente novamente mais tarde.")
         except HTTPError as e:
-            if e.response.status_code == 401 and _retry and self._try_relogin():
+            # `e.response` pode ser None (redirecionamento inválido, adaptador que
+            # falha depois de montar a exceção). Sem esta guarda a desreferência
+            # estoura AttributeError DENTRO do except, o `except Exception` irmão
+            # não o pega, e o erro sobe cru sem passar pelo _handle_http_error.
+            if (e.response is not None and e.response.status_code == 401
+                    and _retry and self._try_relogin()):
                 return self._make_request(method, endpoint, data=data, params=params, timeout=timeout, _retry=False)
             self._handle_http_error(e, method)
         except ValueError as e:
@@ -169,6 +178,7 @@ class APIClient:
             return
 
         server_msg = self._extract_server_message(e.response)
+        self.ultima_mensagem_do_servidor = server_msg
         if e.response.status_code == 401:
             self.show_error("Não Autorizado", "Sua sessão expirou e não foi possível reconectar. Feche o plugin e faça login novamente.")
         elif e.response.status_code == 403:
@@ -176,7 +186,7 @@ class APIClient:
                 "Acesso Negado",
                 "Você não tem permissão para esta ação no módulo Mapoteca.\n\n"
                 "Peça ao gerente da mapoteca o perfil Operador, ou faça a "
-                "operação pela interface web do SCA."
+                "operação pela interface web do SAP."
             )
         elif e.response.status_code == 404:
             if server_msg:

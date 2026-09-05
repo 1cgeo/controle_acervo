@@ -1,10 +1,32 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#1976d2">
   <title>SAP</title>
+  <!--
+    Carimba o tema ANTES da folha de estilo, e nao no `index.js`.
+    A paleta clara mora em `:root` e a escura em `[data-theme="dark"]`; o
+    `initTheme()` do modulo so roda depois de o bundle ser buscado e avaliado,
+    e ate la quem escolheu o tema escuro leva uma tela branca inteira a cada F5.
+    A chave `sca-theme-mode` esta escrita AQUI e em `src/js/utils/theme.js`:
+    as duas tem de andar juntas.
+  -->
+  <script>
+    (function () {
+      var modo = 'light';
+      try {
+        modo = localStorage.getItem('sca-theme-mode')
+          || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      } catch (e) {
+        modo = 'light';
+      }
+      document.documentElement.setAttribute('data-theme', modo);
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', modo === 'dark' ? '#121212' : '#1976d2');
+    })();
+  </script>
   <link rel="stylesheet" href="/src/css/style.css">
 </head>
 <body>

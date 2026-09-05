@@ -1,5 +1,5 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { showSuccess, showError } from '@utils/toast.js';
+import { showSuccess, showError, showInfo } from '@utils/toast.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
 import { confirmDialog } from '@components/modal/confirm-dialog.js';
@@ -13,6 +13,7 @@ import {
   baixarRelatorioDmt,
 } from '@modules/equipamento/services/equipamento-service.js';
 import {
+  SITUACAO,
   celulaPatrimonio,
   chipSituacao,
   classeDaLinha,
@@ -38,6 +39,15 @@ import { abrirBemDialog } from './bem-dialog.js';
  */
 export async function renderBensList(container, _ctx) {
   let disposed = false;
+
+  // O NUMERO DA REQUISICAO, que decide quem pinta.
+  //
+  // `disposed` so protege a SAIDA da pagina. Numa rede lenta, trocar o filtro
+  // duas vezes dispara duas cargas, e quem PINTA e a que chegar por ultimo: a
+  // resposta antiga pintava por cima da nova, com o seletor mostrando um recorte
+  // e a tabela mostrando outro. Aqui so a ULTIMA pedida pinta, no acerto e no
+  // erro.
+  let requisicao = 0;
   const pode = permissoes('equipamento');
 
   // O que os diálogos precisam, carregado uma vez pela tela. Fica em variável
@@ -47,12 +57,43 @@ export async function renderBensList(container, _ctx) {
 
   const filtros = { situacao_id: null, secao_detentora_id: null, tipo_id: null, ativo: null };
 
+  // Verdadeiro enquanto o filtro de carga na tela for o que a SITUAÇÃO escolheu,
+  // e não a pessoa. É o que permite DESFAZER a troca automática ao sair de
+  // `Baixado`: sem isso o `ativo = false` fica grudado e a situação seguinte
+  // (`Indisponível`, por exemplo) devolve lista vazia pelo mesmo motivo, desta
+  // vez SEM aviso nenhum.
+  let cargaVeioDaSituacao = false;
+
   // ---- Filtros -------------------------------------------------------------
   const situacaoFilter = createSelectField({
     label: 'Situação',
     options: [],
     placeholder: 'Todas as situações',
-    onChange: (v) => { filtros.situacao_id = v; carregar(); },
+    onChange: (v) => {
+      filtros.situacao_id = v;
+      // "BAIXADO" E "SOMENTE ATIVOS" NUNCA SE ENCONTRAM, e a tela nasce no
+      // segundo. A situação `Baixado` é derivada de `ativo = false` (a função
+      // `equipamento.situacao_em`, com a precedência mais alta), então pedir
+      // Baixado dentro dos ativos devolve lista vazia SEMPRE, e a tabela
+      // escrevia "Nenhum equipamento com esses filtros" como se fosse resposta
+      // sobre o acervo. Aqui o filtro de carga acompanha, e o aviso diz que
+      // acompanhou: o `<select>` ao lado muda à vista de quem clicou.
+      if (Number(v) === SITUACAO.BAIXADO && filtros.ativo === 'true') {
+        filtros.ativo = 'false';
+        ativoFilter.setValue('false');
+        cargaVeioDaSituacao = true;
+        showInfo('Baixado é o bem fora de carga: o filtro de carga passou para "Somente baixados".');
+      } else if (cargaVeioDaSituacao) {
+        // A VOLTA: quem trocou a carga foi a tela, e não a pessoa. Sair de
+        // `Baixado` desfaz a troca, senão `situacao_id=4 AND ativo=false` seria
+        // o mesmo vazio garantido, num recorte que ninguém escolheu.
+        filtros.ativo = 'true';
+        ativoFilter.setValue('true');
+        cargaVeioDaSituacao = false;
+        showInfo('O filtro de carga voltou para "Somente ativos".');
+      }
+      carregar();
+    },
   });
 
   const secaoFilter = createSelectField({
@@ -80,7 +121,8 @@ export async function renderBensList(container, _ctx) {
       { value: 'false', label: 'Somente baixados' },
     ],
     value: 'true',
-    onChange: (v) => { filtros.ativo = v; carregar(); },
+    // Dali em diante a carga é escolha da PESSOA, e a tela não a desfaz mais.
+    onChange: (v) => { filtros.ativo = v; cargaVeioDaSituacao = false; carregar(); },
   });
   filtros.ativo = 'true';
 
@@ -286,6 +328,7 @@ export async function renderBensList(container, _ctx) {
   }
 
   async function carregar() {
+    const minha = ++requisicao;
     // Uma recarga com o aviso na tela devolve a tabela antes de pintar nela.
     if (!areaTabela.contains(tabela.element)) areaTabela.replaceChildren(tabela.element);
 
@@ -297,10 +340,10 @@ export async function renderBensList(container, _ctx) {
         tipo_id: filtros.tipo_id ?? undefined,
         ativo: filtros.ativo ?? undefined,
       });
-      if (disposed) return;
+      if (disposed || minha !== requisicao) return;
       tabela.update({ rows: dados || [], loading: false });
     } catch (err) {
-      if (disposed) return;
+      if (disposed || minha !== requisicao) return;
       tabela.update({ loading: false });
       falhaNaCarga(err);
       showError(err.message || 'Erro ao carregar os equipamentos');

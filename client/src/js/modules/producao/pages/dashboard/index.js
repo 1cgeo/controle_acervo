@@ -365,7 +365,15 @@ export async function renderProducaoDashboard(container, _ctx) {
     const series = [];
     if (respondeu('finalizadas')) series.push({ dataKey: 'finalizadas', label: 'Finalizado' });
     if (respondeu('execucao')) series.push({ dataKey: 'em_execucao', label: 'Em execução' });
-    if (respondeu('previsto')) series.push({ dataKey: 'nao_iniciado', label: 'Não iniciado' });
+    // E "NÃO INICIADO" PEDE AS TRÊS, porque é uma CONTA entre elas: em
+    // `juntarPorLote`, previsto ou finalizadas ou em execução nulo faz
+    // `nao_iniciado` nulo em TODAS as linhas. Guardando só por `previsto`, a
+    // legenda apareceria sem desenhar barra nenhuma, e a pessoa leria "não há
+    // nada não iniciado" -- que é exatamente a leitura que as duas linhas acima
+    // trabalham para evitar.
+    if (respondeu('previsto') && respondeu('finalizadas') && respondeu('execucao')) {
+      series.push({ dataKey: 'nao_iniciado', label: 'Não iniciado' });
+    }
 
     grafico.update({
       loading: false,
@@ -377,16 +385,24 @@ export async function renderProducaoDashboard(container, _ctx) {
     });
   }
 
-  /** Uma fonte, sozinha, com o próprio catch. */
+  /**
+   * Uma fonte, sozinha, com o próprio catch.
+   *
+   * O ANO PEDIDO É CONFERIDO DEPOIS DO `await`: trocar o ano duas vezes seguidas
+   * no filtro dispara duas rodadas das três fontes, e a resposta do primeiro ano
+   * que chegar atrasada entraria em `porFonte` misturada com as do segundo. O
+   * painel somaria dois anos num cartão só, sem nada que acusasse. A resposta
+   * que não é mais a pedida é descartada antes de tocar no estado.
+   */
   async function carregarFonte(fonte) {
     const ano = filtroAno.getAno();
     try {
       const dados = await fonte.buscar(ano);
-      if (disposed) return;
+      if (disposed || ano !== filtroAno.getAno()) return;
       porFonte[fonte.id] = Array.isArray(dados) ? dados : [];
       delete falhas[fonte.id];
     } catch (err) {
-      if (disposed) return;
+      if (disposed || ano !== filtroAno.getAno()) return;
       porFonte[fonte.id] = null;
       falhas[fonte.id] = err;
     }

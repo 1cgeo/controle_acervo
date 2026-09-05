@@ -41,9 +41,18 @@ const verifyPerfil = require('../login/verify_perfil')
 
 const estrutura = require('./rpcmtec_estrutura')
 
-// 3 = gerente, em dominio.tipo_perfil. Editar o relatório da Divisão é ato de
-// quem responde pela área, e não de quem lança nela.
-const PERFIL_GERENTE = 3
+// Gerente, em `dominio.tipo_perfil`. Editar o relatório da Divisão é ato de quem
+// responde pela área, e não de quem lança nela.
+//
+// VEM DO `verifyPerfil`, PELA MESMA RAZÃO DO MAPA ABAIXO. Era o número 3 escrito
+// aqui, com um comentário explicando o 3 -- e este arquivo argumenta, oito linhas
+// adiante, que copiar a lista de módulos divergiria no primeiro módulo novo. Com
+// o código do perfil o preço é o mesmo: ganhar um nível acima de gerente em
+// `dominio.tipo_perfil` atualizaria `login/` e deixaria este arquivo cobrando 3,
+// liberando a escrita de subseção a um nível que ninguém decidiu liberar. Ele
+// entra no SQL (`perfil_id >= $<minimo>`), e código de tabela de domínio não é
+// número mágico.
+const PERFIL_GERENTE = verifyPerfil.PERFIL.gerente
 
 // O mesmo mapa que o `verifyPerfil` usa, e não uma cópia: os dois comparam o
 // `nome_abrev` de `dominio.modulo`, e duas listas divergiriam no primeiro módulo

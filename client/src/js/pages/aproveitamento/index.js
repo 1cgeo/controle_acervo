@@ -2,6 +2,7 @@ import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { showError } from '@utils/toast.js';
 import { createSelectField } from '@components/form-fields/form-fields.js';
 import { estadoErro } from '@components/estado-erro.js';
+import { temPerfil } from '@store/auth-store.js';
 import {
   getMapaEfetivo,
   getPeriodosEfetivo,
@@ -72,6 +73,18 @@ export async function renderAproveitamento(container, ctx) {
   const anoCorrente = new Date().getFullYear();
   let anoSelecionado = anoCorrente;
 
+  // LANÇAR passagem e impedimento DOS OUTROS é do GERENTE do Efetivo, e a porta
+  // desta tela é a LISTA `['consulta', 'gerente']` (em index.js): quem tem
+  // CONSULTA lê o mapa e não escreve nada. O servidor cobra
+  // `verifyPerfil('gerente', 'efetivo')` no POST, no PUT e no DELETE de
+  // `/efetivo/periodos` e `/efetivo/impedimentos` -- sem este recorte, "Nova
+  // passagem" e os ícones da ficha respondiam 403 depois do formulário
+  // preenchido. Isto é ERGONOMIA: quem barra é o servidor.
+  //
+  // `temPerfil`, e não `ehDeAlgumPerfil`: aqui a régua É hierárquica, porque é a
+  // do servidor, e o administrador global passa pelos dois.
+  const podeLancar = temPerfil('gerente', 'efetivo');
+
   // Guardados para a ficha do militar: ela mostra as passagens e os impedimentos
   // daquela pessoa sem pedir de novo ao servidor.
   let periodos = [];
@@ -116,7 +129,7 @@ export async function renderAproveitamento(container, ctx) {
   const page = el('div', { className: 'page' }, [
     el('div', { className: 'page__header' }, [
       el('h1', { className: 'page__title', textContent: 'Aproveitamento do efetivo' }),
-      el('div', { className: 'page__actions' }, [novaPassagemBtn]),
+      el('div', { className: 'page__actions' }, podeLancar ? [novaPassagemBtn] : []),
     ]),
     el('div', { className: 'page__filters' }, [anoFilter.element]),
     avisoProjecao,
@@ -154,6 +167,9 @@ export async function renderAproveitamento(container, ctx) {
     openMilitarDialog({
       militar,
       ano: anoSelecionado,
+      // A ficha continua ABRINDO para quem só tem consulta: o mapa responde
+      // "quanto" e ela responde "por quê". O que sai são os botões de escrita.
+      podeEscrever: podeLancar,
       periodos: periodosDo(militar.usuario_uuid),
       impedimentos: impedimentosDo(militar.usuario_uuid),
       // Recarrega o mapa por baixo E devolve as listas novas: sem elas a ficha

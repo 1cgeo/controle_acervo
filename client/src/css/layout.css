@@ -93,8 +93,17 @@
   background: var(--bg-hover);
 }
 
+/* A caixa POSICIONADORA do menu do usuario: o dropdown e `position: absolute`
+   em relacao a ela. O gatilho e um `<button>` de verdade dentro dela, e nao a
+   propria caixa, senao o menu ficaria dentro do botao -- e um `<button>` nao
+   pode conter os links do menu. */
 .navbar__user {
   position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.navbar__user-gatilho {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -104,7 +113,7 @@
   transition: background var(--transition-fast);
 }
 
-.navbar__user:hover {
+.navbar__user-gatilho:hover {
   background: var(--bg-hover);
 }
 

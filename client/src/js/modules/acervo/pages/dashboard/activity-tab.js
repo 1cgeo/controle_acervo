@@ -2,7 +2,7 @@ import { createBarChart } from '@components/charts/bar-chart.js';
 import { createDataTable } from '@components/data-table/data-table.js';
 import { createTabs } from '@components/tabs/tabs.js';
 import { chip } from '@components/status-chip.js';
-import { formatDateTime, formatNumber } from '@utils/format.js';
+import { formatDateTime, formatNumber, toIsoDate } from '@utils/format.js';
 import * as acervoService from '@modules/acervo/services/acervo-service.js';
 import { mostrarErro, mostrarErroNoGrafico } from '@components/estado-erro.js';
 
@@ -187,14 +187,22 @@ export async function renderActivityTab(container) {
 
   container.appendChild(subAbas.element);
 
-  /** Serie de 30 dias com zero nos dias sem movimento. */
+  /**
+   * Serie de 30 dias com zero nos dias sem movimento.
+   *
+   * A chave sai de `toIsoDate`, que le o dia LOCAL, e nunca de `toISOString`,
+   * que converte para UTC: das 21h em diante, em UTC-3, o "hoje" convertido ja
+   * e amanha. O eixo ganhava uma barra do dia seguinte, sempre em zero, e
+   * perdia o dia mais antigo da janela -- e o dia do servidor, que e o dia de
+   * calendario daqui, deixava de casar com a ponta da serie.
+   */
   function serieVazia() {
     const serie = {};
     const hoje = new Date();
     for (let i = DIAS_DA_SERIE - 1; i >= 0; i--) {
       const d = new Date(hoje);
       d.setDate(d.getDate() - i);
-      const chave = d.toISOString().split('T')[0];
+      const chave = toIsoDate(d);
       serie[chave] = { dia: chave.slice(5), uploads: 0, downloads: 0 };
     }
     return serie;

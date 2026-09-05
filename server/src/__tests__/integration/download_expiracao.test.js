@@ -18,6 +18,10 @@ const { ADMIN_UUID } = require('../helpers/auth')
 
 const acervoCtrl = require('../../acervo/acervo_ctrl')
 
+// O SEGUNDO ARGUMENTO E O DONO DO TOKEN. Desde 2026-09-05 o `confirmDownload`
+// casa tambem por `d.usuario_uuid`: so o dono fecha o proprio download. Aqui os
+// downloads sao criados com `ADMIN_UUID`, entao e ele quem confirma.
+
 // Os controllers leem `db.conn` no momento da chamada; quem o cria e o
 // createConn. Mesma razao do integration/exclusao_acervo.test.js.
 beforeAll(async () => {
@@ -48,9 +52,10 @@ describe('confirmDownload: o token vencido nao vale', () => {
     const chain = await createFullProduct()
     const token = await criarDownload(chain.arquivo.id, "NOW() - INTERVAL '1 minute'")
 
-    const [res] = await acervoCtrl.confirmDownload([
-      { download_token: token, success: true }
-    ])
+    const [res] = await acervoCtrl.confirmDownload(
+      [{ download_token: token, success: true }],
+      ADMIN_UUID
+    )
 
     expect(res.status).toBe('error')
 
@@ -67,9 +72,10 @@ describe('confirmDownload: o token vencido nao vale', () => {
     const chain = await createFullProduct()
     const token = await criarDownload(chain.arquivo.id, "NOW() + INTERVAL '24 hours'")
 
-    const [res] = await acervoCtrl.confirmDownload([
-      { download_token: token, success: true }
-    ])
+    const [res] = await acervoCtrl.confirmDownload(
+      [{ download_token: token, success: true }],
+      ADMIN_UUID
+    )
 
     expect(res.status).not.toBe('error')
 
@@ -84,9 +90,10 @@ describe('confirmDownload: o token vencido nao vale', () => {
     const chain = await createFullProduct()
     const token = await criarDownload(chain.arquivo.id, 'NULL')
 
-    const [res] = await acervoCtrl.confirmDownload([
-      { download_token: token, success: true }
-    ])
+    const [res] = await acervoCtrl.confirmDownload(
+      [{ download_token: token, success: true }],
+      ADMIN_UUID
+    )
 
     expect(res.status).not.toBe('error')
   })

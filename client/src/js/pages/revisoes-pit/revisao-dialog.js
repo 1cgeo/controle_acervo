@@ -99,7 +99,10 @@ export function abrirDialogoRevisao({
       {
         label: 'Salvar',
         variant: 'primary',
-        onClick: async ({ close }) => {
+        // `setOcupado` segura o dialogo enquanto a gravacao corre: Escape e
+        // clique no fundo o fechavam com a requisicao em voo, e a recusa do
+        // servidor chegava a uma tela sem campo nenhum para corrigir.
+        onClick: async ({ close, setOcupado }) => {
           if (salvando) return;
           codigoField.setError(null);
 
@@ -115,6 +118,7 @@ export function abrirDialogoRevisao({
           };
 
           salvando = true;
+          setOcupado(true);
           try {
             if (editando) {
               // SEM `ano` na edição, e o servidor cobra com 400. O ano é
@@ -133,9 +137,12 @@ export function abrirDialogoRevisao({
               await criarRevisao({ ano: Number(anoAlvo), ...body });
               showSuccess('Revisão criada como RASCUNHO');
             }
+            setOcupado(false);
             close();
             if (onSaved) onSaved();
           } catch (err) {
+            // O diálogo FICA ABERTO: o que a pessoa digitou continua na tela.
+            setOcupado(false);
             showError(err.message || 'Erro ao salvar a revisão');
           } finally {
             salvando = false;

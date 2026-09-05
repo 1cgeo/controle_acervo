@@ -81,7 +81,10 @@ export function abrirDialogoExercicio({ exercicio = null, ano = null, onSaved = 
       {
         label: 'Salvar',
         variant: 'primary',
-        onClick: async ({ close }) => {
+        // `setOcupado` segura o dialogo enquanto a gravacao corre: Escape e
+        // clique no fundo o fechavam com a requisicao em voo, e a recusa do
+        // servidor chegava a uma tela sem campo nenhum para corrigir.
+        onClick: async ({ close, setOcupado }) => {
           if (salvando) return;
 
           const body = {
@@ -90,6 +93,7 @@ export function abrirDialogoExercicio({ exercicio = null, ano = null, onSaved = 
           };
 
           salvando = true;
+          setOcupado(true);
           try {
             if (editando) {
               await atualizarExercicio(anoAlvo, body);
@@ -98,9 +102,11 @@ export function abrirDialogoExercicio({ exercicio = null, ano = null, onSaved = 
               await criarExercicio({ ano: anoAlvo, ...body });
               showSuccess(`Exercício de ${anoAlvo} aberto`);
             }
+            setOcupado(false);
             close();
             if (onSaved) onSaved();
           } catch (err) {
+            setOcupado(false);
             showError(err.message || 'Erro ao salvar o exercício');
           } finally {
             salvando = false;

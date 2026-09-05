@@ -11,6 +11,25 @@ const controller = {}
 // Codigo SQLSTATE do PostgreSQL para violacao de chave estrangeira.
 const FK_VIOLATION = '23503'
 
+// TOLERANCIA DE MEIO CENTAVO, a mesma de `validarTetoDasNcs` em
+// `nota_empenho_ctrl.js`, e pela mesma razao medida ali: os valores sao
+// NUMERIC(15,2) do Postgres, chegam como TEXTO e viram ponto flutuante em
+// `Number()`. A soma deixa residuo na 13a casa, e sem a folga a liquidacao do
+// saldo EXATO era recusada.
+//
+// Medido em 2026-09-05, em node: uma NE de 1.128,11 com 1.000,00 ja liquidados.
+// `Number('1000.00') + Number('128.11')` da 1128.1100000000001, e
+// `Number('1128.11')` da 1128.11 exatos: a soma fica 2,3e-13 ACIMA do teto, e a
+// comparacao crua dizia que os 128,11 restantes excediam o disponivel -- a NE
+// nao tinha como ser quitada pela tela. E o mesmo residuo que ja obrigou o
+// `saldo_a_liquidar` do `getPorId` a ser somado no BANCO.
+//
+// O TRIO IMPORTA. O par obvio (1.000,10 com 500,05 liquidados) NAO reproduz o
+// defeito: medido, `Number('500.05') + Number('500.05')` e `Number('1000.10')`
+// sao bit a bit o mesmo double, e a comparacao crua ja passava. Um caso montado
+// com esses numeros provaria a tolerancia sem exercita-la.
+const TOLERANCIA = 0.005
+
 // Carrega a NE dentro da transacao e devolve o valor disponivel para liquidar
 // (valor_empenhado - valor_anulado) mais o total ja liquidado, opcionalmente
 // ignorando uma liquidacao (no UPDATE, para nao contar a propria duas vezes).
@@ -100,7 +119,7 @@ controller.criar = async (dados, usuarioUuid, contexto) => {
         null
       )
 
-      if (totalOutras + Number(dados.valor_liquidado) > disponivel) {
+      if (totalOutras + Number(dados.valor_liquidado) > disponivel + TOLERANCIA) {
         throw new AppError(
           'Liquidação excede o valor empenhado disponível',
           httpCode.BadRequest
@@ -167,7 +186,7 @@ controller.atualizar = async (id, dados, usuarioUuid, contexto) => {
         id
       )
 
-      if (totalOutras + Number(dados.valor_liquidado) > disponivel) {
+      if (totalOutras + Number(dados.valor_liquidado) > disponivel + TOLERANCIA) {
         throw new AppError(
           'Liquidação excede o valor empenhado disponível',
           httpCode.BadRequest

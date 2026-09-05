@@ -257,19 +257,26 @@ async function resolverMis (args, cfg) {
     if (r.avisos) avisos.push(...r.avisos)
   }
 
+  // O FORMATO resolvido, e nao a flag: `--formato json` chega no mesmo lugar.
+  const formato = flags.json ? 'json' : (flags.formato || 'tsv')
   const out = saida.lista(linhas, {
-    formato: flags.json ? 'json' : (flags.formato || 'tsv'),
+    formato,
     campos: argsLib.lista(flags.campos),
     padrao: COLUNAS_RESOLUCAO
   })
 
   const resolvidos = linhas.filter(l => l.uuid_versao).length
-  const rodape = `\n${resolvidos} de ${linhas.length} folha(s) casadas com uma versao do acervo.` +
+  const resumo = `${resolvidos} de ${linhas.length} folha(s) casadas com uma versao do acervo.` +
     (resolvidos < linhas.length
       ? ' As demais NAO podem virar item: nomeie-as na observacao do pedido.'
       : '')
 
-  return { texto: out.texto + rodape, avisos: [...out.avisos, ...avisos] }
+  // Com `--json` o stdout e so o JSON: este verbo existe para alimentar o
+  // proximo comando com os uuid_versao casados, e a prosa colada no fim do
+  // array quebrava o `JSON.parse` de quem os le. O resumo vai para os AVISOS,
+  // que ja saem em stderr.
+  if (formato === 'json') return { texto: out.texto, avisos: [resumo, ...out.avisos, ...avisos] }
+  return { texto: `${out.texto}\n${resumo}`, avisos: [...out.avisos, ...avisos] }
 }
 
 // ---------------------------------------------------------------------------

@@ -1174,13 +1174,24 @@ const montaMetadadoXml = async (t, versao) => {
     null
   )
 
+  // A ESCALA PODE NAO EXISTIR, e o `String(null)` que saia daqui era pior que a
+  // ausencia: `dominio.tipo_escala` tem o code 6 ('Sem escala'), e o
+  // `SQL_DENOMINADOR_ESCALA` devolve NULL para ele. O `{{ESCALA}}` dos seis
+  // templates mora dentro de `<gco:Integer>`, entao a folha saia com
+  // `<gco:Integer>null</gco:Integer>` -- invalido contra o XSD do Perfil MGB --
+  // e com o titulo terminando em " - null", sem uma linha em `erros`. Vazio mais
+  // aviso e o mesmo desenho da equidistancia nao mapeada: campo em branco que o
+  // validador ACUSA, em vez de valor plausivel e errado.
   const escala = versao.denominador_escala
   const nome = versao.nome || versao.mi || versao.inom || ''
-  const escalaFmt = fmtEscala(escala)
+  const escalaFmt = escala == null ? '' : fmtEscala(escala)
 
   // Nas folhas SCN o titulo e "NOME - INOM - escala"; nas nao-SCN e so o NOME,
-  // sem o " -  - " com INOM vazio no meio.
-  const titulo = versao.inom ? `${nome} - ${versao.inom} - ${escalaFmt}` : nome
+  // sem o " -  - " com INOM vazio no meio. Sem escala, o titulo para no INOM em
+  // vez de arrastar um separador solto.
+  const titulo = versao.inom
+    ? [nome, versao.inom, escalaFmt].filter(Boolean).join(' - ')
+    : nome
 
   const valores = {
     INOM: versao.inom || '',
@@ -1198,7 +1209,7 @@ const montaMetadadoXml = async (t, versao) => {
     ORGAO_SITE: (infoProduto && infoProduto.org_site) || '',
     ORGAO_ENDERECO: (infoProduto && infoProduto.org_endereco) || '',
     ORGAO_TELEFONE: (infoProduto && infoProduto.org_telefone) || '',
-    ESCALA: String(escala),
+    ESCALA: escala == null ? '' : String(escala),
     ESCALA_FMT: escalaFmt,
     EQUIDISTANCIA: EQUIDISTANCIA_POR_ESCALA[escala] || '',
     PROJETO: (infoProduto && infoProduto.projeto_bdgex) || '',
@@ -1388,11 +1399,28 @@ const montaMetadadoXml = async (t, versao) => {
     )
   }
   if (!valores.UUID) erros.push('fileIdentifier (uuid_versao) vazio')
+  if (escala == null) {
+    // SO O CODE 6 CHEGA AQUI, e por isso a frase nomeia UMA causa e nao duas.
+    // A escala personalizada (code 5) nao produz escala nula: o CHECK de
+    // `acervo.produto` exige `denominador_escala_especial IS NOT NULL` quando
+    // `tipo_escala_id = 5`, e o proibe nos demais. Oferecer "ou a personalizada
+    // esta vazia" mandava quem le o erro procurar um estado que o banco recusa.
+    erros.push(
+      'escala não resolvida (acervo.produto.tipo_escala_id é "Sem escala"): ' +
+      'a denominação da escala e a equidistância saem em branco no XML'
+    )
+  }
   if (!infoProduto) {
     erros.push('versão ou lote sem metadado.informacoes_produto (preencha antes de publicar)')
   }
   if (/<gmd:distance>\s*<gco:Decimal>\s*<\/gco:Decimal>\s*<\/gmd:distance>/.test(xml)) {
-    erros.push(`equidistância não mapeada para a escala ${escala}: o campo de distância da curva ficou vazio (preencher à mão)`)
+    // A FOLHA SEM ESCALA SEMPRE CAI AQUI, e dizer "escala null" seria devolver
+    // pelo texto o `String(null)` que este bloco existe para tirar do XML.
+    erros.push(
+      escala == null
+        ? 'equidistância não pode ser resolvida sem escala: o campo de distância da curva ficou vazio'
+        : `equidistância não mapeada para a escala ${escala}: o campo de distância da curva ficou vazio (preencher à mão)`
+    )
   }
   const restantes = xml.match(/\{\{[A-Z_]+\}\}/g)
   if (restantes) {

@@ -402,13 +402,18 @@ export function openImpedimentoDialog({
  * @param {Object} [opcoes.api] - `API_DIVISAO` ou `API_PROPRIO`.
  * @param {Object} [opcoes.vazios] - `{periodos, impedimentos}`, o texto de cada
  *   lista vazia.
+ * @param {boolean} [opcoes.podeEscrever] - mostra "Nova", "Novo" e os ícones de
+ *   editar e excluir. VERDADEIRO por padrão, que é o caso da ficha do PRÓPRIO
+ *   em `#/perfil`: lá as rotas são `verifyAcesso`, e quem chega à seção já pode
+ *   escrever. Na ficha da DIVISÃO ele vem do perfil, porque a tela abre para
+ *   `consulta` e as rotas de lá exigem `gerente` no Efetivo.
  * @param {() => Promise<{periodos:Array, impedimentos:Array}|void>} [opcoes.onSaved]
  * @returns {{element:HTMLElement}}
  */
 export function criarFichaEfetivo({
   usuarioUuid, nomeMilitar = null, ano = new Date().getFullYear(),
   periodos = [], impedimentos = [], api = API_DIVISAO, vazios = {},
-  onSaved = null,
+  podeEscrever = true, onSaved = null,
 } = {}) {
   const nome = nomeMilitar;
   // "de Fulano" só entra quando há um Fulano a nomear. Na ficha do próprio o
@@ -487,7 +492,7 @@ export function criarFichaEfetivo({
       // leria como campo em branco.
       `${dia(p.data_inicio)} até ${p.data_fim ? dia(p.data_fim) : 'Atual'}`,
       p.observacao || '',
-      [
+      !podeEscrever ? [] : [
         botaoIcone(ICONS.edit, 'Editar', () => openPeriodoDialog({
           periodo: p, nomeMilitar: nome, onSaved: aposSalvar, api,
         })),
@@ -515,7 +520,7 @@ export function criarFichaEfetivo({
     return linha(
       `${i.descricao} (${i.percentual}%)`,
       `${dia(i.data_inicio)} até ${i.data_fim ? dia(i.data_fim) : 'Em curso'}`,
-      [
+      !podeEscrever ? [] : [
         botaoIcone(ICONS.edit, 'Editar', () => openImpedimentoDialog({
           impedimento: i, nomeMilitar: nome, onSaved: aposSalvar, api,
         })),
@@ -617,22 +622,22 @@ export function criarFichaEfetivo({
   pintar();
 
   const element = el('div', { className: 'ficha-militar' }, [
-    secao('Passagens pela DGEO', corpoPassagens, el('button', {
+    secao('Passagens pela DGEO', corpoPassagens, podeEscrever ? el('button', {
       className: 'btn btn--secondary btn--sm',
       type: 'button',
       onClick: () => openPeriodoDialog({
         usuarioUuid, nomeMilitar: nome, onSaved: aposSalvar, api,
       }),
       textContent: 'Nova',
-    })),
-    secao('Impedimentos', corpoImpedimentos, el('button', {
+    }) : null),
+    secao('Impedimentos', corpoImpedimentos, podeEscrever ? el('button', {
       className: 'btn btn--secondary btn--sm',
       type: 'button',
       onClick: () => openImpedimentoDialog({
         usuarioUuid, nomeMilitar: nome, onSaved: aposSalvar, api,
       }),
       textContent: 'Novo',
-    })),
+    }) : null),
   ]);
 
   // SÓ O NÓ. Trocar a lista de fora seria uma segunda porta para o mesmo estado,
@@ -654,11 +659,12 @@ export function criarFichaEfetivo({
  * @param {number} [opcoes.ano] - o ano da tela, que recorta as duas listas.
  * @param {Array} [opcoes.periodos]
  * @param {Array} [opcoes.impedimentos]
+ * @param {boolean} [opcoes.podeEscrever] - ver `criarFichaEfetivo`.
  * @param {() => Promise<{periodos:Array, impedimentos:Array}|void>} [opcoes.onSaved]
  */
 export function openMilitarDialog({
   militar, ano = new Date().getFullYear(),
-  periodos = [], impedimentos = [], onSaved = null,
+  periodos = [], impedimentos = [], podeEscrever = true, onSaved = null,
 } = {}) {
   const nome = `${militar.posto_abrev} ${militar.nome_guerra}`.trim();
 
@@ -668,6 +674,7 @@ export function openMilitarDialog({
     ano,
     periodos,
     impedimentos,
+    podeEscrever,
     // A ficha do MAPA escreve o dado dos OUTROS, e por isso vai pelas rotas do
     // gerente do Efetivo. A do próprio, em `#/perfil`, usa `API_PROPRIO`.
     api: API_DIVISAO,

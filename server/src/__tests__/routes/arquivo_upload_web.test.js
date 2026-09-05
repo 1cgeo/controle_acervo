@@ -28,7 +28,7 @@ const crypto = require('crypto')
 
 const { getApp } = require('../helpers/app')
 const { conn, cleanTestData } = require('../helpers/db')
-const { generateAdminToken, generateUserToken } = require('../helpers/auth')
+const { generateAdminToken, generateUserToken, ADMIN_UUID } = require('../helpers/auth')
 const { createVolume, createProduto } = require('../helpers/fixtures')
 const config = require('../../config')
 
@@ -125,6 +125,12 @@ const enviarProduto = (dados, arquivos, token = generateAdminToken()) => {
 const sha256 = conteudo => crypto.createHash('sha256').update(conteudo).digest('hex')
 const existe = caminho => fs.access(caminho).then(() => true).catch(() => false)
 
+// Nenhum `.parcial` sobrou no volume. O sufixo do parcial leva um UUID POR
+// REQUISICAO (ver `destinoDoArquivo`), entao conferir um nome fixo nao prova
+// mais nada: a varredura e por padrao.
+const parciaisNoVolume = async () =>
+  (await fs.readdir(raizVolume)).filter(n => n.includes('.parcial'))
+
 /** O nome que o PADRAO manda, perguntado ao proprio banco. */
 const nomePadraoDe = async (produtoId, rotuloVersao, subtipo = SUBTIPO) => {
   const { nome } = await conn.one(
@@ -177,7 +183,7 @@ describe('POST /api/arquivo/upload-web/versao', () => {
     const noVolume = path.join(raizVolume, `${esperado}.tif`)
     expect(await existe(noVolume)).toBe(true)
     expect(await fs.readFile(noVolume)).toEqual(conteudo)
-    expect(await existe(`${noVolume}.parcial`)).toBe(false)
+    expect(await parciaisNoVolume()).toEqual([])
 
     const arquivo = await conn.one('SELECT * FROM acervo.arquivo')
     expect(arquivo.nome_arquivo).toBe(esperado)
@@ -205,6 +211,135 @@ describe('POST /api/arquivo/upload-web/versao', () => {
         p.tipo_produto_id, v.subtipo_produto_id, p.mi, p.inom, p.nome,
         p.tipo_escala_id, p.denominador_escala_especial, v.versao)`)
     expect(divergentes).toHaveLength(0)
+  })
+
+  // DOIS ENVIOS SIMULTANEOS PARA A MESMA VERSAO.
+  //
+  // O nome fisico e DERIVADO dos metadados: as duas requisicoes escolhem o mesmo
+  // destino, e nenhuma das duas ve a linha da outra em `acervo.arquivo` (ela so
+  // nasce no fim). Enquanto o `.parcial` era so `destino + '.parcial'`, as duas
+  // abriam o MESMO arquivo com `flags: 'w'`, cada uma escrevendo do zero por
+  // cima da outra, e cada uma calculando o SHA-256 do PROPRIO fluxo. A vencedora
+  // gravava um checksum que os bytes do disco nao tinham, e nada depois relia os
+  // bytes para acusar. Quem arbitra continua sendo o indice unico; o que este
+  // caso cobra e que o byte no volume seja o byte que o banco descreve.
+  it('dois envios simultaneos da mesma versao nao misturam bytes', async () => {
+    await volumePrimario()
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+
+    // Conteudos de tamanhos BEM diferentes: se os dois fluxos se misturassem no
+    // mesmo parcial, o arquivo ficaria com pedaco de um e pedaco do outro, e
+    // nenhum dos dois checksums o descreveria.
+    const a = Buffer.alloc(2 * 1024 * 1024, 0x41)
+    const b = Buffer.alloc(512 * 1024, 0x42)
+
+    const respostas = await Promise.allSettled([
+      enviarVersao(
+        { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+        [{ conteudo: a, nome: 'primeiro.tif' }]
+      ),
+      enviarVersao(
+        { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+        [{ conteudo: b, nome: 'segundo.tif' }]
+      )
+    ])
+
+    // Uma so vence: a outra bate no indice unico (ou na conferencia de nome
+    // fisico) e faz rollback.
+    const criados = respostas.filter(
+      r => r.status === 'fulfilled' && r.value.status === 201
+    )
+    expect(criados).toHaveLength(1)
+
+    const linhas = await conn.any('SELECT * FROM acervo.arquivo')
+    expect(linhas).toHaveLength(1)
+
+    // O INVARIANTE que importa: o checksum gravado descreve os bytes que
+    // ficaram no volume.
+    const noVolume = path.join(raizVolume, `${linhas[0].nome_arquivo}.tif`)
+    expect(await existe(noVolume)).toBe(true)
+    expect(sha256(await fs.readFile(noVolume))).toBe(linhas[0].checksum)
+
+    // E a perdedora nao deixou temporario para tras.
+    expect(await parciaisNoVolume()).toEqual([])
+  })
+
+  // O ESPACO DO VOLUME, e as DUAS tabelas que o consomem.
+  //
+  // Os tres caminhos do plugin recusam com "Espaco insuficiente" antes de o
+  // cliente copiar byte; o caminho do navegador nao conferia nada. E a conta do
+  // plugin somava so `acervo.arquivo`, enquanto `ponto_controle.arquivo` grava
+  // no MESMO volume: um volume com 9 GB de ponto de controle dentro se
+  // anunciava vazio.
+  it('recusa o envio que nao cabe no volume', async () => {
+    const volume = await createVolume({
+      nome: 'Volume Apertado', volume: raizVolume, capacidade_gb: 0.001
+    })
+    await conn.none(
+      `INSERT INTO acervo.volume_tipo_produto (tipo_produto_id, volume_armazenamento_id, primario)
+       VALUES ($1, $2, TRUE)`,
+      [TIPO_PRODUTO, volume.id]
+    )
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+
+    // 2 MB contra 1 MB de capacidade.
+    const conteudo = Buffer.alloc(2 * 1024 * 1024, 0x43)
+    const res = await enviarVersao(
+      { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+      [{ conteudo, nome: 'grande.tif' }]
+    )
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/espaço insuficiente/i)
+    // E nao sobrou parcial: o plano falha antes de o storage abrir arquivo.
+    expect(await parciaisNoVolume()).toEqual([])
+    expect(await conn.any('SELECT id FROM acervo.arquivo')).toHaveLength(0)
+  })
+
+  // O QUE O PONTO DE CONTROLE OCUPA CONTA. Sem somar `ponto_controle.arquivo`,
+  // este caso responde 201.
+  it('conta tambem o que o ponto de controle ja ocupa no volume', async () => {
+    const volume = await createVolume({
+      nome: 'Volume Compartilhado', volume: raizVolume, capacidade_gb: 1
+    })
+    await conn.none(
+      `INSERT INTO acervo.volume_tipo_produto (tipo_produto_id, volume_armazenamento_id, primario)
+       VALUES ($1, $2, TRUE)`,
+      [TIPO_PRODUTO, volume.id]
+    )
+
+    // 1023 MB de ponto de controle num volume de 1 GB: sobra 1 MB.
+    const projeto = await conn.one(
+      `INSERT INTO acervo.projeto (nome, descricao, data_inicio, status_execucao_id,
+         usuario_cadastramento_uuid)
+       VALUES ('Projeto PC', '', '2026-01-01', 1, $1) RETURNING id`, [ADMIN_UUID])
+    const lote = await conn.one(
+      `INSERT INTO acervo.lote (projeto_id, pit, nome, descricao, data_inicio,
+         status_execucao_id, usuario_cadastramento_uuid)
+       VALUES ($1, 'PIT-ESP', 'Lote Espaco', '', '2026-01-01', 1, $2) RETURNING id`,
+      [projeto.id, ADMIN_UUID])
+    const ponto = await conn.one(
+      `INSERT INTO ponto_controle.ponto
+         (cod_ponto, lote_id, data_rastreio, geom, usuario_cadastramento_uuid)
+       VALUES ('PC-ESPACO', $1, '2026-03-01', ST_GeomFromEWKT($2), $3) RETURNING id`,
+      [lote.id, 'SRID=4674;POINT(-50 -15)', ADMIN_UUID])
+    await conn.none(
+      `INSERT INTO ponto_controle.arquivo
+         (ponto_id, tipo_arquivo_id, nome_arquivo, extensao, tamanho_mb, checksum,
+          volume_armazenamento_id, usuario_cadastramento_uuid)
+       VALUES ($1, 1, 'PC-ESPACO_pacote', 'zip', 1023, $2, $3, $4)`,
+      [ponto.id, 'b'.repeat(64), volume.id, ADMIN_UUID])
+
+    const produto = await createProduto({ tipo_produto_id: TIPO_PRODUTO })
+    const conteudo = Buffer.alloc(4 * 1024 * 1024, 0x44)
+
+    const res = await enviarVersao(
+      { produto_id: produto.id, versao: versaoBase(), arquivos: [arquivoBase()] },
+      [{ conteudo, nome: 'cabe_ou_nao.tif' }]
+    )
+
+    expect(res.status).toBe(400)
+    expect(res.body.message).toMatch(/espaço insuficiente/i)
   })
 
   it('varios arquivos da mesma versao dividem o nome e se separam pela extensao', async () => {

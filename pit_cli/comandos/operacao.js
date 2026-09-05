@@ -299,10 +299,21 @@ async function executar (args, cfg) {
     const r = await http.autenticada(cfg, operacao.metodo, caminho, {
       bytes: mp.bytes, contentType: mp.contentType
     })
-    const texto = r.dados && typeof r.dados === 'object'
+    const temDados = r.dados && typeof r.dados === 'object'
+    const recibo = `(${path.basename(arquivo)}, ${bytes.length} bytes)`
+    // Com `--json` o stdout e so o JSON: a mensagem do servidor ia ANTES do
+    // objeto e o recibo do arquivo DEPOIS dele, e os dois juntos quebravam o
+    // `JSON.parse` de quem encadeia. Descem para os AVISOS, que saem em stderr.
+    if (opcoesSaida.formato === 'json') {
+      return {
+        texto: saida.registro(temDados ? r.dados : null, { ...opcoesSaida, padrao: null }),
+        avisos: [r.message || 'enviado', recibo, ...avisos]
+      }
+    }
+    const texto = temDados
       ? `${r.message || 'enviado'}\n${saida.registro(r.dados, { ...opcoesSaida, padrao: null })}`
       : (r.message || 'enviado')
-    return { texto: `${texto}\n(${path.basename(arquivo)}, ${bytes.length} bytes)`, avisos }
+    return { texto: `${texto}\n${recibo}`, avisos }
   }
 
   // ---- dry-run -----------------------------------------------------------
@@ -345,9 +356,23 @@ async function executar (args, cfg) {
   })
 
   if (operacao.envelope === 'mensagem') {
+    // Com `--json` o stdout INTEIRO tem de ser JSON: a prosa do servidor sai
+    // como campo de um objeto, e nao solta, senao `JSON.parse` a recusa.
+    if (opcoesSaida.formato === 'json') {
+      return { texto: JSON.stringify({ message: r.message || 'ok' }, null, 2), avisos }
+    }
     return { texto: r.message || 'ok', avisos }
   }
   if (operacao.envelope === 'registro') {
+    // Idem para a escrita que devolve registro: o cabecalho com a mensagem do
+    // servidor ia colado ANTES do objeto. Ele desce para os AVISOS (stderr).
+    if (opcoesSaida.formato === 'json') {
+      const cabeca = operacao.metodo === 'GET' ? [] : [r.message || 'ok']
+      return {
+        texto: saida.registro(r.dados, { ...opcoesSaida, padrao: null }),
+        avisos: [...cabeca, ...avisos]
+      }
+    }
     const cabeca = operacao.metodo === 'GET' ? '' : (r.message || 'ok') + '\n'
     return {
       texto: cabeca + saida.registro(r.dados, { ...opcoesSaida, padrao: null }),

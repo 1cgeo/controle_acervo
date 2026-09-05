@@ -96,12 +96,20 @@ export async function renderNotaCreditoDetails(container, { params }) {
   // ---------------------------------------------------------------------------
   const titulo = el('h1', { className: 'page__title' });
 
+  // "VOLTAR" LEVA O ANO DA NC. A lista abre sempre no ano corrente, entao sair
+  // da ficha de uma NC de 2025 devolvia a lista de 2026, onde ela nem aparece.
+  // O ano so existe depois que a NC carrega, e por isso a rota se monta no
+  // CLIQUE, e nao na montagem do cabecalho.
+  const rotaDaLista = () => (ncAtual && ncAtual.ano != null
+    ? `/orcamento/notas_credito?ano=${ncAtual.ano}`
+    : '/orcamento/notas_credito');
+
   const cabecalho = el('div', { className: 'page__header' }, [
     el('div', {}, [
       el('button', {
         className: 'btn btn--text btn--sm',
         type: 'button',
-        onClick: () => { location.hash = '/orcamento/notas_credito'; },
+        onClick: () => { location.hash = rotaDaLista(); },
       }, [svgIcon(ICONS.arrowBack, 16), 'Voltar']),
       titulo,
     ]),
@@ -472,18 +480,25 @@ export async function renderNotaCreditoDetails(container, { params }) {
   // Histórico de alterações. É o MESMO componente da ficha da NE e do pedido.
   // Fora do `load` de propósito: dentro dele o painel seria destruído e refeito a
   // cada recolhimento lançado.
-  const historico = criarHistorico({
-    modulo: 'orcamento',
-    entidade: 'nota_credito',
-    id: ncId,
-    subtitulo: 'Alterações nesta nota de crédito',
-  });
-  root.appendChild(historico.element);
+  //
+  // SÓ QUANDO A FICHA MONTOU. Falhando a primeira carga, a raiz fica com "Nota de
+  // crédito não encontrada" e o botão de voltar, e o painel era pendurado ali
+  // assim mesmo: uma consulta de rastreabilidade por um registro que não abriu, e
+  // um título de "Histórico" embaixo de uma tela que não mostra nada.
+  const historico = montado
+    ? criarHistorico({
+      modulo: 'orcamento',
+      entidade: 'nota_credito',
+      id: ncId,
+      subtitulo: 'Alterações nesta nota de crédito',
+    })
+    : null;
+  if (historico) root.appendChild(historico.element);
 
   return () => {
     disposed = true;
     recolhimentosTable._cleanup();
     empenhosTable._cleanup();
-    historico.cleanup();
+    if (historico) historico.cleanup();
   };
 }

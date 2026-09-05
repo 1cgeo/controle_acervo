@@ -228,7 +228,17 @@ async function executar (args, cfg) {
       }
 
       const r = await http.autenticada(cfg, metodo, recurso.caminho, { corpo })
-      const texto = r.dados && typeof r.dados === 'object' && Object.keys(r.dados).length
+      const temDados = r.dados && typeof r.dados === 'object' && Object.keys(r.dados).length
+      // Com `--json` o stdout e so o JSON: a mensagem do servidor ia colada
+      // ANTES do objeto e quebrava o `JSON.parse` de quem le o id recem-criado
+      // para a chamada seguinte. Ela desce para os AVISOS, que saem em stderr.
+      if (opcoesSaida.formato === 'json') {
+        return {
+          texto: saida.registro(temDados ? r.dados : null, opcoesSaida),
+          avisos: [r.message || 'ok', ...todosAvisos]
+        }
+      }
+      const texto = temDados
         ? `${r.message || 'ok'}\n${saida.registro(r.dados, opcoesSaida)}`
         : (r.message || 'ok')
       return { texto, avisos: todosAvisos }

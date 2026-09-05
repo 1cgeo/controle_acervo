@@ -26,6 +26,10 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
         self.file_infos = []
         self.file_type_checkboxes = {}
         self.download_in_progress = False
+        # Pasta escolhida e "o próximo prepare-download termina em download".
+        # Ver o comentário de start_download.
+        self._destino_escolhido = ''
+        self._baixar_apos_preparar = False
 
         # Um disparo só depois da última caixa marcada. Ver agendar_resumo.
         self._resumo_timer = QTimer(self)
@@ -192,6 +196,23 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
         # para evitar loop infinito prepare→complete→summary→prepare)
         self._refresh_file_summary_ui()
 
+        # Prepare pedido pelo botão Download: seguir direto para a cópia, com os
+        # tokens que acabaram de ser reservados.
+        if self._baixar_apos_preparar:
+            self._baixar_apos_preparar = False
+            if not file_infos:
+                self._encerrar_estado_de_download()
+                self.statusLabel.setText("Nenhum arquivo disponível para os produtos selecionados.")
+                QMessageBox.warning(
+                    self, "Nada para baixar",
+                    "O servidor não reservou nenhum arquivo para os produtos e os "
+                    "tipos escolhidos. Confira os tipos marcados e tente de novo."
+                )
+                return
+            self.statusLabel.setText("Iniciando downloads...")
+            self.download_manager.start_download(self.file_infos, self._destino_escolhido)
+            return
+
         # Update status
         if file_infos:
             self.statusLabel.setText("Pronto para download. Selecione os tipos de arquivo desejados.")
@@ -268,8 +289,12 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
         
         if directory:
             self.destinationLineEdit.setText(directory)
-            # Check if download button should be enabled
-            self.update_file_summary()
+            # SÓ a interface. `update_file_summary` refaria o prepare-download, e
+            # cada prepare RESERVA um lote de tokens de 24 horas no servidor:
+            # trocar de pasta três vezes antes de baixar deixaria três lotes
+            # pendentes que ninguém vai confirmar. A pasta não muda a lista de
+            # arquivos, então aqui basta repintar os rótulos e o botão.
+            self._refresh_file_summary_ui()
             
     def start_download(self):
         """Start the download process."""
@@ -298,12 +323,28 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
         self.downloadButton.setEnabled(False)
         self.cancelButton.setEnabled(True)
         self.closeButton.setEnabled(False)
-        
+        self._destino_escolhido = destination_dir
+
         # Reset progress bars
         self.fileProgressBar.setValue(0)
         self.overallProgressBar.setValue(0)
-        
-        # Start download
+
+        # O TOKEN SE GASTA NA PRIMEIRA RODADA. Cancelar depois de 3 de 10
+        # arquivos e clicar em Download de novo reenviava os MESMOS
+        # download_token, inclusive os três já confirmados: o servidor recusa o
+        # que não está mais `pending` e a tela anunciava "N token(s) de download
+        # expiraram" no fim de um download que copiou tudo. Cada rodada refaz o
+        # prepare e ganha tokens novos, como o plugin da mapoteca já faz.
+        selected_types = [int(type_id) for type_id, checkbox in self.file_type_checkboxes.items()
+                          if checkbox.isChecked()]
+        if self.products and selected_types:
+            self._baixar_apos_preparar = True
+            self.statusLabel.setText("Reservando os arquivos no servidor...")
+            self.download_manager.prepare_download(self.products, selected_types)
+            return
+
+        # Sem lista de produtos (a janela foi alimentada arquivo a arquivo): usar
+        # os tokens que já estão em mãos.
         self.statusLabel.setText("Iniciando downloads...")
         self.download_manager.start_download(self.file_infos, destination_dir)
         
@@ -340,18 +381,55 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
         status_text = f"Arquivo {file_name} baixado com " + ("sucesso" if success else "falha")
         self.statusLabel.setText(status_text)
         
+    def _encerrar_estado_de_download(self):
+        """Devolve a janela ao estado de repouso, em qualquer desfecho."""
+        self.download_in_progress = False
+        self._baixar_apos_preparar = False
+        self.downloadButton.setEnabled(True)
+        self.cancelButton.setEnabled(False)
+        self.closeButton.setEnabled(True)
+
     def handle_download_complete(self, results):
         """Handle completion of all downloads."""
         # Count successes and failures
         successes = sum(1 for r in results if r['success'])
         failures = len(results) - successes
-        
+        cancelado = self.download_manager.is_cancelled
+        total = len(self.file_infos)
+
         # Update UI
-        self.download_in_progress = False
-        self.downloadButton.setEnabled(True)
-        self.cancelButton.setEnabled(False)
-        self.closeButton.setEnabled(True)
-        
+        self._encerrar_estado_de_download()
+
+        # Lista VAZIA é o cancelamento antes de o primeiro arquivo terminar.
+        # Sem este caso, a tela anunciava "Todos os 0 arquivos foram baixados
+        # com sucesso" para quem acabara de cancelar.
+        if not results:
+            self.statusLabel.setText("Download cancelado: nenhum arquivo foi baixado.")
+            QMessageBox.information(
+                self, "Download cancelado",
+                "O download foi cancelado antes de qualquer arquivo terminar. "
+                "Nenhum arquivo foi gravado na pasta de destino."
+            )
+            return
+
+        # CANCELADO NO MEIO não é concluído. Sem este caso, cancelar depois de 3
+        # de 10 arquivos abria a caixa "Download Concluído: todos os 3 arquivos
+        # foram baixados com sucesso", e nada na tela dizia que 7 ficaram para
+        # trás.
+        if cancelado:
+            self.statusLabel.setText(
+                f"Download cancelado: {successes} de {total} arquivo(s) baixados."
+            )
+            texto = f"{successes} de {total} arquivo(s) baixados antes do cancelamento."
+            if failures:
+                texto += f"\n\n{failures} arquivo(s) falharam antes do cancelamento."
+            texto += (
+                "\n\nOs arquivos incompletos foram descartados da pasta de destino. "
+                "Para pegar o que faltou, clique em Download de novo."
+            )
+            QMessageBox.information(self, "Download cancelado", texto)
+            return
+
         # Show completion message
         if failures == 0:
             self.statusLabel.setText(f"Download concluído: {successes} arquivos baixados com sucesso.")
@@ -377,10 +455,7 @@ class DownloadProdutosDialog(QDialog, FORM_CLASS):
             
     def handle_download_error(self, error_message):
         """Handle download error."""
-        self.download_in_progress = False
-        self.downloadButton.setEnabled(True)
-        self.cancelButton.setEnabled(False)
-        self.closeButton.setEnabled(True)
+        self._encerrar_estado_de_download()
         
         self.statusLabel.setText(f"Erro: {error_message}")
         

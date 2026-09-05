@@ -1,6 +1,6 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { showSuccess, showError } from '@utils/toast.js';
-import { meusAcessos, getCatalogoModulos } from '@store/auth-store.js';
+import { meusAcessos, getCatalogoModulos, logout } from '@store/auth-store.js';
 import {
   createTextField,
   createSelectField,
@@ -260,12 +260,16 @@ export async function renderPerfil(container, _ctx) {
     try {
       await alterarMinhaSenha({ senha_atual: atual, senha_nova: nova });
       if (disposed) return;
-      // A sessão continua valendo: o token não carrega a senha, então trocá-la
-      // não expulsa quem está usando o sistema neste momento.
-      showSuccess('Senha alterada com sucesso');
+      // A SESSÃO ACABA AQUI. Desde 2026-09-05 o token carrega o `carimbo` da
+      // senha (servidor: `login/carimbo_da_senha.js`), e toda guarda o confere:
+      // com a senha nova, a próxima requisição deste token responde 401. Em vez
+      // de deixar a pessoa clicar até tomar o 401, a tela avisa e a leva ao
+      // login na hora, pelo mesmo caminho que o `api-client` usa no 401.
       senhaAtualField.setValue('');
       senhaNovaField.setValue('');
       senhaConfirmaField.setValue('');
+      showSuccess('Senha alterada. Entre de novo com a senha nova.');
+      logout();
     } catch (err) {
       if (disposed) return;
       showError(err.message || 'Erro ao alterar a senha');
@@ -362,16 +366,26 @@ export async function renderPerfil(container, _ctx) {
 
   const anoCorrente = new Date().getFullYear();
   let anoSelecionado = anoCorrente;
+  // TOKEN DE REQUISICAO da grade. Trocar de ano depressa dispara duas
+  // `getMeuAproveitamento`, e quem pintava era a que chegasse por ultimo: o
+  // seletor mostrando 2024 e a grade mostrando 2025, sem nada na tela que
+  // denunciasse. E o mesmo guarda de `#/acessos` e de `#/rastreabilidade`.
+  let pedidoGrade = 0;
 
   // Guardadas para a grade: os impedimentos explicam a cor no `title` de cada
   // célula, e as passagens dizem que anos o seletor oferece.
   let periodos = [];
   let impedimentos = [];
 
+  // `placeholder: null`: NÃO EXISTE "nenhum ano" nesta grade, e é a mesma
+  // escolha que `@components/filtro-ano.js` faz. Com a opção vazia, escolhê-la
+  // devolvia `null`, o `onChange` desistia e o seletor ficava mostrando um vazio
+  // enquanto a grade continuava pintada com o ano anterior: a tela passava a
+  // dizer uma coisa e mostrar outra.
   const anoFilter = createSelectField({
     label: 'Ano',
     options: [{ value: anoSelecionado, label: String(anoSelecionado) }],
-    placeholder: 'Ano',
+    placeholder: null,
     value: anoSelecionado,
     onChange: (valor) => {
       if (valor === null) return;
@@ -469,6 +483,10 @@ export async function renderPerfil(container, _ctx) {
    * do `Promise.all` que matava `#/aproveitamento`.
    */
   async function carregarGrade() {
+    const meu = ++pedidoGrade;
+    // O ano DESTE pedido. Dali para baixo nada mais le `anoSelecionado`: entre
+    // o pedido e a resposta ele pode ja ser outro.
+    const ano = anoSelecionado;
     mapa.innerHTML = '';
     resumoAno.innerHTML = '';
     avisoAno.innerHTML = '';
@@ -482,9 +500,9 @@ export async function renderPerfil(container, _ctx) {
 
     let dados;
     try {
-      dados = await getMeuAproveitamento(anoSelecionado);
+      dados = await getMeuAproveitamento(ano);
     } catch (err) {
-      if (disposed) return;
+      if (disposed || meu !== pedidoGrade) return;
       mapa.innerHTML = '';
       mapa.appendChild(el('p', {
         className: 'perfil__erro',
@@ -493,16 +511,16 @@ export async function renderPerfil(container, _ctx) {
       }));
       return;
     }
-    if (disposed) return;
+    if (disposed || meu !== pedidoGrade) return;
 
     const anual = (dados && dados.anual) || [];
 
     mapa.innerHTML = '';
-    const aviso = avisoProjecao(anoSelecionado, anoCorrente);
+    const aviso = avisoProjecao(ano, anoCorrente);
     if (aviso) avisoAno.appendChild(aviso);
-    montarResumoDoAno(anual);
+    montarResumoDoAno(anual, ano);
     mapa.appendChild(montarMapaEfetivo({
-      ano: anoSelecionado,
+      ano,
       semanas: (dados && dados.semanas) || [],
       anual,
       impedimentos,
@@ -515,7 +533,7 @@ export async function renderPerfil(container, _ctx) {
       // duas colunas largas de uma tabela de 53 estreitas, que empurravam a
       // grade para o overflow horizontal dentro da seção.
       comIdentificacao: false,
-      vazio: `Você não tem passagem pela DGEO cadastrada em ${anoSelecionado}.`,
+      vazio: `Você não tem passagem pela DGEO cadastrada em ${ano}.`,
     }));
   }
 
@@ -528,7 +546,7 @@ export async function renderPerfil(container, _ctx) {
    * a primeira é o número que o fechamento anual publica, e a segunda é a que
    * responde "eu rendi?".
    */
-  function montarResumoDoAno(anual) {
+  function montarResumoDoAno(anual, ano) {
     resumoAno.innerHTML = '';
     if (!anual.length) return;
 
@@ -536,7 +554,7 @@ export async function renderPerfil(container, _ctx) {
     const dias = diasNaDgeo === 1 ? '1 dia' : `${diasNaDgeo} dias`;
 
     resumoAno.append(
-      `Seu aproveitamento em ${anoSelecionado}, sobre o ano inteiro: `,
+      `Seu aproveitamento em ${ano}, sobre o ano inteiro: `,
       el('strong', { textContent: pct(simples) }),
       `. Sobre os ${dias} em que você esteve na DGEO: ${pct(ponderada)}.`
     );

@@ -253,4 +253,65 @@ describe('renderAproveitamento', () => {
 
     if (typeof cleanup === 'function') cleanup();
   });
+
+  // -------------------------------------------------------------------------
+  // QUEM SÓ LÊ NÃO VÊ BOTÃO DE ESCREVER
+  //
+  // A porta desta tela é a LISTA `['consulta', 'gerente']`, e ela NÃO é
+  // hierárquica: quem tem consulta no Efetivo lê o mapa. LANÇAR passagem e
+  // impedimento dos OUTROS é do GERENTE, e é o que o servidor cobra em POST,
+  // PUT e DELETE de `/efetivo/periodos` e `/efetivo/impedimentos`.
+  //
+  // Sem este recorte, quem só tem consulta abria "Nova passagem", preenchia o
+  // formulário e levava 403; dentro da ficha, "Nova", "Novo" e os ícones de
+  // editar e excluir de cada linha respondiam o mesmo.
+  //
+  // A FICHA CONTINUA ABRINDO: o mapa responde "quanto", e ela responde "por
+  // quê", que é a leitura que a consulta veio fazer.
+  // -------------------------------------------------------------------------
+  test('quem só tem consulta no Efetivo lê o mapa e não vê botão de escrever', async () => {
+    saveAuth(
+      { token: 't', administrador: false, uuid: 'u', perfis: { efetivo: 1 }, modulos: [] }, 'x'
+    );
+    getMapaEfetivo.mockResolvedValueOnce({ ano: 2026, semanas: SEMANAS, anual: ANUAL });
+    getImpedimentos.mockResolvedValueOnce(IMPEDIMENTOS);
+
+    const { container, cleanup } = await montar();
+
+    expect(container.querySelector('.page__actions').textContent).toBe('');
+    // A grade continua inteira: consulta LÊ.
+    expect(linhas(container).length).toBe(2);
+
+    // E a ficha abre, sem os botões que gravam.
+    linhas(container)[0].click();
+    await flush();
+    const modal = document.querySelector('.modal');
+    expect(modal).not.toBeNull();
+    expect(modal.querySelector('.data-table__action-btn')).toBeNull();
+    expect(modal.textContent).not.toContain('Nova');
+    expect(modal.textContent).not.toContain('Novo');
+
+    document.body.innerHTML = '';
+    if (typeof cleanup === 'function') cleanup();
+  });
+
+  test('o GERENTE do Efetivo continua com "Nova passagem" e com os botões da ficha', async () => {
+    saveAuth(
+      { token: 't', administrador: false, uuid: 'u', perfis: { efetivo: 3 }, modulos: [] }, 'x'
+    );
+    getMapaEfetivo.mockResolvedValueOnce({ ano: 2026, semanas: SEMANAS, anual: ANUAL });
+
+    const { container, cleanup } = await montar();
+
+    expect(container.querySelector('.page__actions').textContent).toContain('Nova passagem');
+
+    linhas(container)[0].click();
+    await flush();
+    const modal = document.querySelector('.modal');
+    expect(modal.textContent).toContain('Nova');
+    expect(modal.textContent).toContain('Novo');
+
+    document.body.innerHTML = '';
+    if (typeof cleanup === 'function') cleanup();
+  });
 });

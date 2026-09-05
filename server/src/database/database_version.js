@@ -13,7 +13,10 @@ const dbVersion = {}
 const validate = dbv => {
   if (semver.lt(semver.coerce(dbv), semver.coerce(MIN_DATABASE_VERSION))) {
     throw new AppError(
-      `Versão do banco de dados (${dbv}) não compatível com a versão do serviço. A versão deve ser superior a ${MIN_DATABASE_VERSION}.`
+      // "IGUAL OU superior", porque a conferencia e `lt`: o proprio
+      // MIN_DATABASE_VERSION passa. A frase antiga dizia "superior a", e mandava
+      // quem estava exatamente no piso procurar uma migracao que nao existe.
+      `Versão do banco de dados (${dbv}) não compatível com a versão do serviço. A versão deve ser igual ou superior a ${MIN_DATABASE_VERSION}.`
     )
   }
 }

@@ -18,6 +18,13 @@ import { criarEdicao, atualizarEdicao } from '@services/rpcmtec-service.js';
  * A DATA DE ASSINATURA continua editavel com a edicao fechada, e e deliberado:
  * o documento e assinado DEPOIS de fechado, e e ai que essa informacao chega. O
  * que o fechamento congela e o que o relatorio afirma, nao quem o assinou.
+ *
+ * O ANO E O MES SAO A EXCECAO, e travam quando a edicao fecha. O par (ano, mes)
+ * diz DE QUE MES sao as 33 subsecoes ja congeladas, e troca-lo faria a edicao
+ * afirmar agosto com os numeros de julho. O servidor ja recusa
+ * (`rpcmtec_edicao_ctrl.js:445`), mas recusa o CORPO INTEIRO: quem abriu o
+ * dialogo so para preencher a data da assinatura e esbarrou no mes perdia
+ * tambem a data, e tinha de desfazer o mes na mao para conseguir salvar.
  */
 
 const MESES = [
@@ -31,6 +38,11 @@ export function abrirDialogoEdicao({
   const editando = Boolean(edicao);
   const hoje = new Date();
 
+  // A EDIÇÃO FECHADA TRAVA O PERÍODO. Ver o cabeçalho: só o ano e o mês.
+  const travado = Boolean(edicao?.fechada);
+  const AVISO_TRAVADO = 'A edição está fechada, e o período dela diz de que mês '
+    + 'são as subseções congeladas. Reabra-a para mudá-lo.';
+
   const anoField = createNumberField({
     label: 'Ano',
     required: true,
@@ -38,6 +50,7 @@ export function abrirDialogoEdicao({
     max: 2100,
     step: 1,
     value: edicao?.ano ?? hoje.getFullYear(),
+    helpText: travado ? AVISO_TRAVADO : undefined,
   });
 
   const mesField = createSelectField({
@@ -45,7 +58,16 @@ export function abrirDialogoEdicao({
     required: true,
     options: MESES.map((nome, i) => ({ value: i + 1, label: nome })),
     value: edicao?.mes ?? (hoje.getMonth() + 1),
+    helpText: travado ? AVISO_TRAVADO : undefined,
   });
+
+  // `disabled` NO NÓ, e não uma opção nova de `form-fields.js`: o campo
+  // desabilitado continua devolvendo o valor em `getValue()`, então o corpo do
+  // PUT sai com o período que já estava e o servidor não vê mudança nenhuma.
+  if (travado) {
+    anoField.input.disabled = true;
+    mesField.input.disabled = true;
+  }
 
   const assinanteField = createComboBoxField({
     label: 'Assinante',

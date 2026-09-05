@@ -31,8 +31,8 @@ export function rotuloDaCamada(view) {
   const lote = view.lote || (linha ? `lote ${linha[1]}` : subfase ? `lote ${subfase[1]}` : view.nome);
   const projeto = view.projeto ? `${view.projeto} / ` : '';
 
-  if (linha) return `${projeto}${lote} — linha de produção ${linha[2]}`;
-  if (subfase) return `${projeto}${lote} — subfase ${subfase[2]}`;
+  if (linha) return `${projeto}${lote}, linha de produção ${linha[2]}`;
+  if (subfase) return `${projeto}${lote}, subfase ${subfase[2]}`;
   return view.nome;
 }
 
@@ -63,13 +63,33 @@ export function rotuloDaCamada(view) {
  * PRODUÇÃO inteira, sobre todos os lotes que a executam. Ela só se oferece
  * quando a camada escolhida é de linha de produção, porque é de lá que sai o id.
  *
+ * A CAMADA ESCOLHIDA VIVE NA URL. Sair da tela e voltar devolvia a de blocos, e
+ * sem nada na barra de endereço não havia como mandar a alguém o recorte de um
+ * lote -- só o nome da view e a instrução de digitá-lo no campo. A escrita é por
+ * `history.replaceState`, e não pelo hash, que faria o roteador remontar a tela
+ * (e o mapa) a cada troca de camada. A camada de blocos é o padrão e não entra
+ * na query, então a tela pelada continua sendo '#/producao/mapas'.
+ *
  * @param {HTMLElement} container
+ * @param {{params?:Object, query?:URLSearchParams}} [ctx]
  * @returns {Function} cleanup
  */
-export function renderMapas(container) {
+export function renderMapas(container, ctx = {}) {
   let disposed = false;
   let catalogo = [];
-  let camadaAtual = BLOCO;
+
+  // A MESMA FORMA QUE O CAMPO "abrir pelo nome" COBRA. Um `?camada=` fora dela
+  // renderia um 400 do servidor logo na abertura, e a pessoa leria um erro sobre
+  // uma camada que ela não escolheu -- colar um link torto cai na de blocos.
+  const daUrl = ((ctx && ctx.query) || new URLSearchParams()).get('camada');
+  let camadaAtual = daUrl && NOME_CAMADA.test(daUrl) ? daUrl : BLOCO;
+
+  function sincronizarUrl() {
+    const params = new URLSearchParams();
+    if (camadaAtual !== BLOCO) params.set('camada', camadaAtual);
+    const texto = params.toString();
+    history.replaceState(null, '', `#/producao/mapas${texto ? `?${texto}` : ''}`);
+  }
 
   const mapa = criarMapaAcompanhamento();
 
@@ -80,11 +100,20 @@ export function renderMapas(container) {
   const seletor = createSelectField({
     label: 'Camada',
     placeholder: null,
-    options: [{ value: BLOCO, label: 'Blocos (todos os lotes)' }],
-    value: BLOCO,
+    // As duas opções nascem com a camada da URL, senão o seletor mostraria
+    // "Blocos" enquanto o mapa desenha outra coisa. O catálogo, quando chega,
+    // refaz a lista com o rótulo de gente.
+    options: camadaAtual === BLOCO
+      ? [{ value: BLOCO, label: 'Blocos (todos os lotes)' }]
+      : [
+        { value: BLOCO, label: 'Blocos (todos os lotes)' },
+        { value: camadaAtual, label: rotuloDaCamada({ nome: camadaAtual }) },
+      ],
+    value: camadaAtual,
     onChange: (valor) => {
       if (!valor) return;
       camadaAtual = String(valor);
+      sincronizarUrl();
       sincronizarTile();
       carregarCamada();
     },
@@ -208,17 +237,53 @@ export function renderMapas(container) {
     }
     campoNome.setError('');
     camadaAtual = nome;
+    sincronizarUrl();
     montarOpcoes();
     sincronizarTile();
     carregarCamada();
   }
 
+  /**
+   * Devolve o mapa ao lugar dele, quando um estado de erro tomou a área.
+   *
+   * ELA VALE PARA TODA CARGA BEM-SUCEDIDA, e não só para o "Tentar de novo".
+   * Sem isso, quem levava um erro numa camada e escolhia OUTRA no seletor
+   * recebia a camada nova em silêncio: a linha de situação passava a dizer
+   * "34 feição(ões) em ..." com a caixa de erro da camada anterior ainda no
+   * lugar do mapa, que continuava fora do documento. A tela afirmava duas
+   * coisas contrárias ao mesmo tempo.
+   *
+   * O `redimensionar` é obrigatório na volta: o MapLibre mede o contêiner ao
+   * entrar no documento, e um canvas que voltou sem a medida fica com o tamanho
+   * que tinha quando saiu.
+   */
+  function devolverMapa() {
+    if (mapa.element.parentNode === areaMapa) return;
+    clearChildren(areaMapa);
+    areaMapa.appendChild(mapa.element);
+    mapa.redimensionar();
+  }
+
+  /**
+   * A CAMADA PEDIDA É FOTOGRAFADA ANTES DO `await`, e a resposta que chega para
+   * outra camada é DESCARTADA.
+   *
+   * As views não respondem no mesmo tempo: a de um lote grande demora, e quem
+   * troca o seletor duas vezes depressa recebe a segunda antes da primeira. Sem
+   * esta guarda, a resposta atrasada pinta os polígonos DELA e o rótulo é
+   * remontado com `camadaAtual`, que já é a outra: a tela mostraria o recorte de
+   * um lote afirmando ser o de outro, sem erro nenhum. Vale igual para o ramo
+   * `resultado.vazio`, que apagaria com "Ainda não há o que mostrar" uma camada
+   * nova e cheia. É o mesmo padrão de `mapas-mapa.js:349`, na tile.
+   */
   async function carregarCamada() {
-    situacao.textContent = `Carregando ${rotuloDaCamada({ nome: camadaAtual })}...`;
+    const pedida = camadaAtual;
+    situacao.textContent = `Carregando ${rotuloDaCamada({ nome: pedida })}...`;
     situacao.className = 'mapas__situacao';
     try {
-      const resultado = await getMapaAcompanhamento(camadaAtual);
-      if (disposed) return;
+      const resultado = await getMapaAcompanhamento(pedida);
+      if (disposed || pedida !== camadaAtual) return;
+      devolverMapa();
 
       if (resultado.vazio) {
         // CAMADA QUE AINDA NÃO NASCEU NÃO É ERRO. A frase é a do servidor, que
@@ -232,17 +297,15 @@ export function renderMapas(container) {
       mapa.setFeicoes(resultado.geojson);
       situacao.className = 'mapas__situacao';
       situacao.textContent = `${resultado.geojson.features.length} feição(ões) em `
-        + `${rotuloDaCamada({ nome: camadaAtual })}.`;
+        + `${rotuloDaCamada({ nome: pedida })}.`;
     } catch (err) {
-      if (disposed) return;
+      if (disposed || pedida !== camadaAtual) return;
       // Aqui sim é falha: 403 de perfil ou erro do servidor. O mapa some e o
       // aviso ocupa o lugar dele, com o caminho de volta.
       situacao.textContent = '';
       clearChildren(areaMapa);
       areaMapa.appendChild(estadoErro(err, () => {
-        clearChildren(areaMapa);
-        areaMapa.appendChild(mapa.element);
-        mapa.redimensionar();
+        devolverMapa();
         carregarCamada();
       }));
     }

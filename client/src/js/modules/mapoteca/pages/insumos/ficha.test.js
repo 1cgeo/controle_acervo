@@ -159,6 +159,47 @@ describe('renderInsumoFicha', () => {
     cleanup();
   });
 
+  // A RESPOSTA ATRASADA NAO PINTA.
+  //
+  // O ano e o mes ficam lado a lado na mesma barra, e escolher os dois seguidos
+  // e o gesto normal: sao duas cargas em voo. A do ANO INTEIRO le doze meses e e
+  // a mais pesada, entao ela chegava DEPOIS e repintava por cima -- o livro
+  // mostrava o ano inteiro com o mes escolhido no seletor.
+  test('a carga que outra ja substituiu nao repinta o livro', async () => {
+    // Dois anos no seletor: sem o segundo, trocar o ano nao troca nada e nao ha
+    // segunda carga para chegar atrasada.
+    svc.getAnosMapoteca.mockResolvedValue([ANO_ATUAL, ANO_ATUAL - 1]);
+    const { container, cleanup } = await montar();
+
+    const doMes = [{ ...LIVRO[1], id: 99, motivo: 'SO DO MES' }];
+    let liberarAnoInteiro;
+    // A primeira chamada depois da montagem (o ano) fica PRESA; a segunda (o
+    // mes) responde na hora. Assim a lenta chega por ultimo, que e o caso.
+    svc.getMovimentosMaterial
+      .mockImplementationOnce(() => new Promise((resolve) => { liberarAnoInteiro = resolve; }))
+      .mockImplementationOnce(() => Promise.resolve(doMes));
+
+    const selects = [...container.querySelectorAll('.export-bar select')];
+    // Troca o ano (carga presa) e, em seguida, o mes (carga rapida).
+    selects[0].value = String(ANO_ATUAL - 1);
+    selects[0].dispatchEvent(new Event('change', { bubbles: true }));
+    selects[1].value = '2';
+    selects[1].dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+
+    expect(secao(container, 'Livro de movimentos').textContent).toContain('SO DO MES');
+
+    liberarAnoInteiro(LIVRO);
+    await flush();
+
+    // O ano inteiro chegou depois e NAO tomou a tela: o filtro continua em
+    // Fevereiro, e o livro continua sendo o dele.
+    expect(secao(container, 'Livro de movimentos').textContent).toContain('SO DO MES');
+    expect(secao(container, 'Livro de movimentos').textContent).not.toContain('NF 1234');
+
+    cleanup();
+  });
+
   test('o selo de minimo compara o DISPONIVEL, e nao o total das quatro', async () => {
     const { container, cleanup } = await montar();
 
@@ -190,6 +231,61 @@ describe('renderInsumoFicha', () => {
 
     expect(container.textContent).toContain('Livro de movimentos');
     expect(container.querySelectorAll('.page__actions .btn')).toHaveLength(0);
+
+    cleanup();
+  });
+
+  // LIVRO QUE NAO CARREGOU NAO E LIVRO VAZIO.
+  //
+  // O `.catch(() => [])` das duas leituras acessorias fazia a secao pintar a
+  // mensagem de vazio da tabela -- "Nenhum movimento neste período" -- quando o
+  // que houve foi 500. Quem pergunta "por que o saldo caiu" lia que ninguem
+  // lancou nada, e concluia que o saldo e que esta errado. As duas frases pedem
+  // acoes opostas, e so uma delas traz o "Tentar de novo".
+  test('falha do livro NAO se escreve com o texto do periodo vazio', async () => {
+    svc.getMovimentosMaterial.mockRejectedValue(new Error('banco fora'));
+    const { container, cleanup } = await montar();
+
+    const doLivro = secao(container, 'Livro de movimentos');
+    expect(doLivro.textContent).not.toContain('Nenhum movimento neste período');
+    expect(doLivro.textContent).toContain('banco fora');
+    expect(doLivro.textContent).toContain('Tentar de novo');
+
+    // O resto da ficha continua de pe: o cadastro carregou, e a falha e da
+    // secao dela.
+    expect(container.querySelector('.page__title').textContent).toBe('Papel A0');
+    expect(container.textContent).toContain('Estoque por localização');
+
+    cleanup();
+  });
+
+  test('o livro volta ao lugar quando o "Tentar de novo" da certo', async () => {
+    svc.getMovimentosMaterial.mockRejectedValueOnce(new Error('banco fora'));
+    const { container, cleanup } = await montar();
+
+    const botao = [...secao(container, 'Livro de movimentos').querySelectorAll('button')]
+      .find(b => b.textContent.includes('Tentar de novo'));
+    botao.click();
+    await flush();
+
+    const doLivro = secao(container, 'Livro de movimentos');
+    expect(doLivro.textContent).not.toContain('Tentar de novo');
+    expect(doLivro.textContent).toContain('Transferência');
+
+    cleanup();
+  });
+
+  // O grafico vazio le-se como "nao houve consumo", que e o oposto do que
+  // aconteceu. E a mesma regra da aba Materiais do dashboard.
+  test('falha do consumo do ano vira erro NO GRAFICO, e nao grafico vazio', async () => {
+    svc.getConsumoMensal.mockRejectedValue(new Error('pit fora'));
+    const { container, cleanup } = await montar();
+
+    const grafico = container.querySelector('.chart-card');
+    expect(grafico.textContent).toContain('pit fora');
+    expect(grafico.textContent).toContain('Tentar de novo');
+    // O livro carregou, e nao herda a falha do grafico.
+    expect(secao(container, 'Livro de movimentos').textContent).toContain('Transferência');
 
     cleanup();
   });

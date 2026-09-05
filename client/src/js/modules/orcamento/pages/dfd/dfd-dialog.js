@@ -295,10 +295,18 @@ export function openDfdDialog({
     onClick: () => abrirEditor(null),
   }, [svgIcon(ICONS.add, 14), 'Adicionar item']);
 
+  // O editor guarda o INDICE da linha que edita, e por isso as linhas nao podem
+  // mudar enquanto ele esta aberto: com o editor na linha 3 e a linha 1
+  // removida, o `onSave` escrevia em `itens[2]`, que ja e outro item. Editando o
+  // ultimo, o indice caia fora da lista e o salvamento ACRESCENTAVA um item
+  // repetido em vez de alterar o escolhido. Por isso `renderItens` desabilita os
+  // botoes da linha enquanto ha editor aberto, como ja fazia com "Adicionar
+  // item", e `fecharEditor` repinta para devolve-los.
   function fecharEditor() {
     editor = null;
     editorContainer.innerHTML = '';
     addItemBtn.disabled = false;
+    renderItens();
   }
 
   function abrirEditor(idx) {
@@ -311,12 +319,39 @@ export function openDfdDialog({
         if (idx === null) itens.push(value);
         else itens[idx] = value;
         fecharEditor();
-        renderItens();
+        pintarValorEstimado();
       },
       onCancel: () => fecharEditor(),
     });
+    renderItens();
     editorContainer.appendChild(editor.element);
     editor.focus();
+  }
+
+  /**
+   * O "Valor estimado" do DFD, que a tela promete ser a soma dos itens.
+   *
+   * O campo nasce com o numero que o servidor calculou e ficava PARADO nele: quem
+   * acrescentasse, editasse ou removesse um item continuava lendo o valor
+   * anterior, e o DFD novo mostrava campo vazio depois de dez itens lancados. O
+   * campo segue desabilitado: ele MOSTRA.
+   *
+   * ARREDONDA A SOMA, e nao cada parcela, porque e o que o servidor faz:
+   * `ROUND(SUM(i.quantidade * i.valor_unitario), 2)` (`dfd_ctrl.js:47`), uma vez
+   * so. Somar os `totalDoItem` (que ja vem arredondados por item) diverge: com
+   * `quantidade` NUMERIC(15,3), dois itens de 0,005 a R$ 1,00 dariam R$ 0,02 na
+   * tela contra os R$ 0,01 que o servidor grava, e o campo e justamente o que a
+   * tela promete ser "o numero que vai valer".
+   *
+   * So se chama depois de uma MUDANCA na lista, e nao na pintura inicial: o valor
+   * que veio do servidor e a fonte enquanto ninguem mexeu nos itens.
+   */
+  function pintarValorEstimado() {
+    const soma = itens.reduce(
+      (total, it) => total + (Number(it.quantidade) || 0) * (Number(it.valor_unitario) || 0),
+      0
+    );
+    valorEstimadoField.setValue(Math.round(soma * 100) / 100);
   }
 
   /**
@@ -371,8 +406,12 @@ export function openDfdDialog({
         type: 'button',
         title: 'Remover item',
         'aria-label': 'Remover item',
-        onClick: () => { itens.splice(idx, 1); renderItens(); },
+        onClick: () => { itens.splice(idx, 1); renderItens(); pintarValorEstimado(); },
       }, [svgIcon(ICONS.delete, 16)]);
+      // Com o editor aberto, a lista fica PARADA: ver o comentario de
+      // `fecharEditor`. O botao "Adicionar item" ja se comportava assim.
+      editBtn.disabled = Boolean(editor);
+      removeBtn.disabled = Boolean(editor);
 
       tbody.appendChild(el('tr', {}, [
         ...celulasDoItem(it),

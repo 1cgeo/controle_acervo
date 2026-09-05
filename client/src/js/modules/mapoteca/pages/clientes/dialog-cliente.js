@@ -50,6 +50,31 @@ function acharParecidos(clientes, nome, sigla) {
 }
 
 /**
+ * O cliente cujo PAR CRU (nome, sigla) e identico ao que se vai criar.
+ *
+ * E DIFERENTE de "parecido", e a diferenca decide o que a tela oferece. O banco
+ * tem `unique_cliente_nome_sigla UNIQUE NULLS NOT DISTINCT (nome, sigla)` sobre
+ * o texto CRU: com o par identico, o POST devolve 409 sempre. Oferecer "Criar
+ * assim mesmo" ali e prometer uma saida que nao existe, e a pessoa confirma
+ * porque o texto lhe ofereceu -- e leva a frase de quatro linhas do servidor num
+ * toast.
+ *
+ * O quase-homonimo ('3o GAC Ap' contra '3º GAC Ap'), que `normalizar` casa e o
+ * UNIQUE nao, continua sendo confirmacao: ele e o caso para o qual o aviso foi
+ * feito, e a decisao de deixar passar esta registrada em `docs/decisoes.md`.
+ *
+ * @param {Array<Object>} clientes
+ * @param {string} nome
+ * @param {string|null} sigla
+ * @returns {Object|undefined}
+ */
+function acharIdentico(clientes, nome, sigla) {
+  return clientes.find(
+    (c) => c.nome === nome && (c.sigla ?? null) === (sigla ?? null)
+  );
+}
+
+/**
  * Create/edit client dialog, shared by the list and details pages.
  * @param {Object} options
  * @param {Object|null} [options.cliente] - existing client for edit mode
@@ -166,6 +191,18 @@ export async function openClienteDialog({ cliente = null, onSaved, clientesExist
               } catch {
                 existentes = [];
               }
+            }
+
+            // O PAR IDENTICO NAO GANHA A OFERTA DE CRIAR: ver `acharIdentico`.
+            // O erro fica no campo do nome, que e onde se conserta.
+            const identico = acharIdentico(existentes, payload.nome, payload.sigla);
+            if (identico) {
+              nomeField.setError(
+                'Já existe este cliente, com este nome e esta sigla. '
+                + 'Abra a ficha dele em vez de criar outra.'
+              );
+              submitting = false;
+              return;
             }
 
             const parecidos = acharParecidos(existentes, payload.nome, payload.sigla);

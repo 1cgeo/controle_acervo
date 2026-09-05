@@ -232,6 +232,77 @@ describe('adicionar varios produtos de uma vez', () => {
     expect(acervo.getProdutoDetalhado).not.toHaveBeenCalled();
   });
 
+  // O LOTE MANDA OS MESMOS CAMPOS QUE UM ITEM SO.
+  //
+  // "Dados do item" tem cinco campos, e o lote so carregava dois: a observacao,
+  // a producao especifica e a meta do PIT do item ficavam na tela, iam para
+  // lugar nenhum e a gravacao voltava 200. O servidor sempre aceitou as tres
+  // (models.produtoPedidoLote, em server/src/mapoteca/mapoteca_schema.js).
+  test('a observacao, a producao especifica e a meta do item entram no lote', async () => {
+    const onSubmitLote = vi.fn();
+    await openProdutoPedidoDialog({
+      onSubmit: vi.fn(),
+      onSubmitLote,
+      // A meta do ITEM so aparece em pedido do PIT: fora dele nao ha meta a
+      // declarar.
+      pedido: { previsto_pit: true, meta_pit_id: 20 },
+      metasPit: [
+        { id: 20, numero_meta: 4, item: '4.1', descricao: 'Sulfite' },
+        { id: 21, numero_meta: 4, item: '4.2', descricao: 'Tyvek' },
+      ],
+    });
+    await flush();
+    await buscar();
+
+    const c = caixas()[0];
+    c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true }));
+    preencherDadosDoItem();
+
+    const obs = [...document.querySelectorAll('textarea')].pop();
+    obs.value = 'Reimpressao da folha rasgada';
+    obs.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const producao = [...document.querySelectorAll('input[type="checkbox"]')]
+      .find(i => !i.closest('td'));
+    producao.checked = true;
+    producao.dispatchEvent(new Event('change', { bubbles: true }));
+
+    // O combo da meta abre no foco e escolhe no `mousedown` do item.
+    const combo = [...document.querySelectorAll('input[role="combobox"]')].pop();
+    combo.dispatchEvent(new Event('focus'));
+    [...document.querySelectorAll('.combo__item')]
+      .find(i => i.textContent.includes('4.2'))
+      .dispatchEvent(new Event('mousedown', { bubbles: true, cancelable: true }));
+
+    botao('Adicionar 1 item').click();
+    await flush();
+
+    const [item] = onSubmitLote.mock.calls[0][0];
+    expect(item.payload.observacao).toBe('Reimpressao da folha rasgada');
+    expect(item.payload.producao_especifica).toBe(true);
+    expect(item.payload.meta_pit_id).toBe(21);
+  });
+
+  // Fora do PIT a chave vai NULA, e nao omitida: e a mesma disciplina do caminho
+  // de um item so, para a atualizacao nao preservar uma declaracao antiga.
+  test('sem PIT no pedido, a meta do item vai nula no lote', async () => {
+    const onSubmitLote = vi.fn();
+    await openProdutoPedidoDialog({ onSubmit: vi.fn(), onSubmitLote });
+    await flush();
+    await buscar();
+
+    const c = caixas()[0];
+    c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true }));
+    preencherDadosDoItem();
+    botao('Adicionar 1 item').click();
+    await flush();
+
+    const [item] = onSubmitLote.mock.calls[0][0];
+    expect(item.payload.meta_pit_id).toBeNull();
+    expect(item.payload.producao_especifica).toBe(false);
+    expect(item.payload.observacao).toBeNull();
+  });
+
   test('falha do chamador NAO limpa a selecao, para poder tentar de novo', async () => {
     const onSubmitLote = vi.fn().mockRejectedValue(new Error('banco fora'));
     await openProdutoPedidoDialog({ onSubmit: vi.fn(), onSubmitLote });

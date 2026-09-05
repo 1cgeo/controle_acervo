@@ -321,6 +321,19 @@ export async function renderExecucaoPit(container, _ctx) {
       return `${MESES[mes - 1]} ainda não chegou. Realizado é o que já foi `
         + 'entregue; para prever, use o modo Planejar.';
     }
+    // O ANO ENCERRADO, e é o terceiro motivo. `ano_encerrado` vem do servidor
+    // por linha da grade (`COALESCE(ex.situacao_id = 3, FALSE)` em
+    // `pit_execucao_ctrl.grade`), e a frase é LETRA POR LETRA a do 400 que
+    // `salvar` e `deletar` devolvem: a tela e o servidor não podem discordar
+    // sobre o motivo.
+    //
+    // `=== true` de propósito. Servidor antigo não manda o campo, e `undefined`
+    // tem de deixar a célula EDITÁVEL: recusar por um campo que não veio
+    // travaria a grade inteira em vez de proteger o ano fechado.
+    if (linha.ano_encerrado === true) {
+      return `O exercício de ${linha.ano ?? anoSelecionado} está encerrado e não `
+        + 'aceita lançamento.';
+    }
     return null;
   }
 
@@ -466,16 +479,22 @@ export async function renderExecucaoPit(container, _ctx) {
     //   --calculada  o numero vem da origem, e nunca sera digitado aqui;
     //   --futuro     o mes ainda nao chegou, e no mes que vem esta mesma celula
     //                abre. Sao situacoes diferentes e conselhos diferentes.
+    //   --encerrada  o ano foi encerrado, e nenhuma celula dele abre de novo
+    //                enquanto ele estiver assim. A grade inteira do ano leva a
+    //                marca, e nao uma celula solta.
     //
     // Linha de GRUPO nao e editavel em situacao nenhuma, e nao recebe nenhuma
     // das duas: ela e subtotal, e marca-la sugeriria que um dia abriria.
     const ehCalculada = !linha.grupo && calculada(linha);
     const ehFuturo = !linha.grupo && !ehCalculada
       && modo === EXECUTAR && mesNoFuturo(mes);
+    const ehEncerrada = !linha.grupo && !ehCalculada && !ehFuturo
+      && linha.ano_encerrado === true;
     td.className = `grade-pit__celula${ate.classe}`
       + (atual ? ' grade-pit__celula--mes-atual' : '')
       + (ehCalculada ? ' grade-pit__celula--calculada' : '')
-      + (ehFuturo ? ' grade-pit__celula--futuro' : '');
+      + (ehFuturo ? ' grade-pit__celula--futuro' : '')
+      + (ehEncerrada ? ' grade-pit__celula--encerrada' : '');
 
     // O `title` mostra as DUAS contas: o mês, que é o que a célula escreve, e o
     // acumulado, que é o que a cor diz. Sem ele, uma célula verde com realizado
@@ -527,6 +546,9 @@ ${motivo}` : '');
     modo,
     // As duas origens vêm do servidor por linha, e decidem a etiqueta.
     linha.planejada_calculada, linha.realizada_calculada,
+    // O TERCEIRO MOTIVO DE NÃO ABRIR A CÉLULA. Ele muda sem o ano da tela mudar:
+    // basta o chefe encerrar o exercício e alguém recarregar.
+    linha.ano_encerrado,
   ]);
 
   const assinaturaDoGrupo = (linha) => JSON.stringify([
@@ -745,12 +767,18 @@ ${motivo}` : '');
     }
 
     const bate = planejado === previsto;
+    // A DIVERGÊNCIA TEM DOIS LADOS, e a frase tem de dizer QUAL. Distribuir mais
+    // pelos doze meses do que o ano promete é o erro de digitação simétrico ao
+    // de distribuir menos, e é igualmente comum: dizer "Faltam -3" ali não
+    // nomeia nada e ainda parece defeito da tela.
+    const sobra = planejado - previsto;
     return el('td', {
       className: `grade-pit__total${bate ? '' : ' grade-pit__divergente'}`,
       textContent: `${previsto}${linha.unidade ? ` ${linha.unidade}` : ''}`,
       title: bate
         ? `Planejado nos doze meses: ${planejado}`
-        : `O plano soma ${planejado} e o ano promete ${previsto}. Faltam ${previsto - planejado}.`,
+        : `O plano soma ${planejado} e o ano promete ${previsto}. `
+          + (sobra > 0 ? `Sobram ${sobra}.` : `Faltam ${-sobra}.`),
     });
   }
 

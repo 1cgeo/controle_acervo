@@ -75,15 +75,58 @@ const opcoesDe = (linhas, campo) => [...new Set(
  * (operador, fase, bloco, subfase, etapa e início). Quem trabalha no SAP procura
  * a atividade pelo cartão dela.
  *
+ * OS QUATRO FILTROS VIVEM NA URL, e não em variáveis desta função. É uma tela
+ * feita para vasculhar: quem filtra por projeto, lote e subfase para achar uma
+ * atividade, sai para conferir outra coisa e volta, encontrava tudo de volta em
+ * "Todos" com a busca em branco. E, sem nada na barra de endereço, também não
+ * havia como mandar a tela filtrada para outra pessoa. A escrita é por
+ * `history.replaceState`, e não pelo hash: trocar o hash faria o roteador
+ * remontar a tela a cada tecla digitada na busca. É o mesmo desenho da lista de
+ * pedidos da mapoteca e de `#/acervo/busca`.
+ *
+ * O QUE VALE O PADRÃO NÃO ENTRA NA QUERY: a tela pelada continua sendo
+ * '#/producao/grade'. E filtro da URL que não existe nos dados carregados é
+ * DESCARTADO -- um `?lote=Lote%209` de um recorte que acabou deixaria a galeria
+ * vazia com o seletor mostrando "Todos", que é a tela afirmando duas coisas
+ * diferentes ao mesmo tempo.
+ *
  * @param {HTMLElement} container
+ * @param {{params?:Object, query?:URLSearchParams}} [ctx]
  * @returns {Function} cleanup
  */
-export async function renderGrade(container) {
+export async function renderGrade(container, ctx = {}) {
   let disposed = false;
 
+  const consulta = (ctx && ctx.query) || new URLSearchParams();
+  const daUrl = (nome) => {
+    const valor = consulta.get(nome);
+    return valor === null || valor === '' ? null : valor;
+  };
+
   let atividades = [];
-  const filtros = { projeto: null, lote: null, subfase: null, busca: '' };
+  const filtros = {
+    projeto: daUrl('projeto'),
+    lote: daUrl('lote'),
+    subfase: daUrl('subfase'),
+    busca: consulta.get('busca') || '',
+  };
   let debounce = null;
+
+  /**
+   * O estado da tela, escrito na barra de endereço.
+   *
+   * `replaceState` e não `location.hash`: o roteador ouve o hash e remontaria a
+   * tela inteira a cada tecla da busca. Só o que difere do padrão entra.
+   */
+  function sincronizarUrl() {
+    const params = new URLSearchParams();
+    if (filtros.projeto) params.set('projeto', String(filtros.projeto));
+    if (filtros.lote) params.set('lote', String(filtros.lote));
+    if (filtros.subfase) params.set('subfase', String(filtros.subfase));
+    if (filtros.busca) params.set('busca', filtros.busca);
+    const texto = params.toString();
+    history.replaceState(null, '', `#/producao/grade${texto ? `?${texto}` : ''}`);
+  }
 
   const projetoFilter = createSelectField({
     label: 'Projeto',
@@ -114,6 +157,7 @@ export async function renderGrade(container) {
   const buscaFilter = createTextField({
     label: 'Buscar',
     placeholder: 'Operador, etapa, bloco…',
+    value: filtros.busca,
     onInput: (v) => {
       filtros.busca = v;
       if (debounce) clearTimeout(debounce);
@@ -225,6 +269,7 @@ export async function renderGrade(container) {
   };
 
   function desenhar() {
+    sincronizarUrl();
     const visiveis = atividades.filter(passaNoFiltro);
 
     clearChildren(galeria);
@@ -264,9 +309,26 @@ export async function renderGrade(container) {
       // origem: quem pegou por último aparece primeiro, porque é a atividade
       // que ainda está mudando.
       atividades = [...(dados || [])].reverse();
+
+      // O FILTRO DA URL QUE NÃO EXISTE NOS DADOS CAI FORA, e o seletor nasce
+      // marcado no que sobrou. Um `?lote=` de um recorte que acabou deixaria a
+      // galeria vazia com o seletor dizendo "Todos": a tela afirmando duas
+      // coisas ao mesmo tempo, e nenhuma delas verdadeira.
+      const conhecido = (campo, valor) => (valor !== null
+        && atividades.some(a => String(a[campo]) === String(valor)) ? valor : null);
+      filtros.projeto = conhecido('projeto', filtros.projeto);
+      filtros.lote = conhecido('lote', filtros.lote);
+      filtros.subfase = conhecido('subfase', filtros.subfase);
+
       projetoFilter.setOptions(opcoesDe(atividades, 'projeto'));
       loteFilter.setOptions(opcoesDe(atividades, 'lote'));
       subfaseFilter.setOptions(opcoesDe(atividades, 'subfase'));
+      // DEPOIS do `setOptions`: ele guarda a seleção que o `select` tinha, e na
+      // montagem ela é vazia, porque a opção do valor da URL ainda não existia.
+      projetoFilter.setValue(filtros.projeto);
+      loteFilter.setValue(filtros.lote);
+      subfaseFilter.setValue(filtros.subfase);
+
       montarAviso();
       desenhar();
     } catch (err) {

@@ -84,6 +84,14 @@ function camposComuns({ rotuloQuantidade = 'Quantidade', ajudaQuantidade } = {})
     label: 'Data',
     required: true,
     value: hoje(),
+    // `max` trava data FUTURA, pela mesma frase do diálogo de impressão:
+    // movimento que ainda não aconteceu não se lança. O erro barato é o ano
+    // trocado (2027 no lugar de 2026) num campo que nasce preenchido e que só se
+    // edita a mão quando o lançamento é de outro dia; a linha entraria no livro,
+    // o gatilho baixaria o saldo HOJE (ele não olha `data_movimento`), e a
+    // coluna "Consumo no mês" e a 7.2 do RPCMTec seguiriam sem contar nada. O
+    // saldo e o relatório passariam a discordar sem uma linha de erro.
+    max: hoje(),
     // A data e o que joga o lancamento no mes certo do RPCMTec. Registrar na
     // segunda o que saiu na sexta ainda e sexta.
     helpText: 'É o dia em que aconteceu, e não o dia do lançamento.',
@@ -106,6 +114,11 @@ function lerQuantidadeEData(quantidadeField, dataField) {
   }
   if (!data) {
     dataField.setError('Informe a data');
+    valid = false;
+  } else if (data > hoje()) {
+    // O `max` do input trava o seletor, e nao o que se digita: as duas datas
+    // sao 'AAAA-MM-DD', entao a comparacao de texto ja e cronologica.
+    dataField.setError('A data não pode ser futura');
     valid = false;
   }
   return valid ? { quantidade, data } : null;

@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach } from 'vitest';
 import { flush } from '@/__tests__/helpers/flush.js';
 import { saveAuth, clearAuth } from '@store/auth-store.js';
+import { openModal } from '@components/modal/modal-base.js';
 import Router, {
   acessoLoader, authLoader, adminLoader, gerenteLoader, perfilLoader, rotaRaiz,
 } from './router.js';
@@ -255,6 +256,115 @@ describe('router: resolucao', () => {
     await router.resolve();
 
     expect(vistos).toEqual(['orcamento', 'mapoteca']);
+  });
+
+  // ESCAPE QUEBRADO NA URL NAO PODE DERRUBAR O ROTEADOR.
+  //
+  // `decodeURIComponent` lanca `URIError` num '%' solto. A excecao subia por
+  // `resolve()` a partir do ouvinte de `hashchange` e virava rejeicao nao
+  // tratada: a limpeza da pagina anterior JA tinha rodado, entao a pessoa ficava
+  // com a tela morta na frente, sem 404 e sem mensagem nenhuma. Acontece com
+  // link copiado pela metade e com localizador digitado errado.
+  test('rota com escape quebrado cai no 404, em vez de estourar', async () => {
+    logar({ administrador: true });
+    const container = document.createElement('div');
+    const router = new Router(container);
+    let visto = null;
+    router.add('/consultar-pedido/:localizador', async (_c, ctx) => {
+      visto = ctx.params.localizador;
+    });
+    router.add('/404', async () => {});
+
+    location.hash = '/campo/100%';
+    await expect(router.resolve()).resolves.not.toThrow();
+    await flush();
+
+    expect(location.hash).toBe('#/404');
+    expect(visto).toBeNull();
+  });
+
+  // O segmento que NAO decodifica chega literal, e a rota que casa continua
+  // recebendo o parametro: a queda nao pode engolir a navegacao legitima.
+  test('escape quebrado numa rota que existe chega literal, sem quebrar', async () => {
+    logar({ administrador: true });
+    const container = document.createElement('div');
+    const router = new Router(container);
+    let visto = null;
+    router.add('/consultar-pedido/:localizador', async (_c, ctx) => {
+      visto = ctx.params.localizador;
+    });
+
+    location.hash = '/consultar-pedido/AB%C';
+    await router.resolve();
+    await flush();
+
+    expect(visto).toBe('AB%C');
+  });
+
+  // O escape BOM continua sendo decodificado: e o que faz o nome com espaco e
+  // com acento chegar inteiro na tela.
+  test('escape valido continua decodificado', async () => {
+    logar({ administrador: true });
+    const container = document.createElement('div');
+    const router = new Router(container);
+    let visto = null;
+    router.add('/campo/:id', async (_c, ctx) => { visto = ctx.params.id; });
+
+    location.hash = `/campo/${encodeURIComponent('São Gabriel')}`;
+    await router.resolve();
+    await flush();
+
+    expect(visto).toBe('São Gabriel');
+  });
+
+  // O overlay do modal vive no `document.body`, fora do `#app`: a limpeza da
+  // pagina nao o conhece e o `clearLayout()` nao o alcanca. Sem isto, apertar
+  // Voltar com um modal aberto deixava o dialogo por cima da tela nova, com a
+  // armadilha de foco ligada -- e, quando a rota nova era o `#/login` de uma
+  // sessao vencida, nao havia como tabular ate o campo de usuario.
+  test('modal aberto some quando o router resolve outra rota', async () => {
+    logar({ administrador: true });
+    const container = document.createElement('div');
+    const router = new Router(container);
+    router.add('/orcamento/dashboard', async () => {});
+    router.add('/login', async () => {});
+
+    location.hash = '/orcamento/dashboard';
+    await router.resolve();
+    openModal({ title: 'Novo pedido', content: 'x' });
+    expect(document.querySelector('.modal-overlay')).not.toBeNull();
+
+    location.hash = '/login';
+    await router.resolve();
+    await flush();
+
+    expect(document.querySelector('.modal-overlay')).toBeNull();
+  });
+
+  // Fechar por aqui NAO consulta `podeFechar`: a navegacao ja aconteceu, e a
+  // pergunta travaria a fila do router.
+  test('o modal com guarda de descarte tambem sai na troca de rota', async () => {
+    logar({ administrador: true });
+    const container = document.createElement('div');
+    const router = new Router(container);
+    router.add('/orcamento/dashboard', async () => {});
+    router.add('/orcamento/dfd', async () => {});
+
+    location.hash = '/orcamento/dashboard';
+    await router.resolve();
+    let perguntou = false;
+    openModal({
+      title: 'Formulario sujo',
+      content: 'x',
+      podeFechar: () => { perguntou = true; return false; },
+    });
+
+    location.hash = '/orcamento/dfd';
+    await router.resolve();
+    await flush();
+
+    expect(perguntou).toBe(false);
+    expect(document.querySelector('.modal-overlay')).toBeNull();
   });
 
   test('a limpeza da pagina anterior roda antes da proxima', async () => {

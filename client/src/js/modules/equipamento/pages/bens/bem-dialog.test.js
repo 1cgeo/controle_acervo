@@ -69,6 +69,15 @@ function botao(rotulo) {
     .find(b => b.textContent.trim() === rotulo);
 }
 
+/** Abre a lista do combo de tipo e devolve o texto dela. */
+async function opcoesDoCombo() {
+  const combo = document.querySelector('.combo');
+  combo.querySelector('input').focus();
+  combo.querySelector('input').dispatchEvent(new Event('input', { bubbles: true }));
+  await flush();
+  return combo.textContent;
+}
+
 const corpoEnviado = () => servico.updateEquipamento.mock.calls.at(-1)[1];
 
 beforeEach(() => {
@@ -220,17 +229,27 @@ describe('bem-dialog: o que a tela cobra antes de gastar uma requisição', () =
       .toEqual(['', '1', '2']);
   });
 
-  test('tipo INATIVO continua sendo oferecido, marcado como tal', async () => {
+  test('tipo INATIVO continua sendo oferecido NA EDIÇÃO, marcado como tal', async () => {
     // Os bens existentes daquele tipo continuam como estão, e a ficha deles
     // precisa poder ser salva sem trocar o tipo.
     abrirBemDialog({ bem: BEM_HERDADO, dominio: DOMINIO, tipos: TIPOS });
     await flush();
 
-    const combo = document.querySelector('.combo');
-    combo.querySelector('input').focus();
-    combo.querySelector('input').dispatchEvent(new Event('input', { bubbles: true }));
+    expect(await opcoesDoCombo()).toContain('Bastão para topografia (inativo)');
+  });
+
+  test('tipo INATIVO NÃO é oferecido no cadastro de bem NOVO', async () => {
+    // É a promessa que a Configuração faz a quem desmarca "Ativo" num tipo:
+    // "Tipo inativo não é oferecido no cadastro de bem novo, e os bens
+    // existentes ficam como estão" (`configuracao/tipo-dialog.js`). Oferecê-lo
+    // aqui fazia daquela caixa uma marca sem efeito nenhum: o tipo tirado de
+    // circulação continuava a um clique de entrar em bem novo.
+    abrirBemDialog({ dominio: DOMINIO, tipos: TIPOS });
     await flush();
 
-    expect(combo.textContent).toContain('Bastão para topografia (inativo)');
+    const opcoes = await opcoesDoCombo();
+    expect(opcoes).toContain('Estação Total');
+    expect(opcoes).not.toContain('Bastão para topografia (inativo)');
+    expect(opcoes).not.toContain('Bastão para topografia');
   });
 });

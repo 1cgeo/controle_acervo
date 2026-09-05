@@ -146,6 +146,17 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   desta mudança. Fica registrado como o que ainda falta para outro Centro imprimir etiqueta sem editar
   código, em `REMETENTE_ENDERECO` de `client/src/js/modules/mapoteca/pages/pedidos/etiqueta-envio.js`.
 
+- **Trocar a senha derruba as sessões abertas, sem coluna nova** (2026-09-05). O token carrega um
+  `carimbo` derivado do hash vigente (`left(md5(senha), 8)`, calculado pelo PostgreSQL na consulta
+  que o login já fazia, em `login/carimbo_da_senha.js`), e as sete guardas o releem na consulta que
+  cada uma já faz por requisição: hash novo, carimbo novo, token antigo fora, com 401 "Sessão
+  encerrada: a senha desta conta foi alterada. Entre de novo." Vale para o reset pelo administrador
+  pelo mesmo mecanismo, que era o buraco: resetar a senha de uma conta comprometida não expulsava quem
+  já estava dentro. Token SEM o claim (emitido antes, ou em cache de CLI) continua valendo, na mesma
+  assimetria que `validate_token.js` usa para o `aud`: exigi-lo de todos deslogaria toda sessão
+  aberta no deploy. Quem troca a própria senha também cai, e `#/perfil` o leva ao login na hora em
+  vez de esperar o 401. O hash nunca sai do banco: só os oito caracteres do md5, que não invertem.
+
 ## Autorização e superfície pública
 
 - **PRODUÇÃO e EFETIVO viraram módulos na 1.33.0** (`dominio.modulo` 4 e 5), na palavra do chefe: "Em
@@ -159,9 +170,15 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   inteiro e o cadastro de usuários.
   **O que NÃO entrou, e continua `verifyAdmin`**: a META e a REVISÃO do PIT (alterar o PIT é ato da
   DSG, e o que está no sistema é transcrição de documento assinado), a EDIÇÃO do RPCMTec (o relatório
-  que o chefe assina), o cadastro de usuários e o orçamento. Também ficaram de
-  fora `POST` e `DELETE /metas/extra/:id/versoes`: elas gravam em `acervo.versao`, e quem manda no
-  acervo é o módulo acervo.
+  que o chefe assina), o cadastro de usuários e o orçamento. `POST` e `DELETE
+  /metas/extra/:id/versoes` também desceram para o operador do PIT, na 1.35.0: a 1.33.0 as tinha
+  deixado com o administrador global, pelo argumento de que elas gravam
+  `acervo.versao.demanda_extra_id` e quem manda no acervo é o módulo acervo. O argumento caiu diante
+  do que produzia: o operador cadastrava a demanda Extra-PIT e parava ali, sem poder dizer QUAIS
+  folhas a cumprem, e demanda sem folha ligada conta zero na grade do PIT. A fronteira que importa
+  não é a tabela, é o CAMPO: essas rotas mexem em UM campo de UMA linha que já existe, e não criam,
+  apagam nem movem produto, versão ou arquivo. O client cobrou `isAdmin()` até 2026-09-05 por ter
+  copiado a frase antiga daqui, e a seção "Ligar outra versão" nem existia para o operador.
   **A leitura do efetivo se partiu em dois níveis**, e essa partição durou dois dias: até 2026-08-08
   era operador no cadastro e GERENTE no mapa anual e no resumo mensal. A régua dos três níveis a
   substituiu, e hoje a LEITURA inteira do efetivo é de `consulta` e a ESCRITA do dado alheio é de
@@ -222,6 +239,15 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
 - **O rate limit é dimensionado para CLIENTE DE LOTE, não para navegador.** Um teto de tela partiria
   ao meio uma carga do `acervo_cli` com 429, deixando parte das versões migradas e parte não.
 
+- **O log de resposta (`combined.log`) NÃO carrega o corpo da requisição** (2026-09-05). Ele nunca
+  carregou de fato (o `truncate` de `send_json_and_log.js` devolvia `undefined` para corpo JSON), e
+  consertar o `return` viraria vazamento: enquanto `/logs` for público, o corpo de toda escrita do
+  sistema (NUP, nome de OM, motivo de auditoria, e as senhas de `PUT /usuarios/perfil/senha`) sairia
+  numa rota anônima. A função e o parâmetro `information` foram apagados; o log guarda método, URL,
+  status e a mensagem. Quem precisar do corpo para depurar tem a trilha de auditoria, que é por conta
+  e por módulo. A mensagem também deixou de aceitar quebra de linha crua, para ninguém escrever uma
+  linha inteira no log público a partir de uma chave de `perfis`.
+
 ## O nome do sistema
 
 - **O Controle do Acervo (SCA) passou a se chamar SAP 3.0, Sistema de Apoio à Produção, em
@@ -276,6 +302,12 @@ linha está no [`CLAUDE.md`](../CLAUDE.md); o detalhe de um trecho, no comentár
   módulos apodrece a cada módulo novo, e ninguém se lembra de ir lá. Ficou **"Sistema de Apoio à
   Produção, 1º CGEO"**, que abre a sigla do `h1` para quem chega, diz de quem é o sistema e continua
   verdadeiro no dia em que entrar o oitavo módulo.
+
+- **Os plugins do QGIS também são RÓTULO, e passaram a dizer SAP em 2026-09-05**: as seis strings de
+  interface ("servidor do SAP", "interface web do SAP", "carregar o PDF no SAP") e os dois
+  `metadata.txt`. `Config.NAME` (`'Controle do Acervo'`) NÃO muda: é a chave do grupo do
+  `QgsSettings`, e trocá-lo apagaria o servidor, o usuário e a pasta salvos de todo mundo. É
+  identificador, pela mesma régua das chaves `SCA_*` e do `~/.sca`.
 
 ## O SCA absorve o não-produção do SAP
 
@@ -869,11 +901,15 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
   `registrarOperacao`: uma linha por unidade de trabalho apagada faria a trilha crescer mais rápido
   que a produção, para registrar algo que ninguém decidiu unidade a unidade. O CRUD de
   `propriedades_camada` e de `insumo`, esse sim, audita linha a linha.
-- **PENDÊNCIA: os códigos de `dominio.tipo_situacao_atividade` e de `dominio.tipo_status_execucao` não
-  estão em `utils/domain_constants.js`.** Aquele arquivo ainda não recebeu nenhum domínio do core de
-  produção. Enquanto isso, `acompanhamento_producao_ctrl.js` e `perigo_ctrl.js` os declaram no topo,
-  com nome e com a origem citada -- não há número solto no SQL, e o dia em que as constantes subirem
-  para `utils/` as duas listas saem inteiras, de um lugar só.
+- **PENDÊNCIA FECHADA em 2026-09-05: os domínios do core de produção subiram para
+  `utils/domain_constants.js`** (`SITUACAO_ATIVIDADE`, `STATUS_EXECUCAO`, `TIPO_ETAPA`,
+  `TIPO_RESTRICAO`, `TIPO_PRE_REQUISITO`, `TIPO_DADO_PRODUCAO`, e desde o mesmo dia
+  `SITUACAO_PONTO_CONTROLE`, do ponto de controle), e nenhum controlador do core os declara mais no
+  topo: `perigo_ctrl.js`, `trabalho_ctrl.js`, `fluxo_schema.js`, `dashboard_ctrl.js` e `upload_ctrl.js`
+  os importam de lá. `TIPO_CONTROLE_QUALIDADE` continua de fora de propósito, pelo motivo escrito em
+  `producao/fluxo_schema.js`. O que ainda carrega número solto são os cinco `.sql` de
+  `distribuicao/sql/`, portados de arquivo para se compararem linha a linha com o SAP 2.3.5 (ver "A
+  fila do operador"), e esse custo continua registrado lá.
 
 ## Campo
 
@@ -917,6 +953,17 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
 - **Os códigos de `campo.situacao` são os do SAP; os de `campo.categoria` são NOVOS.** É a única
   divergência de código desta travessia, e a razão é que no SAP a categoria era um `ENUM` do Postgres
   (`controle_campo.categoria_campo`), que não tem número a herdar. A ordem é a da declaração do ENUM.
+- **A view `campo.track_linha` desenha o trajeto SEM HORA, e a hora é o que ORDENA melhor, não o
+  que autoriza a existir** (3.14.0, 2026-09-05, migração
+  `2026-09-05_o_trajeto_sem_hora_tambem_se_desenha.sql`). Ela filtrava `WHERE p.momento IS NOT NULL`,
+  e o trajeto importado de GeoJSON entra com `momento` nulo em todo ponto: o servidor respondia
+  "Trajeto importado com 6.500 pontos" e a lista mostrava os 6.500 ao lado de "sem linha para
+  desenhar". A ordem passou a ser `momento NULLS LAST, id` (com hora pela hora, sem hora pela ordem
+  de inserção, que é a do arquivo), e o M do vértice sem hora é `NaN`, e não zero: `ST_MakePointM` é
+  STRICT, sem um M qualquer o ponto seria NULO e o `ST_MakeLine` o pularia, e um zero afirmaria
+  1970-01-01 em cada vértice. Num track misto o trecho cronometrado vem na frente e o resto atrás,
+  que é o melhor que se pode afirmar sem inventar hora. `MIN_DATABASE_VERSION` não subiu: nenhuma
+  coluna nasce, e o servidor roda contra um banco 3.13.0 (com o trajeto sem hora invisível lá).
 - **`campo.track_linha` é VIEW COMUM, e não materializada como no SAP.** Materializar obrigaria
   alguém a lembrar de atualizar depois de cada importação de GPX, e linha velha mente sem avisar. O
   custo real é pequeno: são 76 trajetos, e a tela pede o de UM campo por vez.
@@ -1391,6 +1438,15 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
   porque é imutável para aquela sessão; token antigo fica com `origem = 'desconhecido'` até expirar,
   porque adivinhar por `User-Agent` seria pior que dizer que não sabe.
 
+- **O gerente SÓ de `pit` ou SÓ de `efetivo` recebe 403 na rastreabilidade, e a frase diz por quê**
+  (2026-09-05). `auditoria.evento.modulo` só recebe os seis de `MODULOS_VALIDOS` (o PIT e o efetivo
+  gravam sob `plataforma`, que é do administrador), e `auditoria_schema.js` nem aceita os dois como
+  filtro: a tela respondia 200 com zero linhas e quatro combos vazios, para sempre, e a leitura
+  natural era "o sistema não registra nada". O guarda passou a interseccionar os módulos do gerente
+  com `MODULOS_VALIDOS`; interseção vazia é 403 ("A rastreabilidade registra os módulos acervo,
+  mapoteca, orçamento, equipamento e produção. O que o PIT e o efetivo gravam fica sob 'plataforma',
+  que é do administrador."), e quem tem `pit` E `acervo` continua entrando, recortado ao acervo.
+
 ## Acervo: cadastro e upload
 
 - **O método de definir a GEOMETRIA sai da ESCALA, e não da vontade de quem cadastra.** Escala 1 a 4 é
@@ -1457,6 +1513,33 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
   um Escape fechava TODOS, e nem `stopImmediatePropagation` bastaria, porque em captura responderia
   primeiro o modal de BAIXO. A saída da pilha de `modal-base.js` é por identidade, e não `pop()`, para
   ser possível fechar pelo botão um modal que não é o do topo.
+
+- **O `confirm-upload` recusa com 400 a sessão vencida, e a sessão se RENOVA** (2026-09-05). Não há
+  agendador: a `cleanup_expired_uploads()` só roda quando um administrador aperta o botão, então a
+  sessão vencida continuava `pending` por dias, e aceitar o confirm gravaria em `acervo.arquivo` um
+  checksum que o byte do volume pode não ter, porque o `upload-web` e os outros `prepare` não olhavam
+  sessão pendente ao escolher o nome físico. Antes respondia 200 com `status: 'failed'`. Como uma
+  cópia de centenas de GB por SMB atravessa as 24 horas com facilidade, existe
+  `POST /api/arquivo/renovar-upload` (operador, dono da sessão; sessão alheia 403), que estende o
+  prazo por mais 24 horas e aceita também a sessão que o próprio confirm fechou como `failed` por
+  vencimento (reconhecida pela frase, que é uma constante nos dois lados); a que falhou por checksum
+  não se renova. A mensagem do 400 cita a rota, e os bytes já copiados continuam valendo.
+- **O `prepare-upload` reserva o destino de verdade**: o nome físico é conferido também contra o
+  rascunho das sessões `pending` no prazo, e o `upload-web` faz a mesma conferência. Antes duas
+  sessões recebiam o mesmo `destination_path` e o segundo SMB sobrescrevia o primeiro. Dois envios
+  web simultâneos da mesma versão também deixaram de escrever no mesmo `.parcial` (sufixo por
+  requisição e `flags: 'wx'`).
+- **O teto do envio pelo navegador é publicado** por `GET /api/arquivo/upload-web/teto`
+  (`{ max_gb }`, o `UPLOAD_WEB_MAX_GB`), e o assistente marca o arquivo que passa dele antes do
+  primeiro byte. Antes a única frase era "arquivo muito grande continua entrando pelo plugin", sem
+  dizer o que é grande, e a recusa chegava depois de subir gigabytes.
+- **As três leituras da gerência (`arquivos_deletados`, `arquivos_incorretos`, `downloads_deletados`)
+  são de `consulta`** (2026-09-05), pela régua: leitura é do consulta. Cobravam `gerente` sem registro
+  e sem teste; `POST /verificar_inconsistencias` continua `gerente` porque escreve. As duas leituras
+  de volume desceram de `operador` para `consulta` pelo mesmo motivo.
+- **A guarda contra apagar versão intermediária vale para os DOIS formatos de rótulo** (`N-SIGLA` e
+  `Nª Edição`, os que o gatilho `acervo.validate_version` aceita). Só o formato novo era protegido, e
+  uma `2ª Edição` podia ser apagada com a `3ª Edição` presente, sem aviso.
 
 ## Acervo: auditoria de invariantes
 
@@ -1685,6 +1768,15 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
   a etiqueta se repete de um ano para o outro ('Extra-PIT', '5ª DE'). E a lista passou a MOSTRAR
   `palavras_chave`: lista que filtra por algo que não mostra deixa quem filtrou sem saber por que
   aquela linha entrou.
+- **A impressão lançada com atraso grava MEIO-DIA local do dia escolhido, e não o dia pelado**
+  (2026-09-05). `impressao_item.data_impressao` é `TIMESTAMP WITH TIME ZONE` de propósito (duas
+  impressões do mesmo dia têm ordem), o Joi é `Joi.date().iso()` sem `.raw()`, e a tela oferece um
+  `<input type="date">`: mandar `2026-08-01` fazia o servidor gravar meia-noite UTC, que em UTC-3 é
+  31/07 às 21:00, e o histórico mostrava dia e, na virada, mês errados. O client passou a mandar
+  `2026-08-01T12:00:00` (hora local do navegador) no registro e na correção da data; meio-dia não
+  vira véspera nem manhã seguinte em fuso nenhum do Brasil. A alternativa, coluna `DATE`, perderia a
+  ordem entre sessões do mesmo dia; a outra, o servidor compor o instante, obrigaria o Joi a saber o
+  fuso da instalação. A impressão de HOJE continua omitindo o campo: o banco carimba o instante.
 - **`impressao_item` NÃO foi podada** (chefe), embora a cardinalidade de hoje seja 1:1 e convide a
   isso. A impressão é ATO FÍSICO: um soldado imprime, pode levar mais de um dia, pode parar no meio,
   e é preciso saber quem imprimiu o quê e quando. A cardinalidade atual é acidente da carga inicial,
@@ -1817,6 +1909,15 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
   Resumo Anual e Mapa contam por data de **entrega**; Pedidos e Atendimento, por data do **pedido**. Os
   dois estão certos, e sem `.dashboard__escopo` os números pareceriam se contradizer. Janelas
   deslizantes ("últimos 6 meses") saíram, porque num ano passado continuariam terminando hoje.
+
+- **O toast tem fundo PRÓPRIO (`--toast-*-bg`), e a paleta `--color-*` não mudou** (2026-09-05). No
+  tema claro o texto branco sobre `--color-warning` (#ed6c02) dava 3,11:1 e sobre `--color-info`
+  (#0288d1) 3,86:1, abaixo dos 4,5:1 que texto de 14 px exige; `--color-error` (4,95:1) e
+  `--color-success` (5,13:1) passavam. Escurecer as `--color-*` mudaria borda, ícone e chip do sistema
+  inteiro; os quatro tokens de fundo do toast (`--toast-warning-bg` #a85400 com 5,34:1,
+  `--toast-info-bg` #0277bd com 4,80:1, os outros dois iguais às cores) resolvem só onde o texto
+  branco vive. `client/src/__tests__/contraste-toast.test.js` refaz a conta da WCAG sobre a folha e
+  reprova regressão. No tema escuro os tokens reaproveitam as cores, com a tinta escura de sempre.
 
 ## Mapa
 

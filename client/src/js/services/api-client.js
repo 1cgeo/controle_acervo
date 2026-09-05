@@ -20,6 +20,14 @@ const TIMEOUT_MS = 30000;
  *
  * Sem a tradução o toast mostraria "signal is aborted without reason", que não
  * diz nem o que houve nem o que fazer.
+ *
+ * A FALHA DE REDE também é traduzida, e é a que mais aparece. Servidor parado,
+ * cabo fora, VPN caída ou CORS fazem o `fetch` rejeitar com um `TypeError` cuja
+ * mensagem é "Failed to fetch" no Chrome e "NetworkError when attempting to
+ * fetch resource." no Firefox. Essa string subia intacta até o toast e até o
+ * estado de erro de tela inteira -- em inglês, contra a regra da casa, e sem
+ * dizer sequer que o problema era a rede, que é justamente a hora em que quem
+ * lê precisa saber que não adianta mexer no formulário.
  */
 async function buscar(url, options = {}) {
   try {
@@ -27,6 +35,9 @@ async function buscar(url, options = {}) {
   } catch (erro) {
     if (erro && (erro.name === 'TimeoutError' || erro.name === 'AbortError')) {
       throw new Error('O servidor demorou demais para responder. Tente de novo.');
+    }
+    if (erro instanceof TypeError) {
+      throw new Error('Não foi possível falar com o servidor. Verifique a conexão e tente de novo.');
     }
     throw erro;
   }
@@ -553,8 +564,20 @@ function nomeDoCabecalho(disposition) {
 }
 
 /**
- * Download a file (e.g. CSV export) with the Bearer token.
- * Fetches the endpoint as a blob and triggers a browser download.
+ * Baixa um arquivo (exportacao, arquivo do acervo) com o Bearer token.
+ *
+ * SAO DOIS CAMINHOS, e a escolha e do navegador:
+ *
+ * 1. Com `window.showSaveFilePicker` (File System Access API, Chrome e Edge, que
+ *    e o navegador da casa), os bytes vao do socket para o disco por STREAM
+ *    (`response.body.pipeTo`), sem passar pela memoria da aba.
+ * 2. Sem ele, cai no `blob()` de sempre, que monta o arquivo INTEIRO na memoria
+ *    antes de salvar. O acervo tem arquivo de gigabytes, e por esse caminho uma
+ *    exportacao grande derruba a aba; e a queda, e nao o preferido.
+ *
+ * O nome sugerido vem do `Content-Disposition` nos dois caminhos: quem nomeia o
+ * arquivo e o servidor.
+ *
  * @param {string} endpoint - e.g. '/relatorio/secao3/markdown?ano=2026&mes=5'
  * @param {string} fallbackFilename - so vale quando o servidor NAO manda
  *   `Content-Disposition` com nome. O nome do servidor sempre ganha.
@@ -587,6 +610,24 @@ export async function apiDownload(endpoint, fallbackFilename) {
   const filename =
     nomeDoCabecalho(response.headers.get('Content-Disposition')) || fallbackFilename;
 
+  const seletor = typeof window !== 'undefined' ? window.showSaveFilePicker : undefined;
+  if (typeof seletor === 'function' && response.body) {
+    let destino;
+    try {
+      destino = await seletor.call(window, { suggestedName: filename });
+    } catch (erro) {
+      // Fechar o seletor sem escolher NAO e erro: e a pessoa desistindo do
+      // download. `AbortError` sai em silencio, sem toast e sem console.
+      if (erro && erro.name === 'AbortError') return;
+      throw erro;
+    }
+    const escrita = await destino.createWritable();
+    // `pipeTo` fecha o destino sozinho no fim, e o aborta se a rede cair no
+    // meio: nao ha `close()` a chamar aqui.
+    await response.body.pipeTo(escrita);
+    return;
+  }
+
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -595,5 +636,11 @@ export async function apiDownload(endpoint, fallbackFilename) {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  // A revogacao SAI DO TIQUE do clique. O download so engata depois que o
+  // navegador processa o clique, e revogar antes disso cancela o arquivo em
+  // silencio: nada na tela, nada no console. O Chrome costuma segurar o blob
+  // ate o fim, Firefox e Safari nao garantem, e o sintoma seria "as vezes nao
+  // baixa", em TODA exportacao do sistema. Um minuto e folga larga, e a memoria
+  // e liberada do mesmo jeito.
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }

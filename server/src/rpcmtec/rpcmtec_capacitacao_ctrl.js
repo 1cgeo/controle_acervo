@@ -370,7 +370,14 @@ controller.atualizar = async (id, tipoId, dados, usuarioUuid, contexto) => {
       contexto
     })
 
-    await gravarMilitares(t, id, dados.militares)
+    // A CHAVE AUSENTE PRESERVA A LISTA, e a lista vazia a apaga. É a mesma regra
+    // dos dois campos do PIT logo acima, e pelo mesmo motivo: `gravarMilitares`
+    // é DELETE mais INSERT, então chamá-lo com `undefined` apagaria a lista
+    // inteira de quem só quis corrigir o nome da capacitação. Quem manda `[]`
+    // está dizendo "tirei todo mundo", e aí o DELETE é o que se pediu.
+    if (dados.militares !== undefined) {
+      await gravarMilitares(t, id, dados.militares)
+    }
     const militaresDepois = await lerLinhaDosMilitares(t, id)
     await registrarMilitares(t, militaresAntes, militaresDepois, usuarioUuid, contexto)
 

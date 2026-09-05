@@ -29,11 +29,15 @@ import { renderManutencaoTab } from './manutencao-tab.js';
  * nivel 2 as duas metades de cada um. So a aba ativa existe no DOM (contrato do
  * `createTabs`), entao abrir a tela nao dispara as seis cargas de uma vez.
  *
- * PERFIL. A rota pede OPERADOR, que e o menor nivel que faz alguma coisa aqui:
- * o proprio `GET /volumes/volume_armazenamento` e operador no servidor, e quem
- * tem so consulta abriria uma tela de quatro erros. Dentro das abas, editar e
- * operador e excluir e GERENTE, e cada aba esconde o botao que a pessoa nao
- * poderia usar. Quem barra de verdade continua sendo o `verifyPerfil`.
+ * PERFIL. A rota e `admin: true` (ver `modules/acervo/index.js`): so o
+ * ADMINISTRADOR global abre esta tela, e ela e a unica excecao a regra de que o
+ * gerente ve tudo da area dele. E por isso que as duas guardas internas deste
+ * arquivo -- o `temPerfil('gerente', 'acervo')` do Diagnostico e o `isAdmin()`
+ * da Manutencao -- nunca reprovam hoje: `temPerfil` devolve verdadeiro para
+ * administrador, e ninguem alem dele chega aqui. Elas ficam porque descrevem o
+ * que cada grupo exige DO SERVIDOR, que e quem barra de verdade
+ * (`verifyPerfil`). Dentro das abas, editar e operador e excluir e GERENTE, e
+ * cada aba esconde o botao que a pessoa nao poderia usar.
  *
  * @param {HTMLElement} container
  * @param {{params:Object, query:URLSearchParams}} _ctx

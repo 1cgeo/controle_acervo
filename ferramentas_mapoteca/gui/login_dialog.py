@@ -72,8 +72,22 @@ class LoginDialog(QDialog, FORM_CLASS):
         if not server:
             QMessageBox.warning(
                 self, "Servidor não informado",
-                "Informe o endereço do servidor do SCA, no formato "
+                "Informe o endereço do servidor do SAP, no formato "
                 "http://servidor:porta. Peça o endereço ao gerente da mapoteca."
+            )
+            self.server.setFocus()
+            return
+
+        # O ESQUEMA É OBRIGATÓRIO. Sem ele, `urljoin('servidor:3013/',
+        # 'api/login')` devolve 'api/login': o Python lê `servidor:` como
+        # esquema e o host DESAPARECE. O requests levanta MissingSchema, que cai
+        # no `except Exception` genérico do api_client, e a pessoa lê uma
+        # mensagem em inglês citando uma URL que ela nunca escreveu.
+        if not server.lower().startswith(('http://', 'https://')):
+            QMessageBox.warning(
+                self, "Endereço incompleto",
+                "O endereço do servidor precisa começar com http:// ou https://.\n\n"
+                "Exemplo: http://servidor:porta"
             )
             self.server.setFocus()
             return

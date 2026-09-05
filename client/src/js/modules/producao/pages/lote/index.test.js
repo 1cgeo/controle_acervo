@@ -2,14 +2,20 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { flush } from '@/__tests__/helpers/flush.js';
 
 // ESTA É A TELA EM QUE A REGRA DE 2026-08-08 MAIS IMPORTA. Ela lê de três
-// lugares com autorizações diferentes:
+// lugares:
 //
-//   /informacoes/:lote            consulta em `producao`  -- é a tela
-//   /projetos/lote                consulta em ACERVO      -- só a lista de lotes
-//   /producao/lote/:id/subfases   GERENTE em `producao`   -- só o seletor
+//   /acompanhamento/informacoes/:lote  consulta em `producao`  -- é a tela
+//   /acompanhamento/lotes              consulta em `producao`  -- a lista de lotes
+//   /acompanhamento/lotes/:lote/subfases  consulta em `producao` -- o seletor
 //
 // Num `Promise.all` a falha de qualquer uma derrubaria as três, e a mensagem que
 // sobraria seria a dela. O que estes testes prendem é que cada uma cai sozinha.
+//
+// E A NOTA DA QUEDA NÃO PODE DIAGNOSTICAR ERRADO. A lista de lotes já foi
+// `/projetos/lote`, que cobra o ACERVO, e a nota dizia "você não tem perfil no
+// módulo acervo". Hoje a primeira chamada tem o MESMO piso da tela, então quem
+// chegou aqui passa por ela: uma falha ali é servidor ou rede, e mandar procurar
+// perfil no acervo é mandar para o lugar errado.
 const servico = vi.hoisted(() => ({
   lotesAcervo: null,
   lotesExecucao: null,
@@ -22,6 +28,9 @@ const servico = vi.hoisted(() => ({
 /** `{ dados }` ou `{ erro }`, para o teste declarar sucesso e falha do mesmo jeito. */
 const responder = (caso) => {
   if (!caso) return Promise.resolve([]);
+  // `{ promessa }` fica PENDENTE até o teste resolver, e é como se encena a
+  // resposta que chega fora de ordem.
+  if (caso.promessa) return caso.promessa;
   if (caso.erro) return Promise.reject(caso.erro);
   return Promise.resolve(caso.dados);
 };
@@ -84,6 +93,10 @@ let container;
 beforeEach(() => {
   container = document.createElement('div');
   document.body.replaceChildren(container);
+  // O FILTRO VIVE NA URL, e a barra de endereço é estado compartilhado entre os
+  // casos deste arquivo: sem zerar, a query que um caso escreveu chegaria ao
+  // seguinte como se fosse a rota por onde a pessoa entrou.
+  history.replaceState(null, '', '#/producao/lote');
   servico.lotesAcervo = { dados: [{ id: 4, nome: 'Lote 4', projeto: 'Projeto A' }] };
   servico.lotesExecucao = { dados: [{ lote_id: 4, lote: 'Lote 4', em_execucao: 9 }] };
   servico.fases = { dados: [fase()] };
@@ -96,11 +109,16 @@ beforeEach(() => {
   servico.chamadas = [];
 });
 
-const abrir = async () => {
-  const cleanup = await renderLoteAcompanhamento(container);
+const abrir = async (busca = '') => {
+  const cleanup = await renderLoteAcompanhamento(container, {
+    query: new URLSearchParams(busca),
+  });
+  await flush();
   await flush();
   return cleanup;
 };
+
+const urlDaTela = () => window.location.hash.replace(/^#/, '');
 
 const selects = () => [...container.querySelectorAll('.page__filters select')];
 const escolher = async (indice, valor) => {
@@ -116,13 +134,11 @@ const notas = () => [...container.querySelectorAll('.lote-acomp__nota')]
   .join(' | ');
 
 describe('acompanhamento do lote: cada chamada cai sozinha', () => {
-  test('o 403 do ACERVO não derruba a tela, e a lista cai para os lotes em execução', async () => {
-    servico.lotesAcervo = {
-      erro: new Error('Usuário necessita do perfil consulta no módulo acervo'),
-    };
+  test('a lista de lotes que falha não derruba a tela, e cai para os em execução', async () => {
+    servico.lotesAcervo = { erro: new Error('Erro ao buscar os lotes com produção') };
     await abrir();
 
-    // A tela abriu, e o seletor tem os lotes da rota de `consulta` em `producao`.
+    // A tela abriu, e o seletor tem os lotes da rota de queda.
     expect(container.querySelector('.page__title').textContent)
       .toBe('Acompanhamento do lote');
     expect(selects()[0].options.length).toBeGreaterThan(1);
@@ -130,6 +146,11 @@ describe('acompanhamento do lote: cada chamada cai sozinha', () => {
     // E DIZ que a lista é menor: uma lista curta e calada se leria como "o
     // resto dos lotes não existe".
     expect(notas()).toContain('só os lotes com versão em execução');
+    // COM A MENSAGEM DO SERVIDOR, e não um diagnóstico inventado pela tela: as
+    // duas rotas têm o mesmo piso desta página, então "falta perfil" não é a
+    // explicação, e afirmá-la mandaria procurar no lugar errado.
+    expect(notas()).toContain('Erro ao buscar os lotes com produção');
+    expect(notas()).not.toContain('acervo');
   });
 
   test('com o acervo respondendo, a queda nem é pedida', async () => {
@@ -148,19 +169,22 @@ describe('acompanhamento do lote: cada chamada cai sozinha', () => {
     expect(container.querySelector('.page__title')).not.toBeNull();
   });
 
-  test('o 403 da lista de subfases (gerente) NÃO derruba o quadro de fases', async () => {
-    servico.subfases = {
-      erro: new Error('Usuário necessita do perfil gerente no módulo producao'),
-    };
+  test('a falha da lista de subfases não derruba o quadro de fases', async () => {
+    // A rota do seletor é `consulta` em `producao`, o mesmo piso da tela: quem
+    // chegou aqui passou por ela, então o que cai é servidor ou rede, e não
+    // perfil. Por isso o erro encenado é o do servidor.
+    servico.subfases = { erro: new Error('Erro ao buscar as subfases do lote') };
     await abrir();
     await escolher(0, 4);
 
     // O quadro de fases, que é a resposta principal da tela, está lá.
     expect(container.querySelectorAll('.lote-acomp__tabela').length).toBe(1);
     expect(container.textContent).toContain('Produção');
-    // E a falha ficou na seção dela, dizendo de quem é a rota.
-    expect(notas()).toContain('perfil gerente');
-    expect(notas()).toContain('não depende dela');
+    // E a falha ficou na seção dela, com as palavras do servidor e sem
+    // diagnóstico inventado.
+    expect(notas()).toContain('Erro ao buscar as subfases do lote');
+    expect(notas()).toContain('O quadro de fases acima não depende dela');
+    expect(notas()).not.toContain('gerência');
   });
 });
 
@@ -244,5 +268,83 @@ describe('acompanhamento do lote: as etapas da subfase', () => {
     await escolher(0, 4);
 
     expect(notas()).toContain('ainda não tem subfase com etapa cadastrada');
+  });
+
+  // TROCAR O LOTE DUAS VEZES DEPRESSA. A tabela de fases não repete o nome do
+  // lote em coluna nenhuma, então a resposta do primeiro chegando depois pinta
+  // os números DELE sob um seletor que já marca o outro, e não há como
+  // perceber.
+  test('a resposta do lote antigo não pinta por cima do novo', async () => {
+    servico.lotesAcervo = {
+      dados: [
+        { id: 4, nome: 'Lote 4', projeto: 'Projeto A' },
+        { id: 5, nome: 'Lote 5', projeto: 'Projeto A' },
+      ],
+    };
+    await abrir();
+
+    let liberarQuatro;
+    let liberarCinco;
+    servico.fases = { promessa: new Promise((r) => { liberarQuatro = r; }) };
+    await escolher(0, 4);
+    servico.fases = { promessa: new Promise((r) => { liberarCinco = r; }) };
+    await escolher(0, 5);
+
+    // A SEGUNDA CHEGA PRIMEIRO.
+    liberarCinco([fase({ nome: 'Fase do lote 5' })]);
+    await flush();
+    expect(container.textContent).toContain('Fase do lote 5');
+
+    // E A PRIMEIRA CHEGA DEPOIS: descartada.
+    liberarQuatro([fase({ nome: 'Fase do lote 4' })]);
+    await flush();
+
+    expect(container.textContent).toContain('Fase do lote 5');
+    expect(container.textContent).not.toContain('Fase do lote 4');
+  });
+});
+
+// O LOTE E A SUBFASE VIVEM NA URL, no molde da lista de pedidos da mapoteca
+// (commit `a8212b9`): achar o lote, descer ate a subfase, sair para conferir
+// outra coisa e voltar devolvia a tela pedindo "escolha um lote", e nao havia
+// como mandar a alguem o acompanhamento de um lote.
+describe('acompanhamento do lote: a escolha vive na URL', () => {
+  test('abre no lote da query, com as duas cargas ja feitas', async () => {
+    await abrir('lote=4');
+
+    expect(selects()[0].value).toBe('4');
+    expect(servico.chamadas).toContain('fases:4');
+    expect(servico.chamadas).toContain('subfases:4');
+    expect(container.querySelectorAll('.lote-acomp__tabela').length).toBe(1);
+  });
+
+  test('a subfase da query abre a secao de etapas junto', async () => {
+    await abrir('lote=4&subfase=11');
+
+    expect(selects()[1].value).toBe('11');
+    expect(servico.chamadas).toContain('etapas:4:11');
+    expect(container.querySelectorAll('.lote-acomp__tabela').length).toBe(2);
+  });
+
+  // O RECORTE QUE ACABOU: consultar um id que a lista nao tem seria perguntar
+  // por um lote que ninguem escolheu, com o seletor vazio ao lado.
+  test('lote da URL que nao esta na lista e descartado', async () => {
+    await abrir('lote=99');
+
+    expect(selects()[0].value).toBe('');
+    expect(servico.chamadas.some(c => c.startsWith('fases:'))).toBe(false);
+    expect(container.textContent).toContain('Escolha um lote');
+    expect(urlDaTela()).toBe('/producao/lote');
+  });
+
+  test('escolher no seletor escreve a URL, e a subfase entra junto', async () => {
+    await abrir();
+    expect(urlDaTela()).toBe('/producao/lote');
+
+    await escolher(0, 4);
+    expect(urlDaTela()).toBe('/producao/lote?lote=4');
+
+    await escolher(1, 11);
+    expect(urlDaTela()).toBe('/producao/lote?lote=4&subfase=11');
   });
 });

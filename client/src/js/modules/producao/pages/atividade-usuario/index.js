@@ -220,10 +220,15 @@ export function renderAtividadeUsuario(container) {
     const dias = faixas.reduce((soma, f) => soma + (f.fim - f.inicio) / DIA_MS, 0);
     const diasTotais = Math.round(total / DIA_MS);
 
+    // O MESMO texto do rótulo visível: `linha.usuario` pode vir nulo, e o
+    // leitor de tela anunciava "null: 10 de 220 dias" ao lado de um nome que a
+    // tela escrevia como "Sem nome".
+    const nome = linha.usuario || 'Sem nome';
+
     const barra = el('div', {
       className: 'linha-tempo__barra',
       role: 'img',
-      'aria-label': `${linha.usuario}: ${dias} de ${diasTotais} dias com atividade aberta`,
+      'aria-label': `${nome}: ${dias} de ${diasTotais} dias com atividade aberta`,
     }, faixas.map(f => el('span', {
       className: 'linha-tempo__faixa',
       style: {
@@ -235,7 +240,7 @@ export function renderAtividadeUsuario(container) {
     })));
 
     return el('div', { className: 'linha-tempo__pessoa' }, [
-      el('span', { className: 'linha-tempo__nome', textContent: linha.usuario || 'Sem nome' }),
+      el('span', { className: 'linha-tempo__nome', textContent: nome }),
       barra,
       el('span', {
         className: 'linha-tempo__dias',

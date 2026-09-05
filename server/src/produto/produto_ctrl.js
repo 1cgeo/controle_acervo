@@ -53,12 +53,49 @@ controller.atualizaProduto = async (produto, usuarioUuid, contexto) => {
     // apagava a identidade do produto em silêncio (Joi .default(null) + def:null
     // no ColumnSet), e bastava reenviar o que o GET devolvia para uma Carta
     // Militar deixar de ser militar. Enviar null explícito ainda despina.
+    //
+    // `mi` e `inom` entram pela MESMA razão, e o buraco era o mesmo: os dois são
+    // `texto255().allow(null, '')` sem `.required()`, e no ramo sem geometria o
+    // `ColumnSet` os traz com `def: null`, enquanto no ramo com geometria eles
+    // chegam `undefined` e o pg-promise formata `undefined` posicional como
+    // NULL. Um corpo válido pelo schema mas sem as duas chaves apagava a
+    // identidade da folha e respondia 200. A tela sempre manda as duas, então
+    // quem acionava era script, carga, `acervo_cli` ou a próxima mudança de UI.
     await preserveOmitted(t, {
       table: 'produto',
       id: produto.id,
-      fields: ['subtipo_produto_id'],
+      fields: ['subtipo_produto_id', 'mi', 'inom'],
       body: produto
     })
+
+    // A IDENTIDADE TAMBEM SE CONFERE NA ATUALIZACAO, e nao so na criacao.
+    //
+    // `unique_produto_identidade` cobre (mi, escala, tipo, subtipo). Mover um
+    // produto para a identidade de outro por `PUT /produto` estourava o indice
+    // direto, e a unica traducao que este controlador tem e para `P0001` (o
+    // `RAISE EXCEPTION` do gatilho `validate_version`): o `23505` subia cru e
+    // virava 500 com o nome interno da constraint. Na criacao o mesmo caso da
+    // 409 com o nome do produto que ja ocupa a identidade.
+    //
+    // SO QUANDO A IDENTIDADE MUDA. `conferirIdentidadeLivre` procura a
+    // identidade no banco sem excluir o proprio produto -- ela nasceu para rodar
+    // ANTES de o produto existir. Rodando aqui com a identidade INALTERADA, ela
+    // acharia a propria linha e recusaria toda edicao de nome ou descricao. Com
+    // a identidade MUDADA, a propria linha ainda guarda a identidade velha e nao
+    // pode casar com a nova, entao a funcao esta correta como esta e nada em
+    // `utils/` precisa mudar.
+    //
+    // Depois do `preserveOmitted` de proposito: o `mi` e o subtipo efetivos sao
+    // os que ele acabou de preencher.
+    const identidadeMudou =
+      (produto.mi ?? null) !== (antes.mi ?? null) ||
+      Number(produto.tipo_escala_id) !== Number(antes.tipo_escala_id) ||
+      Number(produto.tipo_produto_id) !== Number(antes.tipo_produto_id) ||
+      (produto.subtipo_produto_id ?? null) !== (antes.subtipo_produto_id ?? null)
+
+    if (identidadeMudou) {
+      await conferirIdentidadeLivre(t, produto)
+    }
 
     // Quando a troca conjunta foi pedida, e o subtipo para onde as versoes vao
     // DEPOIS da gravacao do produto. Nulo = nao ha o que migrar.
@@ -566,6 +603,39 @@ const registraRelacionamentosApagados = async (t, relacionamentos, { motivo_excl
   }
 };
 
+/**
+ * O rotulo da versao SEGUINTE, nos DOIS formatos que o acervo aceita.
+ *
+ * O gatilho `acervo.validate_version` admite exatamente dois: o novo
+ * `N-SIGLA` ("2-DSG") e o legado `Nª Edição` ("2ª Edição"). A guarda de exclusao
+ * de versao intermediaria reconhecia so o primeiro, entao uma "2ª Edição" podia
+ * ser apagada com a "3ª Edição" no acervo, sem o aviso que o formato novo
+ * recebe -- e a carta de 3ª edicao passava a se apoiar numa edicao que nao existe
+ * mais. Os dois formatos sao igualmente validos, e a dependencia entre edicoes
+ * sucessivas e a mesma nos dois.
+ *
+ * Devolve `null` para o rotulo que nao casa com nenhum dos dois: ele nao tem
+ * sucessor definido, e nao ha o que proteger.
+ *
+ * Exportada no controlador para o pacote RAPIDO poder provar os dois formatos
+ * sem PostgreSQL: o caso de rota que fecha a regra precisa de banco, e um regex
+ * so testado por ele nao diz qual dos dois quebrou.
+ *
+ * @param {string} rotulo - o valor de `acervo.versao.versao`
+ * @returns {string|null}
+ */
+controller.versaoSeguinte = (rotulo) => {
+  const texto = rotulo || '';
+
+  const novo = /^(\d+)-([A-Z]{1,5})$/.exec(texto);
+  if (novo) return `${parseInt(novo[1], 10) + 1}-${novo[2]}`;
+
+  const legado = /^(\d+)ª Edição$/.exec(texto);
+  if (legado) return `${parseInt(legado[1], 10) + 1}ª Edição`;
+
+  return null;
+};
+
 controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid, contexto) => {
   const data_delete = new Date();
   const usuario_delete_uuid = usuarioUuid;
@@ -613,17 +683,17 @@ controller.deleteVersoes = async (versaoIds, motivo_exclusao, usuarioUuid, conte
       );
     }
 
-    // Verificar se alguma versão possui versões posteriores que dependem dela (formato X-SIGLA)
+    // Versão intermediária não se apaga: se a SEGUINTE existe, ela depende desta.
+    //
+    // Vale nos DOIS formatos que `acervo.validate_version` aceita, o novo
+    // "N-SIGLA" e o legado "Nª Edição" (ver `controller.versaoSeguinte`). Até
+    // 2026-09-05 só o novo era reconhecido, e uma "2ª Edição" saía sem aviso
+    // com a "3ª Edição" presente.
     for (let id of versaoIds) {
       const versao = versoesAntes.get(Number(id));
 
-      // Verificar formato novo "X-SIGLA"
-      const match = versao.versao.match(/^(\d+)-([A-Z]{1,5})$/);
-      if (match) {
-        const versionNumber = parseInt(match[1]);
-        const acronym = match[2];
-        const nextVersion = `${versionNumber + 1}-${acronym}`;
-
+      const nextVersion = controller.versaoSeguinte(versao.versao);
+      if (nextVersion) {
         // Verificar se existe versão posterior que depende desta
         const dependente = await t.oneOrNone(
           `SELECT id FROM acervo.versao
@@ -1469,8 +1539,11 @@ controller.getFolha = async ({ inom, mi, tipo_escala_id: tipoEscalaId }) => {
 
   const poligono = scn.poligonoDoInom(inomCanonico)
   if (!poligono) {
+    // `inomCanonico`, e não `inom`: pedindo por `mi` o `inom` chega undefined
+    // (o `.xor` do schema garante um dos dois), e a mensagem dizia
+    // `INOM "undefined"` para quem nunca mandou INOM nenhum.
     throw new AppError(
-      `INOM "${inom}" fora do formato do Sistema Cartográfico Nacional. ` +
+      `INOM "${inomCanonico}" fora do formato do Sistema Cartográfico Nacional. ` +
       'O formato é <hemisfério><faixa>-<fuso> seguido de um token por ' +
       'subdivisão: SF-22 (1:1.000.000), -V/X/Y/Z (1:500.000), -A/B/C/D ' +
       '(1:250.000), -I a -VI (1:100.000), -1 a -4 (1:50.000) e -NO/NE/SO/SE ' +

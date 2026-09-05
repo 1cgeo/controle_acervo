@@ -5,9 +5,21 @@
  *
  * UMA COR SÓ. A barra marca os dias com atividade aberta; o trilho vazio é a
  * ausência dela. Ver o cabeçalho de `index.js`.
+ *
+ * O BLOCO SE CHAMA `tempo-subfase`, E NÃO `linha-tempo`, e o nome é o conserto
+ * de um defeito: `pages/atividade-usuario/atividade-usuario.css` também desenha
+ * uma linha do tempo e chamava o bloco dela de `linha-tempo`. O CSS do cliente
+ * é GLOBAL (não há CSS Modules, e os dois arquivos entram no mesmo bundle),
+ * então as duas folhas se sobrepunham em `__barra` e em `__marca`. A de
+ * `atividade-usuario` é importada depois desta em `modules/producao/index.js` e
+ * ganhava: a barra daqui perdia o `position: absolute` para o `relative` de lá,
+ * virava um `<span>` inline sem largura, e ESTA TELA DESENHAVA TRILHOS VAZIOS.
+ * Nenhum teste pegava, porque o vitest roda com `css: false`. Quem duplicar um
+ * nome de bloco entre duas telas repete isso; `modules/producao/estilos.test.js`
+ * é a régua.
  * ------------------------------------------------------------------------- */
 
-.linha-tempo__legenda {
+.tempo-subfase__legenda {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
@@ -17,7 +29,7 @@
   font-size: var(--font-size-sm);
 }
 
-.linha-tempo__amostra {
+.tempo-subfase__amostra {
   display: inline-block;
   width: 28px;
   height: 8px;
@@ -25,14 +37,14 @@
   background: var(--color-primary);
 }
 
-.linha-tempo__legenda-nota { margin-left: var(--space-md); }
+.tempo-subfase__legenda-nota { margin-left: var(--space-md); }
 
-.linha-tempo__vazio {
+.tempo-subfase__vazio {
   padding: var(--space-lg);
   color: var(--text-secondary);
 }
 
-.linha-tempo__quadro {
+.tempo-subfase__quadro {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-paper);
@@ -40,24 +52,24 @@
   margin-bottom: var(--space-md);
 }
 
-.linha-tempo__lote {
+.tempo-subfase__lote {
   margin: 0 0 var(--space-sm);
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-semibold);
 }
 
-.linha-tempo__eixo,
-.linha-tempo__linha {
+.tempo-subfase__eixo,
+.tempo-subfase__linha {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
 }
 
-.linha-tempo__linha { margin-bottom: 4px; }
+.tempo-subfase__linha { margin-bottom: 4px; }
 
 /* O RÓTULO TEM LARGURA FIXA nas duas, e é o que alinha o eixo com as faixas:
  * larguras diferentes fariam a marca de "mar" cair sobre outro dia. */
-.linha-tempo__rotulo {
+.tempo-subfase__rotulo {
   flex: 0 0 200px;
   width: 200px;
   font-size: var(--font-size-sm);
@@ -68,7 +80,7 @@
   color: var(--text-secondary);
 }
 
-.linha-tempo__trilho {
+.tempo-subfase__trilho {
   position: relative;
   flex: 1 1 auto;
   height: 14px;
@@ -76,13 +88,13 @@
   background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
 }
 
-.linha-tempo__trilho--eixo {
+.tempo-subfase__trilho--eixo {
   background: none;
   height: 18px;
   border-bottom: 1px solid var(--border-color);
 }
 
-.linha-tempo__marca {
+.tempo-subfase__marca {
   position: absolute;
   top: 0;
   transform: translateX(-50%);
@@ -91,7 +103,7 @@
   white-space: nowrap;
 }
 
-.linha-tempo__barra {
+.tempo-subfase__barra {
   position: absolute;
   top: 2px;
   bottom: 2px;
@@ -100,5 +112,5 @@
 }
 
 @media (max-width: 768px) {
-  .linha-tempo__rotulo { flex-basis: 110px; width: 110px; }
+  .tempo-subfase__rotulo { flex-basis: 110px; width: 110px; }
 }

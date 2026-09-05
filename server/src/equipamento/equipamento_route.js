@@ -9,12 +9,15 @@
 //
 //   consulta  - ve o parque, a ficha de cada bem, o painel e tira o relatorio
 //   operador  - lanca o que ACONTECE com o bem (indisponibilidade, afastamento,
-//               manutencao) e cadastra tipo novo
-//   gerente   - mexe na CARGA: cria, altera e remove o bem, e lanca
-//               transferencia e descarga, que sao movimentacao de patrimonio
+//               manutencao)
+//   gerente   - mexe na CARGA e no CATALOGO: cria, altera e remove o bem e o
+//               TIPO, e lanca transferencia e descarga, que sao movimentacao de
+//               patrimonio
 //
-// A remocao de TIPO e de gerente pela mesma razao: apagar um tipo reclassifica o
-// cadastro inteiro, e e a alteracao de maior alcance da tela de cadastro.
+// O TIPO E DE GERENTE NAS TRES ESCRITAS, e nao so na remocao. O motivo (a
+// `vida_util_meses` que todo bem HERDA do tipo) esta escrito na secao da tela de
+// Configuracao, mais abaixo, e quem faz cumprir e
+// `__tests__/routes/equipamento_perfil.test.js`.
 
 const express = require('express')
 

@@ -168,8 +168,17 @@ function abrirImportacao({ campoId, aoImportar }) {
         erroArquivo.classList.add('hidden');
         const comHora = pontos.filter(p => p.momento).length;
         resumo.classList.remove('campo-form__area-resumo--vazia');
-        resumo.textContent = `${pontos.length} pontos`
-          + (comHora ? `, ${comHora} com hora` : ', sem hora (a ordem é a do arquivo)');
+        // O RESUMO DIZ A VERDADE SOBRE O ARQUIVO SEM HORA. Desde a 3.14.0
+        // (migração `2026-09-05_o_trajeto_sem_hora_tambem_se_desenha.sql`) a view
+        // `campo.track_linha` costura por `momento NULLS LAST, id`: com hora a
+        // ordem é a da hora, e sem hora é a de inserção, que é a do arquivo. Até
+        // 2026-09-05 a view filtrava `WHERE p.momento IS NOT NULL`, o track sem hora
+        // não produzia linha nenhuma, e a tela chegou a avisar isso; a frase de
+        // hoje só vale porque o servidor está na 3.14.0 ou acima.
+        resumo.textContent = `${pontos.length === 1 ? '1 ponto' : `${pontos.length} pontos`}`
+          + (comHora
+            ? `, ${comHora} com hora`
+            : ', sem hora: a ordem no mapa é a do arquivo');
       };
       leitor.readAsText(arquivo);
       evento.target.value = '';
@@ -335,8 +344,13 @@ export function criarTrajetosCampo({
           el('strong', { textContent: `${t.placa_vtr} · ${dia(t.dia)}` }),
           el('br'),
           el('small', {
+            // O SINGULAR. O track de um ponto so vinha com `pontos = 0` e caia
+            // na frase de "sem linha"; desde que `pontos` passou a contar o que
+            // a tabela tem, ele vem com 1 e a lista escrevia "1 pontos".
             textContent: `${t.chefe_vtr} / ${t.motorista} · `
-              + (t.pontos ? `${t.pontos} pontos` : 'sem linha (menos de 2 pontos)'),
+              + (t.pontos
+                ? `${t.pontos === 1 ? '1 ponto' : `${t.pontos} pontos`}`
+                : 'sem linha (menos de 2 pontos)'),
           }),
         ]),
       ]);

@@ -169,7 +169,11 @@ app.use((req, res, next) => {
 
 app.use('/api', appRoutes)
 
-app.use('/logs', (req, res) => {
+// `app.get`, E NÃO `app.use`. Montado com `use`, esta rota respondia POST, PUT
+// e DELETE com o mesmo conteúdo: verbo de escrita que devolve 200 com o log
+// dentro é ruído no log de acesso do proxy e no diagnóstico, e sugere uma porta
+// de escrita que não existe. Ler o log é `GET`, e o resto é 404.
+app.get('/logs', (req, res) => {
   const logFile = path.join(__dirname, '..', '..', 'logs/combined.log')
   const daysToShow = 3
   const cutofftimestamp = new Date(Date.now() - daysToShow * 24 * 60 * 60 * 1000)
@@ -178,14 +182,17 @@ app.use('/logs', (req, res) => {
 
   fs.stat(logFile, (statErr, stats) => {
     if (statErr) {
-      return res.status(500).send('Error reading log file')
+      // Em português, como toda mensagem de erro da casa, e dizendo QUAL
+      // arquivo: quem abre /logs numa subida nova (a pasta `logs/` ainda não
+      // existe) ou sem permissão de leitura precisa saber onde procurar.
+      return res.status(500).send('Não foi possível ler o arquivo de log do serviço')
     }
 
     const start = Math.max(0, stats.size - maxBytes)
     const stream = fs.createReadStream(logFile, { start, encoding: 'utf8' })
     let data = ''
     stream.on('data', chunk => { data += chunk })
-    stream.on('error', () => res.status(500).send('Error reading log file'))
+    stream.on('error', () => res.status(500).send('Não foi possível ler o arquivo de log do serviço'))
     stream.on('end', () => {
       const logData = data.split('\n').filter(entry => {
         const logDate = new Date(entry.split('|')[0])

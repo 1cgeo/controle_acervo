@@ -6,6 +6,9 @@ const { db } = require('../database')
 
 const validateToken = require('../login/validate_token')
 const { montarContexto } = require('../login/contexto')
+const { colunaCarimbo, conferirCarimbo } = require('../login/carimbo_da_senha')
+
+const { MODULOS_VALIDOS } = require('./mapa')
 
 /**
  * Guarda da tela de RASTREABILIDADE, que nao e nenhum dos tres que ja existem.
@@ -43,6 +46,30 @@ const { montarContexto } = require('../login/contexto')
 // pelo modulo, e nao de quem opera nele.
 const PERFIL_GERENTE = 3
 
+/**
+ * A FRASE DE QUEM E GERENTE SO DE `pit` OU SO DE `efetivo`.
+ *
+ * `dominio.modulo` tem SETE `nome_abrev`, e `auditoria.evento.modulo` so recebe
+ * os de `MODULOS_VALIDOS` (`mapa/index.js`), que sao seis e nao incluem esses
+ * dois: o que o PIT e o efetivo gravam e auditado sob 'plataforma', que e do
+ * administrador global.
+ *
+ * ATE 2026-09-05 ESSA GERENCIA ENTRAVA NA TELA e recebia uma tela em branco POR
+ * CONSTRUCAO: a lista rodava `a.modulo IN ('pit')`, que devolve zero, e
+ * `opcoesDeFiltro` devolvia quatro listas vazias pelo mesmo recorte -- e
+ * `auditoria_schema.js` nem aceita `pit` como filtro manual, entao nem tentando
+ * a mao a pessoa chegaria a algum lugar. A leitura natural de uma tela assim e
+ * "o sistema nao registra nada" ou "esta quebrado", e as duas sao falsas.
+ *
+ * O 403 QUE EXPLICA E MAIS HONESTO QUE O 200 MUDO, e e a unica coisa que muda
+ * aqui. Quem e gerente de `pit` E de `acervo` continua entrando, recortado ao
+ * acervo: a intersecao so recusa quando ela fica VAZIA.
+ */
+const SEM_MODULO_AUDITADO =
+  'A rastreabilidade registra os módulos acervo, mapoteca, orçamento, ' +
+  'equipamento e produção. O que o PIT e o efetivo gravam fica sob ' +
+  "'plataforma', que é do administrador."
+
 const verifyRastreabilidade = asyncHandler(async (req, res, next) => {
   const decoded = await validateToken(req.headers.authorization)
 
@@ -51,13 +78,21 @@ const verifyRastreabilidade = asyncHandler(async (req, res, next) => {
   }
 
   const usuario = await db.conn.oneOrNone(
-    'SELECT id, administrador FROM dgeo.usuario WHERE uuid = $<uuid> AND ativo IS TRUE',
+    `SELECT id, administrador, ${colunaCarimbo()}
+     FROM dgeo.usuario WHERE uuid = $<uuid> AND ativo IS TRUE`,
     { uuid: decoded.uuid }
   )
 
   if (!usuario) {
     throw new AppError('Usuário não encontrado ou inativo', httpCode.Forbidden)
   }
+
+  // A SENHA MUDOU? O `carimbo` do token é derivado do hash que valia quando ele
+  // foi emitido, e a coluna acima traz o do hash de HOJE. Divergiu, a sessão
+  // acabou -- é o que faz a troca de senha (e o reset pelo administrador)
+  // expulsar quem já estava dentro. Token sem o claim é legado e passa; ver
+  // `carimbo_da_senha.js`.
+  conferirCarimbo(decoded, usuario)
 
   req.usuarioUuid = decoded.uuid
   req.usuarioId = usuario.id
@@ -86,9 +121,21 @@ const verifyRastreabilidade = asyncHandler(async (req, res, next) => {
     )
   }
 
+  // A INTERSECAO COM O QUE A TRILHA REGISTRA. `MODULOS_VALIDOS` e a lista que o
+  // proprio mapa de auditoria cobra de cada entrada no carregamento, entao ela
+  // nao pode divergir do que `auditoria.evento.modulo` guarda -- e por isso ela
+  // vem de la, e nao de uma copia daqui.
+  const modulos = perfis
+    .map(p => p.modulo)
+    .filter(modulo => MODULOS_VALIDOS.has(modulo))
+
+  if (!modulos.length) {
+    throw new AppError(SEM_MODULO_AUDITADO, httpCode.Forbidden)
+  }
+
   req.rastreabilidade = {
     administrador: false,
-    modulos: perfis.map(p => p.modulo)
+    modulos
   }
 
   return next()

@@ -47,7 +47,7 @@ vi.mock('@utils/toast.js', () => ({
 import { renderNotaEmpenhoDetails } from '@modules/orcamento/pages/notas-empenho/details.js';
 import {
   getNotaEmpenho, getLiquidacoes, getRecebimentos,
-  updateLiquidacao, updateRecebimento,
+  updateLiquidacao, updateRecebimento, createRecebimento,
 } from '@modules/orcamento/services/orcamento-service.js';
 import { saveAuth, clearAuth } from '@store/auth-store.js';
 
@@ -70,7 +70,8 @@ const LIQUIDACOES = [
 ];
 
 const RECEBIMENTOS = [
-  { id: 20, material: 'Plotter A0', prazo_entrega: '30 dias', situacao: 'Entregue' },
+  { id: 20, material: 'Plotter A0', prazo_entrega: '30 dias', situacao: 'Entregue',
+    data_recebimento: '2026-07-31' },
 ];
 
 const acao = (c, titulo) => c.querySelector(`.data-table__action-btn[title="${titulo}"]`);
@@ -131,5 +132,101 @@ describe('ficha da NE: o PUT leva o dono do lancamento', () => {
     const [id, corpo] = updateRecebimento.mock.calls[0];
     expect(id).toBe(20);
     expect(corpo.nota_empenho_id).toBe(10);
+  });
+});
+
+// O DIA DO RECEBIMENTO EXISTIA NO BANCO E NAO NA TELA.
+//
+// `orcamento.recebimento_material.data_recebimento` nasceu em 2026-08-11 para a
+// 4.6 do RPCMTec parar de listar o ano inteiro em toda edicao mensal. O Joi e o
+// INSERT/UPDATE do servidor ja a carregam; o dialogo tinha quatro campos, nenhum
+// deles o dia. Quem cadastrava um nobreak recebido em 31/07 nao tinha onde
+// escrever 31/07, a linha nascia com o dia NULO, e `rm.data_recebimento IS NULL
+// OR <= cutoff` a mantinha em TODAS as edicoes do ano, inclusive a de janeiro.
+describe('ficha da NE: o dia do recebimento chega ao servidor', () => {
+  function campoDoModal(rotulo) {
+    const campo = [...document.querySelectorAll('.modal__body .form-field')]
+      .find(f => f.querySelector('.form-field__label')?.textContent.trim().replace('*', '') === rotulo);
+    if (!campo) throw new Error(`campo "${rotulo}" nao esta no dialogo`);
+    return campo.querySelector('input, textarea, select');
+  }
+
+  test('o recebimento NOVO leva data_recebimento no formato YYYY-MM-DD', async () => {
+    const container = await montar();
+
+    [...container.querySelectorAll('.btn')]
+      .find(b => b.textContent.includes('Novo recebimento')).click();
+    await flush();
+
+    const material = campoDoModal('Material');
+    material.value = 'Nobreak 3 kVA';
+    material.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const dia = campoDoModal('Data do recebimento');
+    dia.value = '2026-07-31';
+    dia.dispatchEvent(new Event('input', { bubbles: true }));
+
+    botaoModal('Salvar').click();
+    await flush();
+
+    expect(createRecebimento).toHaveBeenCalledTimes(1);
+    expect(createRecebimento.mock.calls[0][0].data_recebimento).toBe('2026-07-31');
+  });
+
+  test('o dia em BRANCO vai como null, e nao como string vazia', async () => {
+    const container = await montar();
+
+    [...container.querySelectorAll('.btn')]
+      .find(b => b.textContent.includes('Novo recebimento')).click();
+    await flush();
+
+    const material = campoDoModal('Material');
+    material.value = 'Toner';
+    material.dispatchEvent(new Event('input', { bubbles: true }));
+
+    botaoModal('Salvar').click();
+    await flush();
+
+    expect(createRecebimento).toHaveBeenCalledTimes(1);
+    expect(createRecebimento.mock.calls[0][0].data_recebimento).toBeNull();
+  });
+
+  test('a edicao abre com o dia gravado, e o PUT o leva de volta', async () => {
+    const container = await montar();
+
+    acao(container, 'Editar recebimento').click();
+    await flush();
+
+    expect(campoDoModal('Data do recebimento').value).toBe('2026-07-31');
+
+    botaoModal('Salvar').click();
+    await flush();
+
+    expect(updateRecebimento).toHaveBeenCalledTimes(1);
+    expect(updateRecebimento.mock.calls[0][1].data_recebimento).toBe('2026-07-31');
+  });
+
+  test('a tabela de recebimentos mostra o dia', async () => {
+    const container = await montar();
+
+    const cabecalhos = [...container.querySelectorAll('.data-table th')]
+      .map(th => th.textContent.trim());
+    expect(cabecalhos).toContain('Data do recebimento');
+    expect(container.textContent).toContain('31/07/2026');
+  });
+});
+
+// "VOLTAR" LEVA O ANO DA NE. A lista abre sempre no ano corrente, entao sair da
+// ficha de uma NE de 2025 devolvia a lista de 2026, onde ela nem aparece.
+describe('ficha da NE: o "Voltar" leva o ano do registro', () => {
+  test('a NE de 2025 volta para a lista de 2025', async () => {
+    getNotaEmpenho.mockImplementation(() => Promise.resolve({ ...NOTA, ano: 2025 }));
+    const container = await montar();
+
+    location.hash = '/orcamento/notas_empenho/10';
+    [...container.querySelectorAll('.page__header .btn')]
+      .find(b => b.textContent.includes('Voltar')).click();
+
+    expect(location.hash).toBe('#/orcamento/notas_empenho?ano=2025');
   });
 });

@@ -39,11 +39,21 @@ controller.getTipoPostoGrad = async () => {
 //
 // As FKs contadas sao TODAS as que o DDL declara para as tres tabelas. O
 // `::integer` evita o BIGINT do COUNT chegar como texto no JSON.
+//
+// A LISTA CRESCEU DUAS VEZES, e cada esquecimento custava a mesma coisa: o
+// catalogo dizia "em uso: 0", a tela oferecia excluir, a pessoa confirmava a
+// acao irreversivel e levava o 409 do `tratarDeletar` sobre um codigo que ela
+// acabara de ler como livre. `nota_credito_recolhimento` (ND e UG) nasceu na
+// 1.40.0 e `dgeo.instituicao` (UG) na 1.51.0, e nenhuma das duas entrou aqui.
+// Quem acrescentar chave estrangeira para estes tres catalogos acrescenta a
+// contagem junto.
 controller.getNaturezaDespesa = async () => {
   return db.conn.any(
     `SELECT nd.code, nd.nome, nd.gnd, nd.grupo,
             ((SELECT COUNT(*) FROM orcamento.nota_credito WHERE cod_nd = nd.code)
-           + (SELECT COUNT(*) FROM orcamento.pdr_item WHERE cod_nd = nd.code))::integer AS em_uso
+           + (SELECT COUNT(*) FROM orcamento.pdr_item WHERE cod_nd = nd.code)
+           + (SELECT COUNT(*) FROM orcamento.nota_credito_recolhimento
+               WHERE cod_nd = nd.code))::integer AS em_uso
      FROM dominio.natureza_despesa AS nd
      ORDER BY nd.code`
   )
@@ -62,8 +72,12 @@ controller.getPlanoInterno = async () => {
 controller.getUg = async () => {
   return db.conn.any(
     `SELECT ug.code, ug.nome,
-            (SELECT COUNT(*) FROM orcamento.nota_credito
-              WHERE ug_emitente = ug.code)::integer AS em_uso
+            ((SELECT COUNT(*) FROM orcamento.nota_credito
+               WHERE ug_emitente = ug.code)
+           + (SELECT COUNT(*) FROM orcamento.nota_credito_recolhimento
+               WHERE ug_emitente = ug.code)
+           + (SELECT COUNT(*) FROM dgeo.instituicao
+               WHERE ug_code = ug.code))::integer AS em_uso
      FROM dominio.ug AS ug
      ORDER BY ug.code`
   )

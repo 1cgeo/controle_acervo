@@ -139,7 +139,7 @@ const gerarRtmOds = linhas => {
   if (linhasNaSemente !== 1) {
     throw new AppError(
       `A planilha-semente do RTM deveria ter só a linha de cabeçalho, e tem ${linhasNaSemente}`,
-      httpCode.InternalServerError
+      httpCode.InternalError
     )
   }
 

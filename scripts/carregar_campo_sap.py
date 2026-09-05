@@ -734,7 +734,15 @@ def gerar_sql(plano, usuario_uuid):
 def dentro_do_repositorio(caminho):
     raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     alvo = os.path.abspath(caminho)
-    return os.path.commonpath([raiz, alvo]) == raiz
+    try:
+        comum = os.path.commonpath([raiz, alvo])
+    except ValueError:
+        # Unidades diferentes no Windows (a saida numa unidade e o repositorio
+        # em outra). E o caminho CERTO (fora do repositorio), e sem este
+        # except ele morria com traceback antes de a carga comecar. Mesmo trato
+        # do irmao `carregar_equipamento_dmt.py`.
+        return False
+    return comum == raiz
 
 
 def main():

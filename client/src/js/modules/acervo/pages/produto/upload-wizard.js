@@ -9,6 +9,7 @@ import {
   enviarVersaoComArquivos,
   enviarProdutoComArquivos,
   enviarArquivosEmVersao,
+  getTetoUploadWeb,
 } from '@modules/acervo/services/acervo-service.js';
 
 /**
@@ -105,6 +106,60 @@ export function extensoesRepetidas(itens) {
   return [...repetidas];
 }
 
+/**
+ * As extensoes da lista nova que a VERSAO JA TEM.
+ *
+ * Mesma regra do `extensoesRepetidas`, com a outra ponta: o nome fisico e um so
+ * por versao, e quem separa os arquivos no volume e a extensao. A conferencia
+ * so olhava a lista nova, entao acrescentar um `.tif` a uma versao que ja tem
+ * `.tif` passava sem aviso; o servidor recusa em `upload_web.js`, e a recusa
+ * chega quando a PARTE daquele arquivo comeca a chegar -- com o arquivo grande
+ * em terceiro lugar, os dois primeiros ja subiram inteiros e o envio e tudo ou
+ * nada. A ficha ja sabia disso antes do primeiro byte.
+ *
+ * @param {Array<{extensao:string}>} itens
+ * @param {Array<string>} existentes
+ * @returns {Array<string>}
+ */
+export function extensoesJaNaVersao(itens, existentes) {
+  const tem = new Set((existentes || [])
+    .map(e => String(e || '').toLowerCase())
+    .filter(Boolean));
+  const achadas = new Set();
+  for (const i of itens || []) {
+    if (i.extensao && tem.has(i.extensao)) achadas.add(i.extensao);
+  }
+  return [...achadas];
+}
+
+/** Um GB, como o servidor conta em `UPLOAD_WEB_MAX_GB`: 1024^3, e nao 10^9. */
+const BYTES_POR_GB = 1024 * 1024 * 1024;
+
+/**
+ * Os arquivos da lista que passam do TETO do envio pelo navegador.
+ *
+ * O teto e do servidor (`UPLOAD_WEB_MAX_GB`), e chega por
+ * `getTetoUploadWeb()`. Sem ele -- rota fora do ar, valor sem sentido -- a
+ * funcao devolve lista VAZIA de proposito: o assistente volta a se comportar
+ * como antes de haver teto na tela, e nao trava ninguem por causa de uma
+ * chamada que falhou.
+ *
+ * @param {Array<{arquivo:File}>} itens
+ * @param {number|null} tetoGb
+ * @returns {Array<{arquivo:File}>}
+ */
+export function arquivosAcimaDoTeto(itens, tetoGb) {
+  const teto = Number(tetoGb);
+  if (!Number.isFinite(teto) || teto <= 0) return [];
+  const limite = teto * BYTES_POR_GB;
+  return (itens || []).filter(i => i.arquivo && Number(i.arquivo.size) > limite);
+}
+
+/** O teto como ele aparece na frase: '2', '2,5'. */
+function tetoLegivel(tetoGb) {
+  return Number(tetoGb).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+
 function formatarBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -125,6 +180,9 @@ function formatarBytes(bytes) {
  * @param {Object} [opcoes.versao] - o corpo da versão, já validado pelo
  *   versao-dialog. Ausente no modo 'arquivos', onde ela já está gravada.
  * @param {string} [opcoes.rotuloVersao] - modo 'arquivos', só para a tela
+ * @param {Array<string>} [opcoes.extensoesExistentes] - modo 'arquivos': as
+ *   extensões que a versão JÁ tem. A conferência as trata como se já
+ *   estivessem na lista, e a recusa deixa de chegar depois dos bytes.
  * @param {Function} [opcoes.onConcluido]
  */
 export function abrirAssistenteUpload({
@@ -135,6 +193,7 @@ export function abrirAssistenteUpload({
   produtoNome,
   versao,
   rotuloVersao,
+  extensoesExistentes = [],
   onConcluido,
 }) {
   // O rótulo que a tela mostra. No modo 'arquivos' a versão já existe, então ele
@@ -148,6 +207,10 @@ export function abrirAssistenteUpload({
   let envio = null;
   let progresso = 0;
   let fechado = false;
+  // O teto do envio pelo navegador, em GB. `null` = ainda nao chegou, ou nao
+  // chegou nunca: nesse estado NADA muda na tela, e a frase da zona volta a
+  // falar em ordem de grandeza.
+  let tetoGb = null;
 
   const stepper = createWizardStepper({ steps: ['Arquivos', 'Envio'] });
   const corpo = el('div', { className: 'envio-assistente__corpo' });
@@ -167,6 +230,24 @@ export function abrirAssistenteUpload({
     },
   });
 
+  // A nota da zona muda quando o teto chega, entao ela e um no guardado e
+  // reescrito pelo `pintar()`, e nao um texto fixo montado uma vez so.
+  const notaDaZona = el('p', { className: 'envio-zona__nota' });
+
+  function textoDaNota() {
+    const base = 'O servidor grava no volume, mede o checksum e nomeia o arquivo pelo '
+      + 'padrão do acervo. ';
+    // Sem o numero, a frase ao menos da a ORDEM DE GRANDEZA e diz quem recusa,
+    // em vez de deixar a pessoa descobrir isso depois de escolher um arquivo de
+    // 6 GB e apertar Enviar.
+    if (tetoGb === null) {
+      return base + 'Acima de alguns GB o caminho é o plugin do QGIS: o servidor '
+        + 'recusa o envio pelo navegador.';
+    }
+    return base + `Arquivo acima de ${tetoLegivel(tetoGb)} GB entra pelo plugin do QGIS: `
+      + 'o servidor recusa o envio pelo navegador.';
+  }
+
   const zona = el('div', {
     className: 'envio-zona',
     onClick: () => entrada.click(),
@@ -180,11 +261,7 @@ export function abrirAssistenteUpload({
   }, [
     svgIcon(ICONS.add, 28),
     el('p', { textContent: 'Arraste os arquivos aqui, ou clique para escolher' }),
-    el('p', {
-      className: 'envio-zona__nota',
-      textContent: 'O servidor grava no volume, mede o checksum e nomeia o arquivo pelo '
-        + 'padrão do acervo. Arquivo muito grande continua entrando pelo plugin do QGIS.',
-    }),
+    notaDaZona,
   ]);
 
   function acrescentar(arquivos) {
@@ -232,7 +309,12 @@ export function abrirAssistenteUpload({
       onChange: (v) => { item.situacaoId = Number(v); },
     });
 
-    return el('div', { className: 'envio-item' }, [
+    // O arquivo que passa do teto fica MARCADO na propria linha, e nao so na
+    // frase geral la embaixo: com cinco arquivos na lista, a frase diz que ha um
+    // grande demais e a marca diz QUAL.
+    const acima = arquivosAcimaDoTeto([item], tetoGb).length > 0;
+
+    return el('div', { className: `envio-item${acima ? ' envio-item--acima-do-teto' : ''}` }, [
       el('div', { className: 'envio-item__cabecalho' }, [
         el('span', { className: 'envio-item__arquivo', textContent: item.arquivo.name }),
         el('span', {
@@ -240,7 +322,7 @@ export function abrirAssistenteUpload({
           textContent: item.extensao ? `.${item.extensao}` : 'sem extensão',
         }),
         el('span', {
-          className: 'envio-item__tamanho',
+          className: `envio-item__tamanho${acima ? ' envio-item__tamanho--acima' : ''}`,
           textContent: formatarBytes(item.arquivo.size),
         }),
         el('button', {
@@ -330,6 +412,9 @@ export function abrirAssistenteUpload({
 
     if (etapa === 0) {
       const repetidas = extensoesRepetidas(itens);
+      const jaNaVersao = extensoesJaNaVersao(itens, extensoesExistentes);
+      const acimaDoTeto = arquivosAcimaDoTeto(itens, tetoGb);
+      notaDaZona.textContent = textoDaNota();
       corpo.replaceChildren(
         el('p', {
           className: 'envio-assistente__resumo',
@@ -350,6 +435,25 @@ export function abrirAssistenteUpload({
                 + 'volume é um só por versão, e é a extensão que separa os arquivos: os dois '
                 + 'receberiam o mesmo nome. Deixe um de cada formato, ou cadastre o outro '
                 + 'noutra versão.',
+            })
+          : null,
+        jaNaVersao.length
+          ? el('p', {
+              className: 'envio-assistente__erro',
+              textContent: `Esta versão já tem arquivo com a extensão .${jaNaVersao.join(', .')}. `
+                + 'O nome no volume é um só por versão, e é a extensão que separa os arquivos: '
+                + 'o servidor recusa o envio, e a recusa só chega depois de os primeiros bytes '
+                + 'subirem. Troque a extensão, ou cadastre o arquivo noutra versão.',
+            })
+          : null,
+        acimaDoTeto.length
+          ? el('p', {
+              className: 'envio-assistente__erro',
+              textContent: `${plural(acimaDoTeto.length, 'arquivo passa', 'arquivos passam')} `
+                + `do teto de ${tetoLegivel(tetoGb)} GB do envio pelo navegador: `
+                + `${acimaDoTeto.map(i => `"${i.arquivo.name}"`).join(', ')}. O servidor recusa, `
+                + 'e a recusa só chega depois de os primeiros bytes subirem. Arquivo desse '
+                + 'tamanho entra pelo plugin do QGIS.',
             })
           : null,
       );
@@ -396,9 +500,13 @@ export function abrirAssistenteUpload({
       }, ['Continuar para o envio']);
       // Sem extensão o servidor não sabe separar os arquivos no volume, e é ela
       // que distingue o principal do metadado sob o mesmo nome.
+      // O teto e do SERVIDOR: passar dele nao e um envio lento, e um 413 depois
+      // de a pessoa esperar os bytes subirem, e o envio e tudo ou nada.
       avancar.disabled = itens.length === 0
         || itens.some(i => !i.extensao)
-        || extensoesRepetidas(itens).length > 0;
+        || extensoesRepetidas(itens).length > 0
+        || extensoesJaNaVersao(itens, extensoesExistentes).length > 0
+        || arquivosAcimaDoTeto(itens, tetoGb).length > 0;
       botoes.push(avancar);
     } else {
       const voltar = el('button', {
@@ -450,6 +558,20 @@ export function abrirAssistenteUpload({
     situacoes = sits || [];
     pintar();
   });
+
+  // O teto vem SOZINHO, e nao no `Promise.all` acima: uma chamada que falha num
+  // `Promise.all` derruba o bloco inteiro, e aqui isso levaria junto os dois
+  // dominios que a lista de arquivos precisa. Sem o teto, o assistente abre e
+  // funciona exatamente como funcionava antes de haver teto na tela.
+  getTetoUploadWeb()
+    .then((dados) => {
+      if (fechado) return;
+      const gb = Number(dados && dados.max_gb);
+      if (!Number.isFinite(gb) || gb <= 0) return;
+      tetoGb = gb;
+      pintar();
+    })
+    .catch(() => {});
 
   pintar();
 

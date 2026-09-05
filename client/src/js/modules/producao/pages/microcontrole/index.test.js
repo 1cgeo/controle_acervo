@@ -308,6 +308,95 @@ describe('microcontrole: a tela mede o trabalho', () => {
     cleanup();
   });
 
+  // O PERÍODO INVERTIDO NÃO VAI AO SERVIDOR. O Joi de lá valida cada data
+  // sozinha e não compara as duas: "de 08/09 até 08/08" é uma consulta válida
+  // que volta vazia, e a tela diria "0 operação(ões) de feição" -- a frase de
+  // quem não trabalhou, para um filtro digitado ao contrário.
+  test('data final anterior à inicial vira erro no campo, e não uma tela zerada', async () => {
+    const { container, cleanup } = montar();
+    await assentar();
+
+    servicos.getResumoFeicao.mockClear();
+    servicos.getCoberturaTela.mockClear();
+
+    const datas = [...container.querySelectorAll('input[type="date"]')];
+    datas[1].value = '2020-01-01';
+    container.querySelector('.microcontrole__filtro').dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await assentar();
+
+    expect(servicos.getResumoFeicao).not.toHaveBeenCalled();
+    expect(servicos.getCoberturaTela).not.toHaveBeenCalled();
+    expect(container.textContent).toMatch(/A data final é anterior à inicial/);
+    // E o que já estava na tela continua lá: ele é o último período válido.
+    expect(container.textContent).toMatch(/Cap Silva/);
+    cleanup();
+  });
+
+  // E O ERRO SOME AO CORRIGIR, e não só no próximo "Aplicar": a frase ficava sob
+  // um par de datas que já estava certo, e quem a lê antes de clicar conclui que
+  // corrigir não adiantou.
+  test('corrigir a data final apaga o erro do período na hora', async () => {
+    const { container, cleanup } = montar();
+    await assentar();
+
+    const datas = [...container.querySelectorAll('input[type="date"]')];
+    datas[1].value = '2020-01-01';
+    container.querySelector('.microcontrole__filtro').dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await assentar();
+    expect(container.textContent).toMatch(/A data final é anterior à inicial/);
+
+    datas[1].value = '2030-01-01';
+    datas[1].dispatchEvent(new Event('input'));
+    await assentar();
+
+    expect(container.textContent).not.toMatch(/A data final é anterior à inicial/);
+    cleanup();
+  });
+
+  // DOIS "APLICAR" SEGUIDOS, RESPOSTAS FORA DE ORDEM. Sem a conferência do
+  // filtro depois do `await`, a resposta do primeiro período pinta as tabelas
+  // dela sob as datas do segundo, e o resumo afirma o número de um mês sobre o
+  // período de outro.
+  test('a resposta do período antigo não pinta por cima do novo', async () => {
+    const { container, cleanup } = montar();
+    await assentar();
+
+    const liberar = new Map();
+    servicos.getResumoFeicao.mockImplementation(filtro => new Promise((resolver) => {
+      liberar.set(filtro.dataInicio, resolver);
+    }));
+    servicos.getCoberturaTela.mockResolvedValue({ type: 'FeatureCollection', features: [] });
+
+    const datas = [...container.querySelectorAll('input[type="date"]')];
+    const aplicar = () => container.querySelector('.microcontrole__filtro').dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+
+    datas[0].value = '2026-01-01';
+    aplicar();
+    await assentar();
+    datas[0].value = '2026-02-01';
+    aplicar();
+    await assentar();
+
+    // A SEGUNDA CHEGA PRIMEIRO, com um operador só.
+    liberar.get('2026-02-01')({ por_operador: [], por_camada: [], serie_diaria: [] });
+    await assentar();
+    expect(container.textContent).toMatch(/0 operação\(ões\) de feição/);
+
+    // E A PRIMEIRA CHEGA DEPOIS: descartada.
+    liberar.get('2026-01-01')(RESUMO);
+    await assentar();
+
+    expect(container.textContent).toMatch(/0 operação\(ões\) de feição/);
+    expect(container.textContent).not.toMatch(/Cap Silva/);
+    cleanup();
+  });
+
   test('devolve um cleanup que não estoura', async () => {
     const { cleanup } = montar();
     await assentar();

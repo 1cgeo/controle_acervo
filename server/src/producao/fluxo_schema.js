@@ -19,7 +19,7 @@
 
 const Joi = require('joi')
 
-const { TIPO_ETAPA, TIPO_RESTRICAO } = require('../utils/domain_constants')
+const { TIPO_ETAPA, TIPO_RESTRICAO, TIPO_PRE_REQUISITO } = require('../utils/domain_constants')
 
 const models = {}
 
@@ -244,6 +244,18 @@ const conferirReferenciasPorNome = (linha, helpers) => {
     }
   }
 
+  // O GRAFO DOS PRE-REQUISITOS, montado enquanto se confere nome a nome. Ele é
+  // COMPLETO para esta linha de produção: `producao.pre_requisito_subfase` não
+  // tem outra porta de escrita, e este corpo só referencia subfases declaradas
+  // aqui (o laço acima cobra isso).
+  const pares = new Set()
+  const posterioresDe = new Map()
+  const grauDeEntrada = new Map()
+  for (const nome of declaradas) {
+    posterioresDe.set(nome, [])
+    grauDeEntrada.set(nome, 0)
+  }
+
   for (const fase of linha.fases || []) {
     for (const pre of fase.pre_requisito_subfase || []) {
       for (const alvo of [pre.subfase_anterior, pre.subfase_posterior]) {
@@ -256,7 +268,68 @@ const conferirReferenciasPorNome = (linha, helpers) => {
           nome: pre.subfase_anterior
         })
       }
+
+      // O MESMO PAR DUAS VEZES morreria na UNIQUE (subfase_anterior_id,
+      // subfase_posterior_id) NO MEIO da transação, e o 23505 de lá cairia na
+      // tradução da linha de produção -- a recusa diria "já existe uma linha de
+      // produção com este nome", que fala de outra coisa. Os pré-requisitos são
+      // declarados POR FASE, e nada impede duas fases citarem o mesmo par.
+      // O separador continua sendo o NUL, mas ESCAPADO: escrito como byte, ele
+      // torna o arquivo binario para o git e para toda varredura de texto.
+      const chave = `${pre.subfase_anterior}\u0000${pre.subfase_posterior}`
+      if (pares.has(chave)) {
+        return helpers.error('fluxo.preRequisitoRepetido', {
+          anterior: pre.subfase_anterior,
+          posterior: pre.subfase_posterior
+        })
+      }
+      pares.add(chave)
+
+      // SO O TIPO 1 ENTRA NO GRAFO. O tipo 2 ('Regiao nao estar em execucao')
+      // bloqueia apenas enquanto a outra esta EM EXECUCAO (situacao 2, ver
+      // `distribuicao/sql/calcula_fila.sql`), e um ciclo dele e exclusao mutua,
+      // nao impasse: com as duas Nao iniciadas, uma comeca e a outra espera a
+      // vez. O banco aceita as duas direcoes, e o Joi nao pode recusar o que o
+      // banco aceita.
+      if (pre.tipo_pre_requisito_id === TIPO_PRE_REQUISITO.REGIAO_CONCLUIDA) {
+        posterioresDe.get(pre.subfase_anterior).push(pre.subfase_posterior)
+        grauDeEntrada.set(
+          pre.subfase_posterior,
+          grauDeEntrada.get(pre.subfase_posterior) + 1
+        )
+      }
     }
+  }
+
+  // CICLO É RECUSADO, e o `A não é pré-requisito de A` acima só pegava o laço de
+  // um passo. O par (A antes de B, B antes de A) entra sem erro nenhum e o
+  // estrago aparece longe: o gatilho
+  // `a_relacionamento_pre_requisito_subfase` materializa os dois sentidos em
+  // `producao.relacionamento_ut`, e o `filtro2` de
+  // `distribuicao/sql/calcula_fila.sql` exclui a atividade cuja unidade
+  // dependente ainda não está pronta. Com o ciclo, cada uma das duas espera a
+  // outra para sempre: a fila simplesmente nunca entrega aquelas unidades, sem
+  // erro, sem log e sem nada na tela.
+  //
+  // KAHN, e não uma busca em profundidade: o que sobra depois de remover todos
+  // os nós sem dependência pendente é o ciclo MAIS o que depende dele (com
+  // A->B, B->A e B->C, sobra C também), e é isso que a mensagem cita: quem
+  // for depurar procura o ciclo entre os nomes citados, e não em todos eles.
+  const fila = [...declaradas].filter(nome => grauDeEntrada.get(nome) === 0)
+  let ordenadas = 0
+  while (fila.length > 0) {
+    const atual = fila.shift()
+    ordenadas += 1
+    for (const posterior of posterioresDe.get(atual)) {
+      grauDeEntrada.set(posterior, grauDeEntrada.get(posterior) - 1)
+      if (grauDeEntrada.get(posterior) === 0) fila.push(posterior)
+    }
+  }
+  if (ordenadas < declaradas.size) {
+    const noCiclo = [...declaradas].filter(nome => grauDeEntrada.get(nome) > 0)
+    return helpers.error('fluxo.preRequisitoCiclico', {
+      nomes: noCiclo.join(', ')
+    })
   }
 
   for (const prop of linha.propriedades_camadas || []) {
@@ -302,7 +375,11 @@ models.linhaProducao = Joi.object().keys({
       'fluxo.subfaseDesconhecida':
         'A subfase "{{#nome}}" é referenciada mas não está declarada em nenhuma fase desta linha de produção',
       'fluxo.preRequisitoDeSiMesma':
-        'A subfase "{{#nome}}" não pode ser pré-requisito de si mesma'
+        'A subfase "{{#nome}}" não pode ser pré-requisito de si mesma',
+      'fluxo.preRequisitoRepetido':
+        'O pré-requisito de "{{#anterior}}" para "{{#posterior}}" está declarado duas vezes: cada par de subfases tem uma linha só em producao.pre_requisito_subfase',
+      'fluxo.preRequisitoCiclico':
+        'Os pré-requisitos entre estas subfases formam um ciclo: {{#nomes}}. Uma subfase que espera outra que espera a primeira nunca é distribuída, e a fila fica parada sem acusar erro'
     })
     .required()
 })

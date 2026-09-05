@@ -356,9 +356,17 @@ describe('A 7.2 fundida do RPCMTec', () => {
     expect(linha[1]).toBe('91')
     // NOVE, e nao 64 nem 73. Consumo e o declarado.
     expect(linha[3]).toBe('9')
-    // As duas que continuam sem fonte, e a fonte declara isso.
+    // O estoque do mes anterior continua sem fonte: fevereiro nao foi fechado.
     expect(linha[2]).toBe('-')
-    expect(linha[4]).toBe('-')
+    // A PREVISAO SAI DOS MESMOS NOVE, e e a coluna que fecha a conta da linha.
+    // Ate 2026-09-01 ela saia '-' aqui, porque o mes da edicao ficava FORA da
+    // janela e o minimo era de tres meses com consumo: a tabela imprimia
+    // "Consumo no mes: 9" e, na coluna seguinte, um traco. O chefe decidiu o
+    // contrario em 2026-09-01 (commit aac3705), e o traco ao lado de um consumo
+    // declarado deixou de ser resposta possivel.
+    //
+    // Media 9/mes sobre os 91 que restam: dez meses a partir de marco/2026.
+    expect(linha[4]).toBe('JAN 27')
   })
 
   test('imprimir sem lancar deixa a 7.2 em ZERO, e isso e o certo', async () => {
@@ -372,6 +380,10 @@ describe('A 7.2 fundida do RPCMTec', () => {
     const linha = await linha72(await abrirEdicao(3), 'Papel Sulfite 120g')
     expect(linha[1]).toBe('100')
     expect(linha[3]).toBe('0')
+    // E A PREVISAO SAI EM TRACO, que desde 2026-09-01 tem uma causa so: nenhum
+    // mes da janela teve consumo. Com o minimo em UM, este e o unico traco que
+    // sobrou, e por isso ele mora aqui, ao lado do zero que o explica.
+    expect(linha[4]).toBe('-')
   })
 })
 
@@ -664,14 +676,24 @@ describe('Estoque do mês anterior e previsão de falta', () => {
     expect((await linha72(await abrirEdicao(1), 'Papel Sulfite 120g'))[2]).toBe('70')
   })
 
-  test('com menos de três meses de consumo, não projeta', async () => {
-    // Média sobre dois meses diz mais sobre o acaso do que sobre o ritmo.
+  test('com DOIS meses de consumo já projeta: o mínimo é UM', async () => {
+    // O mínimo era TRÊS, e este caso provava a recusa. Ele passou a UM em
+    // 2026-09-01 (commit aac3705), por decisão do chefe: o livro
+    // `mapoteca.movimento_material` nasceu em julho/2026, e com o mínimo em três
+    // a coluna ficaria em traço até a edição de novembro, esperando um histórico
+    // que ninguém tinha enquanto o cartucho acabava na prateleira.
+    //
+    // O que se perde é deliberado, e está escrito na constante: um mês de acaso
+    // agora vira data com cara de apurada. A defesa deixou de ser a régua e
+    // passou a ser a tabela, que imprime a previsão na MESMA LINHA do consumo
+    // que a gerou.
     const papel = await criarMaterial('Papel Sulfite 120g')
     await semearEstoque(papel.id, 100)
     await declararConsumo(papel.id, 10, '2026-01-10')
     await declararConsumo(papel.id, 10, '2026-02-10')
 
-    expect((await linha72(await abrirEdicao(4), 'Papel Sulfite 120g'))[4]).toBe('-')
+    // Média 10/mês sobre os 80 que restam: oito meses a partir de abril/2026.
+    expect((await linha72(await abrirEdicao(4), 'Papel Sulfite 120g'))[4]).toBe('DEZ 26')
   })
 
   test('com três meses fechados, projeta o mês da falta', async () => {
@@ -697,19 +719,26 @@ describe('Estoque do mês anterior e previsão de falta', () => {
     expect((await linha72(await abrirEdicao(4), 'Papel Sulfite 120g'))[4]).toBe('Sem estoque')
   })
 
-  test('o mês CORRENTE não entra na média', async () => {
-    // Ele ainda está andando, e entrar pela metade puxa a média para baixo,
-    // empurrando a falta para longe.
+  test('o MÊS DA EDIÇÃO entra na média', async () => {
+    // Ele ficava de FORA até 2026-09-01, sob o argumento de que o mês corrente
+    // ainda está andando e entraria pela metade. O argumento não vale aqui, e o
+    // commit aac3705 o desfez: o RPCMTec de abril se escreve em maio, com abril
+    // fechado, e o mês da edição é sempre um mês inteiro. O efeito do recorte
+    // antigo era a tabela imprimir o consumo do mês numa coluna e a projeção da
+    // coluna seguinte ignorar justamente esse número.
     const papel = await criarMaterial('Papel Sulfite 120g')
     await semearEstoque(papel.id, 500)
     for (const dia of ['2026-01-10', '2026-02-10', '2026-03-10']) {
       await declararConsumo(papel.id, 20, dia)
     }
     await fixarEstoque(papel.id, 102)
-    // Abril mal começou: 2 folhas. Se entrasse, a média cairia de 20 para 15,5.
+    // Abril foi de 2 folhas, e ele CONTA: a média cai de 20 para 15,5.
     await declararConsumo(papel.id, 2, '2026-04-01')
 
-    expect((await linha72(await abrirEdicao(4), 'Papel Sulfite 120g'))[4]).toBe('SET 26')
+    // 100 em estoque (102 menos as 2 de abril) sobre média 15,5: seis meses a
+    // partir de abril/2026. Pelo recorte antigo esta linha saía 'SET 26', um mês
+    // depois, e a diferença é exatamente o mês da edição.
+    expect((await linha72(await abrirEdicao(4), 'Papel Sulfite 120g'))[4]).toBe('OUT 26')
   })
 
   // -------------------------------------------------------------------------
@@ -736,15 +765,20 @@ describe('Estoque do mês anterior e previsão de falta', () => {
 
   test('o que caiu FORA dos doze meses não entra na média', async () => {
     // A janela é DESLIZANTE, e não "tudo o que já houve". Para a edição de
-    // fevereiro/2026 ela vai de fevereiro/2025 a janeiro/2026: janeiro/2025 fica
-    // um mês para trás, e não conta.
+    // fevereiro/2026 ela vai de MARÇO/2025 a fevereiro/2026: são doze meses que
+    // TERMINAM no mês da edição, e fevereiro/2025 fica um mês para trás.
     //
-    // São três meses com consumo, e um deles cai fora. Sobram dois, abaixo do
-    // mínimo de três, e a coluna sai '-'. Se a borda escorregar um mês, este
-    // caso vira 'JUL 26' e denuncia.
+    // O DESENHO DO CASO MUDOU EM 2026-09-01. Com o mínimo de três meses ele
+    // provava a borda pela AUSÊNCIA de projeção: três meses com consumo, um caía
+    // fora, sobravam dois e a coluna saía '-'. Com o mínimo em UM (commit
+    // aac3705) essa prova morreu -- dois meses projetam --, então a borda passa a
+    // se provar pela MÉDIA: o mês de fora é um OUTLIER de 100, e ele mudaria a
+    // data se entrasse.
     const papel = await criarMaterial('Papel Sulfite 120g')
     await semearEstoque(papel.id, 500)
-    for (const dia of ['2025-01-10', '2025-11-10', '2025-12-10']) {
+    // Fevereiro/2025 é o mês imediatamente ANTERIOR ao começo da janela.
+    await declararConsumo(papel.id, 100, '2025-02-10')
+    for (const dia of ['2025-11-10', '2025-12-10']) {
       await declararConsumo(papel.id, 20, dia)
     }
     await fixarEstoque(papel.id, 100)
@@ -752,12 +786,17 @@ describe('Estoque do mês anterior e previsão de falta', () => {
     // A MESMA edição nas duas leituras: ela está ABERTA, e o calculado de
     // edição aberta sai do banco a cada requisição. Abrir de novo daria 409.
     const fevereiro = await abrirEdicao(2)
-    expect((await linha72(fevereiro, 'Papel Sulfite 120g'))[4]).toBe('-')
-
-    // Com um TERCEIRO mês dentro da janela, ela projeta: o que faltava era mês
-    // dentro, e não consumo.
-    await declararConsumo(papel.id, 20, '2026-01-10')
-    await fixarEstoque(papel.id, 100)
+    // Média 20/mês sobre os dois meses de dentro: cinco meses a partir de
+    // fevereiro/2026. Se a borda escorregasse um mês para trás, o 100 de
+    // fevereiro/2025 entraria, a média subiria para 46,6 e esta linha viraria
+    // 'ABR 26'.
     expect((await linha72(fevereiro, 'Papel Sulfite 120g'))[4]).toBe('JUL 26')
+
+    // A OUTRA BORDA, com o mesmo outlier: março/2025 é o PRIMEIRO mês que conta,
+    // e um mês depois do que acabou de ficar de fora. Agora ele entra na média,
+    // e a data anda.
+    await declararConsumo(papel.id, 100, '2025-03-10')
+    await fixarEstoque(papel.id, 100)
+    expect((await linha72(fevereiro, 'Papel Sulfite 120g'))[4]).toBe('ABR 26')
   })
 })

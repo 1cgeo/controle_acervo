@@ -1,6 +1,6 @@
 'use strict'
 
-// A ARMADILHA DO `.default(...)`, que ja custou caro.
+// A ARMADILHA DO `.default(...)`, que ja custou caro, e onde ela mora HOJE.
 //
 // Em 2026-08-08 descobrimos que `acervo_cli editar produto` estava INTEIRAMENTE
 // quebrado por causa de um `.default(false)`: o campo com default some da saida
@@ -8,28 +8,31 @@
 // ao default e reverte o que estava gravado. O valor errado entra calado, porque
 // ninguem o digitou.
 //
-// Este modulo tem QUATRO campos assim, e os quatro respondem perguntas de sim ou
+// Sao CINCO campos assim neste modulo, e os cinco respondem perguntas de sim ou
 // nao que nao tem terceiro estado:
 //   equipamento.ativo                default true   (falso = bem BAIXADO)
 //   equipamento.patrimonio_pendente  default false  (verdadeiro = numero por conferir)
+//   tipo.ativo                       default true
 //   transferencia.transferido_siafi  default false
 //   transferencia.apropriado_siafi   default false
 //
-// O QUARTO ENTROU EM 2026-08-10, com a coluna `patrimonio_pendente`, e este
-// arquivo so foi atualizado em 2026-08-13: por tres dias o censo abaixo esteve
-// vermelho, dizendo TRES onde havia QUATRO. O guarda funcionou -- ele nao deixou
-// o campo novo passar calado --, e o que faltou foi ler o vermelho.
+// EM 2026-09-05 OS CINCO SAIRAM DO SCHEMA DE ATUALIZACAO (achado S3-05) e ficaram
+// so no de CRIACAO, e o controlador passou a preservar a COLUNA quando a chave
+// falta (`ativo = COALESCE($<ativo>, ativo)` no bem e no tipo, e a opcao
+// `preservarSeAusente` do historico nos dois SIAFI). O default no PUT era o
+// defeito em pessoa: dai o censo abaixo cobrar ZERO em toda atualizacao, e cobrar
+// os cinco onde eles ainda existem. Zero ali NAO e falta de cobertura, e sim o
+// contrato; um `.default()` que reaparecer num schema de atualizacao traz o
+// defeito de volta, e o caso o acusa.
 //
 // O QUE ESTES CASOS GUARDAM, E O QUE ELES NAO GUARDAM. Eles substituem a rede,
 // entao provam o ciclo do CLI: dado um registro lido que TRAZ o campo, o PUT o
-// reenvia em vez de deixar o default reescreve-lo. Falsificado desligando o
-// reaproveitamento em `corpo.recortar`, e ai cinco casos ficam vermelhos.
+// reenvia inteiro em vez de mandar uma linha pela metade. Falsificado desligando
+// o reaproveitamento em `corpo.recortar`, e ai varios casos ficam vermelhos.
 //
 // Eles NAO provam que a rota devolve a coluna, porque a resposta aqui e escrita
 // a mao. Que `SELECT_EQUIPAMENTO` (equipamento_ctrl.js) traz `patrimonio_pendente`
-// foi conferido por leitura do fonte, e nao por este arquivo. Se um dia a rota
-// parar de devolve-la, quem acusa e o aviso `ausentesComDefault` na hora do uso,
-// e nao um teste daqui.
+// foi conferido por leitura do fonte, e nao por este arquivo.
 //
 // O que protege e o ciclo LER-MESCLAR-REENVIAR dos comandos de alteracao. Estes
 // casos rodam esse ciclo de ponta a ponta, com a rede substituida.
@@ -79,48 +82,104 @@ const corpoDoPut = (chamadas) => chamadas.find(c => c.metodo === 'PUT').corpo
 // O que o schema declara
 // ---------------------------------------------------------------------------
 
-test('sao exatamente QUATRO campos com default no modulo, e o CLI os enxerga', () => {
+test('os CINCO defaults do modulo vivem na CRIACAO, e o CLI os enxerga', () => {
   assert.deepStrictEqual(
-    esquema.camposComDefault(models.equipamentoAtualizar),
+    esquema.camposComDefault(models.equipamentoCriar),
     [{ nome: 'patrimonio_pendente', valor: false }, { nome: 'ativo', valor: true }]
   )
   assert.deepStrictEqual(
-    esquema.camposComDefault(models.transferenciaAtualizar),
+    esquema.camposComDefault(models.transferenciaCriar),
     [{ nome: 'transferido_siafi', valor: false }, { nome: 'apropriado_siafi', valor: false }]
   )
-  // Onde nao ha default, a lista e vazia: o aviso nao pode aparecer onde nao
-  // muda nada, senao ele deixa de ser lido.
-  assert.deepStrictEqual(esquema.camposComDefault(models.indisponibilidadeAtualizar), [])
-  assert.deepStrictEqual(esquema.camposComDefault(models.manutencaoAtualizar), [])
+  assert.deepStrictEqual(
+    esquema.camposComDefault(models.tipoCriar),
+    [{ nome: 'ativo', valor: true }]
+  )
 })
 
-test('DEFAULT E VALOR, e nao ausencia: o Joi o grava em quem o omite', () => {
-  // A prova crua do modo de falha, antes de qualquer comando: um corpo sem
-  // `ativo` sai da validacao COM `ativo: true`. Num PUT, isso REATIVA um bem
-  // baixado sem ninguem ter pedido.
-  const r = esquema.validarCorpo(models.equipamentoAtualizar, {
-    nr_patrimonio: '104820700014462',
-    classe_id: 6,
-    tipo_id: 1,
-    modelo: 'TOPCON CTS-3007',
-    secao_detentora_id: 1
-  })
+test('e a ATUALIZACAO nao tem nenhum: o numero certo aqui e ZERO', () => {
+  // Zero nao e falta de cobertura, e sim o contrato novo. Em 2026-09-05 os tres
+  // schemas de ATUALIZACAO redeclararam SEM default os cinco campos, e o
+  // controlador passou a preservar a COLUNA: `ativo = COALESCE($<ativo>, ativo)`
+  // no bem e no tipo, e o `preservarSeAusente` do historico nos dois SIAFI. O
+  // default no PUT era o defeito em pessoa, porque ele GRAVA: um PUT sem a chave
+  // revertia o bem baixado, apagava a marca de patrimonio por conferir e dizia
+  // ao SIAFI que a transferencia nao tinha sido feita.
+  //
+  // Este caso e o alarme do caminho de volta: um `.default()` que reaparecer num
+  // schema de atualizacao traz o defeito junto, e sem barulho nenhum.
+  for (const nome of [
+    'equipamentoAtualizar', 'tipoAtualizar', 'transferenciaAtualizar',
+    'indisponibilidadeAtualizar', 'manutencaoAtualizar', 'afastamentoAtualizar'
+  ]) {
+    assert.deepStrictEqual(
+      esquema.camposComDefault(models[nome]), [],
+      nome + ' voltou a ter default: o PUT o gravaria por cima do que esta la'
+    )
+  }
+})
+
+const CORPO_MINIMO = {
+  nr_patrimonio: '104820700014462',
+  classe_id: 6,
+  tipo_id: 1,
+  modelo: 'TOPCON CTS-3007',
+  secao_detentora_id: 1
+}
+
+test('DEFAULT E VALOR, e nao ausencia: na CRIACAO o Joi o grava em quem o omite', () => {
+  // A prova crua do modo de falha, e ela continua valendo onde o default mora:
+  // um corpo de CRIACAO sem `ativo` sai da validacao COM `ativo: true`. Num POST
+  // isso e o desejado, porque bem novo nasce em carga; num PUT era o defeito, e
+  // e por isso que o default saiu de la.
+  const r = esquema.validarCorpo(models.equipamentoCriar, CORPO_MINIMO)
   assert.strictEqual(r.ok, true)
   assert.strictEqual(r.valor.ativo, true, 'o default nao foi aplicado; o teste perdeu o sentido')
   // E o CLI ACUSA quem foi preenchido sem ninguem digitar.
   assert.deepStrictEqual(r.preenchidos, ['patrimonio_pendente=false', 'ativo=true'])
 })
 
-test('a leitura que NAO traz o campo com default vira aviso, nunca silencio', () => {
+test('a variancia: o MESMO corpo no PUT nao ganha campo nenhum de graca', () => {
+  // Sem default, `ativo` e `patrimonio_pendente` simplesmente NAO viajam, e o
+  // servidor preserva a coluna. Ate 2026-09-05 este mesmo corpo chegava ao banco
+  // com `ativo: true` e reativava um bem baixado que ninguem mandou reativar.
+  const r = esquema.validarCorpo(models.equipamentoAtualizar, CORPO_MINIMO)
+  assert.strictEqual(r.ok, true)
+  assert.ok(!('ativo' in r.valor), 'o PUT voltou a carregar `ativo` sem ninguem digitar')
+  assert.ok(!('patrimonio_pendente' in r.valor))
+  assert.deepStrictEqual(r.preenchidos, [])
+})
+
+const LEITURA_SEM_OS_BOOLEANOS = {
+  nr_patrimonio: '104820700014462', classe_id: 6, tipo_id: 1,
+  modelo: 'TOPCON', secao_detentora_id: 1
+}
+
+test('a maquinaria segue inteira: campo ausente COM default vira aviso, nunca silencio', () => {
   // O caso do acervo_cli: a rota de leitura nao devolvia a coluna, e o ciclo
   // reenviava o default. `recortar` nomeia o campo e o valor que seria gravado.
-  const { base, ausentesComDefault } = corpoLib.recortar(models.equipamentoAtualizar, {
-    nr_patrimonio: '104820700014462', classe_id: 6, tipo_id: 1,
-    modelo: 'TOPCON', secao_detentora_id: 1
-  })
+  // A funcao aqui e a MESMA que os tres comandos de alteracao chamam; o schema
+  // de CRIACAO entra por ser o unico deste modulo que ainda tem default, e e
+  // assim que a maquinaria continua coberta depois de 2026-09-05.
+  const { base, ausentesComDefault } = corpoLib.recortar(
+    models.equipamentoCriar, LEITURA_SEM_OS_BOOLEANOS
+  )
   assert.ok(!('ativo' in base))
   assert.ok(!('patrimonio_pendente' in base))
   assert.deepStrictEqual(ausentesComDefault, ['patrimonio_pendente=false', 'ativo=true'])
+})
+
+test('no PUT nao ha o que avisar: a chave ausente PRESERVA o gravado', () => {
+  // O contrato novo. A leitura que nao traz a coluna nao produz aviso nenhum,
+  // porque o campo nao viaja e o servidor o preserva por COALESCE. Avisar aqui
+  // seria assustar com um risco que deixou de existir, e aviso que nao descreve
+  // nada e o que faz os outros pararem de ser lidos.
+  const { base, ausentesComDefault } = corpoLib.recortar(
+    models.equipamentoAtualizar, LEITURA_SEM_OS_BOOLEANOS
+  )
+  assert.ok(!('ativo' in base))
+  assert.ok(!('patrimonio_pendente' in base))
+  assert.deepStrictEqual(ausentesComDefault, [])
 })
 
 // ---------------------------------------------------------------------------
@@ -346,7 +405,12 @@ test('corpo identico ao gravado nao gasta um PUT', () => {
   })
 })
 
-test('a leitura sem os campos com default AVISA antes de gravar', () => {
+test('a leitura sem os SIAFI nao avisa mais nada, e o PUT vai sem eles', () => {
+  // Ate 2026-09-05 este caso cobrava um aviso, porque o default do PUT gravaria
+  // `false` nos dois e o SIAFI passaria a dizer que a transferencia nao foi
+  // feita. Agora o schema de atualizacao nao tem default: as duas chaves nao
+  // viajam, o `preservarSeAusente` do controlador monta o COALESCE e o que
+  // estava gravado fica. Nao ha risco a anunciar, e por isso nao ha aviso.
   const semOsSiafi = { ...TRANSFERENCIA }
   delete semOsSiafi.transferido_siafi
   delete semOsSiafi.apropriado_siafi
@@ -354,12 +418,17 @@ test('a leitura sem os campos com default AVISA antes de gravar', () => {
   return comRede({
     'GET /equipamento/transferencia': { dados: [semOsSiafi] },
     'PUT /equipamento/transferencia/8': { message: 'ok' }
-  }, async () => {
+  }, async (chamadas) => {
     const r = await executar(comandoHistorico, ['transferencia', 'editar'], { id: '8', om: '1º BPE' })
     const avisos = r.avisos.join(' | ')
-    assert.ok(avisos.includes('transferido_siafi=false'), avisos)
-    assert.ok(avisos.includes('apropriado_siafi=false'), avisos)
-    assert.ok(avisos.includes('O PUT gravaria o default'), avisos)
+    assert.ok(!avisos.includes('O PUT gravaria o default'), avisos)
+
+    // O que prova a preservacao e a AUSENCIA das duas chaves no corpo: mandar
+    // `false` de volta seria justamente o que se quer evitar.
+    const corpo = corpoDoPut(chamadas)
+    assert.ok(!('transferido_siafi' in corpo), 'o CLI mandou um SIAFI que a leitura nao trouxe')
+    assert.ok(!('apropriado_siafi' in corpo))
+    assert.strictEqual(corpo.om, '1º BPE')
   })
 })
 

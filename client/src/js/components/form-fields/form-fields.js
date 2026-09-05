@@ -54,9 +54,23 @@ function attachDatalist(inputEl, sugestoes = []) {
   return { datalist, setSugestoes };
 }
 
-function buildField({ label, required = false, helpText = null }, inputEl) {
-  const id = inputEl.id || nextFieldId();
-  inputEl.id = id;
+/**
+ * A moldura de um campo: rótulo, ajuda e a linha de erro.
+ *
+ * `controle` É O QUE O RÓTULO APONTA, e existe porque nem todo campo é um
+ * elemento único. O chip-input e o combo buscável entregam aqui uma `<div>`
+ * (o container com as etiquetas, ou a caixa com o campo e a lista), e `<label
+ * for>` só liga em elemento ROTULÁVEL: carimbar o id nessa `<div>` fazia o
+ * rótulo apontar para algo que o navegador ignora. Clicar em "Palavras-chave"
+ * não focava nada, e o leitor de tela anunciava um campo sem nome. Quem passa
+ * um container passa também o `<input>` de dentro, que é quem recebe o id.
+ *
+ * Sem `controle`, nada muda: o id vai para o próprio `inputEl`, como sempre.
+ */
+function buildField({ label, required = false, helpText = null, controle = null }, inputEl) {
+  const alvo = controle || inputEl;
+  const id = alvo.id || nextFieldId();
+  alvo.id = id;
 
   const errorEl = el('div', { className: 'form-field__error hidden' });
 
@@ -455,7 +469,11 @@ export function createChipInput({
   // container.
   const lista = sugestoes ? attachDatalist(input, vocabulario) : null;
 
-  const { element, setError } = buildField({ label, required, helpText }, container);
+  // O rótulo aponta o `<input>` de dentro, e não o container: ver `buildField`.
+  const { element, setError } = buildField(
+    { label, required, helpText, controle: input },
+    container
+  );
   if (lista) element.appendChild(lista.datalist);
 
   return {
@@ -676,7 +694,11 @@ export function createComboBoxField({
 
   mostrarSelecionado();
 
-  const { element, setError } = buildField({ label, required, helpText }, caixa);
+  // O rótulo aponta o `<input>` de dentro, e não a caixa: ver `buildField`.
+  const { element, setError } = buildField(
+    { label, required, helpText, controle: input },
+    caixa
+  );
 
   return {
     element,

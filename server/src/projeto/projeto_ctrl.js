@@ -7,6 +7,9 @@ const { auditoriaCtrl } = require("../auditoria");
 
 const controller = {};
 
+/** Violação de chave estrangeira, no vocabulário do Postgres. */
+const FK_VIOLATION = '23503';
+
 controller.getProjetos = async () => {
   return db.conn.any(
     `SELECT p.id, p.nome, p.descricao, p.data_inicio,
@@ -341,12 +344,29 @@ controller.deleteLotes = async (loteIds, usuarioUuid, contexto) => {
       );
     }
     
-    // If no dependencies, proceed with deletion
+    // A conferência acima cobre `acervo.versao`, e ela NÃO é a única a apontar
+    // o lote: `ponto_controle.ponto`, `ponto_controle.upload_session`, o
+    // microcontrole, os metadados e mais de uma dezena de tabelas de
+    // `producao` também o referenciam. Enumerá-las aqui seria uma lista que
+    // apodrece a cada tabela nova, então o que se traduz é a RECUSA do banco:
+    // sem isto, apagar um lote com ponto de controle devolvia 500 "Erro no
+    // servidor" e quem apertou o botão não sabia por quê.
     await t.any(
       `DELETE FROM acervo.lote
       WHERE id in ($<loteIds:csv>)`,
       { loteIds }
-    );
+    ).catch(erro => {
+      if (erro && erro.code === FK_VIOLATION) {
+        throw new AppError(
+          'Não é possível deletar: o lote ainda é referenciado por outros '
+          + 'registros do sistema (ponto de controle, produção ou metadados). '
+          + 'Desfaça esses vínculos antes de apagá-lo.',
+          httpCode.BadRequest,
+          erro
+        );
+      }
+      throw erro;
+    });
 
     for (const lote of exists) {
       await auditoriaCtrl.registrar(t, {

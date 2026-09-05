@@ -337,12 +337,39 @@ describe('api-client: o prazo da requisicao', () => {
     );
   });
 
-  // CONTROLE: falha de rede comum NAO vira a frase do prazo. Traduzir tudo
-  // esconderia o "Failed to fetch" de quem esta sem rede, que pede outra acao.
-  test('falha de rede comum sobe com a propria mensagem', async () => {
+  // A falha de REDE tem frase propria, e nao a do prazo: sao dois problemas
+  // diferentes e a acao de quem le e diferente em cada um. O que ela nao pode
+  // mais ser e o "Failed to fetch" cru, em ingles, que nao diz nem que o
+  // problema e a rede -- e e essa a mensagem que aparece no estado de erro de
+  // tela inteira, ou seja, justamente quando o servidor esta fora do ar.
+  test('falha de rede vira frase em portugues, e nao a do prazo', async () => {
     global.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
 
-    await expect(apiGet('/gerencia/arquivos_deletados')).rejects.toThrow('Failed to fetch');
+    await expect(apiGet('/gerencia/arquivos_deletados')).rejects.toThrow(
+      'Não foi possível falar com o servidor'
+    );
+  });
+
+  // O Firefox usa outra frase para o mesmo defeito; a traducao e por TIPO, e
+  // nao por texto, entao vale nos dois navegadores.
+  test('a frase do Firefox cai na mesma traducao', async () => {
+    global.fetch.mockRejectedValueOnce(
+      new TypeError('NetworkError when attempting to fetch resource.')
+    );
+
+    await expect(apiGet('/gerencia/arquivos_deletados')).rejects.toThrow(
+      'Não foi possível falar com o servidor'
+    );
+  });
+
+  // CONTROLE: o que nao e prazo nem rede continua subindo como veio. Traduzir
+  // tudo esconderia o defeito de programacao atras de uma frase de rede.
+  test('erro que nao e de rede sobe com a propria mensagem', async () => {
+    global.fetch.mockRejectedValueOnce(new RangeError('offset fora do intervalo'));
+
+    await expect(apiGet('/gerencia/arquivos_deletados')).rejects.toThrow(
+      'offset fora do intervalo'
+    );
   });
 });
 
@@ -428,5 +455,136 @@ describe('api-client: o nome do arquivo baixado', () => {
     await apiDownload('/relatorio/cobertura', 'queda.ods');
 
     expect(baixado).toBe('Cobertura_100%_2026.ods');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// apiDownload: O ARQUIVO GRANDE VAI POR STREAM, E NAO PELA MEMORIA
+// ---------------------------------------------------------------------------
+//
+// `await response.blob()` monta o arquivo INTEIRO na memoria da aba antes de
+// salvar. O acervo tem arquivo de gigabytes, e por esse caminho passa o botao
+// "Baixar" da ficha do produto: uma exportacao grande derruba a aba.
+//
+// Onde ha `showSaveFilePicker` (Chrome e Edge, o navegador da casa) os bytes vao
+// do socket para o disco por `pipeTo`, e o `blob()` nao e nem chamado. Onde nao
+// ha, o caminho da memoria continua sendo a queda -- ele nao sumiu.
+describe('api-client: o download por stream', () => {
+  let baixado;
+  let blobChamado;
+
+  /**
+   * Resposta de download com corpo de stream (`body.pipeTo`) e `blob()`
+   * instrumentado, para o caso poder afirmar QUAL dos dois foi usado.
+   */
+  function respostaComCorpo(disposition, canos) {
+    return {
+      status: 200,
+      ok: true,
+      headers: { get: (nome) => (nome === 'Content-Disposition' ? disposition : null) },
+      body: { pipeTo: vi.fn(async (destino) => { canos.push(destino); }) },
+      blob: async () => {
+        blobChamado = true;
+        return new Blob(['conteudo']);
+      },
+      json: async () => ({}),
+    };
+  }
+
+  beforeEach(() => {
+    baixado = null;
+    blobChamado = false;
+    global.URL.createObjectURL = vi.fn(() => 'blob:falso');
+    global.URL.revokeObjectURL = vi.fn();
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+      baixado = this.download;
+    });
+  });
+
+  afterEach(() => {
+    delete window.showSaveFilePicker;
+  });
+
+  test('com o seletor do navegador, os bytes vao por pipeTo e o blob nem e montado', async () => {
+    const canos = [];
+    const escrita = { marca: 'writable' };
+    const criarEscrita = vi.fn(async () => escrita);
+    window.showSaveFilePicker = vi.fn(async () => ({ createWritable: criarEscrita }));
+    const resposta = respostaComCorpo(
+      'attachment; filename="Anuario_Estatistico_4CGEO_06_Junho_2026.ods"',
+      canos
+    );
+    global.fetch.mockResolvedValueOnce(resposta);
+
+    await apiDownload('/rpcmtec/anuario/ods?ano=2026&mes=6', 'queda.ods');
+
+    // O nome sugerido continua saindo do `Content-Disposition`: quem nomeia o
+    // arquivo e o servidor, nos dois caminhos.
+    expect(window.showSaveFilePicker).toHaveBeenCalledWith({
+      suggestedName: 'Anuario_Estatistico_4CGEO_06_Junho_2026.ods',
+    });
+    expect(resposta.body.pipeTo).toHaveBeenCalledTimes(1);
+    expect(canos).toEqual([escrita]);
+    // O que este caso existe para provar: a memoria NAO foi usada.
+    expect(blobChamado).toBe(false);
+    expect(baixado).toBeNull();
+  });
+
+  test('sem cabecalho, o seletor recebe a queda de quem chamou', async () => {
+    const canos = [];
+    window.showSaveFilePicker = vi.fn(async () => ({
+      createWritable: async () => ({}),
+    }));
+    global.fetch.mockResolvedValueOnce(respostaComCorpo(null, canos));
+
+    await apiDownload('/rpcmtec/anuario/ods?ano=2026&mes=6', 'queda.ods');
+
+    expect(window.showSaveFilePicker).toHaveBeenCalledWith({ suggestedName: 'queda.ods' });
+  });
+
+  // Quem fecha o seletor sem escolher pasta nao errou nada. O `AbortError` que a
+  // API lanca ali viraria um toast vermelho dizendo "The user aborted a
+  // request", em ingles, para quem so mudou de ideia.
+  test('cancelar o seletor volta em silencio, sem lancar', async () => {
+    const canos = [];
+    const cancelou = new Error('The user aborted a request.');
+    cancelou.name = 'AbortError';
+    window.showSaveFilePicker = vi.fn(async () => { throw cancelou; });
+    const resposta = respostaComCorpo('attachment; filename="a.ods"', canos);
+    global.fetch.mockResolvedValueOnce(resposta);
+
+    await expect(apiDownload('/relatorio/cobertura', 'queda.ods')).resolves.toBeUndefined();
+
+    expect(resposta.body.pipeTo).not.toHaveBeenCalled();
+    expect(blobChamado).toBe(false);
+  });
+
+  // CONTROLE do caso acima: so o cancelamento e silencioso. Uma pasta sem
+  // permissao de escrita sobe, porque ali o download realmente falhou.
+  test('outro erro do seletor sobe para quem chamou', async () => {
+    const canos = [];
+    const negado = new Error('Permissão negada na pasta escolhida.');
+    negado.name = 'NotAllowedError';
+    window.showSaveFilePicker = vi.fn(async () => { throw negado; });
+    global.fetch.mockResolvedValueOnce(respostaComCorpo('attachment; filename="a.ods"', canos));
+
+    await expect(apiDownload('/relatorio/cobertura', 'queda.ods')).rejects.toThrow(
+      'Permissão negada na pasta escolhida.'
+    );
+  });
+
+  // O Firefox e o Safari nao tem `showSaveFilePicker`. A queda pela memoria fica
+  // de pe para eles, com o ancora e a revogacao adiada de sempre.
+  test('sem o seletor, o caminho do blob e do ancora continua valendo', async () => {
+    const canos = [];
+    const resposta = respostaComCorpo('attachment; filename="Cobertura.ods"', canos);
+    global.fetch.mockResolvedValueOnce(resposta);
+
+    await apiDownload('/relatorio/cobertura', 'queda.ods');
+
+    expect(blobChamado).toBe(true);
+    expect(resposta.body.pipeTo).not.toHaveBeenCalled();
+    expect(baixado).toBe('Cobertura.ods');
+    expect(global.URL.createObjectURL).toHaveBeenCalledTimes(1);
   });
 });

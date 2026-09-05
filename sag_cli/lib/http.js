@@ -208,6 +208,12 @@ function lerCache (cfg) {
     const { arquivo } = caminhoSessao(cfg.server)
     const dado = JSON.parse(fs.readFileSync(arquivo, 'utf8'))
     if (!dado || !dado.cookies) return null
+    // QUEM autenticou faz parte da validade do cache. O arquivo e chaveado so
+    // pelo SERVIDOR: sem esta linha, `SAG_USUARIO=<outro CPF>` logo depois de
+    // uma consulta reusava o cookie do CPF anterior em silencio, e o SAG
+    // respondia como a pessoa errada. Cache de versao antiga nao traz o campo;
+    // ele continua servindo, e o proximo login o carimba.
+    if (cfg.usuario && dado.usuario && dado.usuario !== cfg.usuario) return null
     return dado
   } catch (e) {
     return null
@@ -221,7 +227,13 @@ function gravarCache (cfg, sessao) {
     fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(
       arquivo,
-      JSON.stringify({ cookies: [...sessao.cookies], em: new Date().toISOString() }),
+      // O CPF vai junto do cookie: e o que permite a lerCache recusar a sessao
+      // de OUTRA conta no mesmo servidor.
+      JSON.stringify({
+        cookies: [...sessao.cookies],
+        usuario: cfg.usuario || null,
+        em: new Date().toISOString()
+      }),
       // O cookie e credencial: so o dono le.
       { mode: 0o600 }
     )

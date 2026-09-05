@@ -34,6 +34,26 @@ const QTD_EFETIVA = "pp.quantidade";
 // atendido em sulfite). O COALESCE aqui decide de verdade.
 const MIDIA_EFETIVA = "COALESCE(pp.tipo_midia_fornecida_id, pp.tipo_midia_id)";
 
+// A META DO PIT QUE O ITEM DO PEDIDO CUMPRE: a declarada no proprio item
+// quando ela existe, senao a do pedido.
+//
+// POR QUE A SOBREPOSICAO EXISTE, medido em 2026-08-06: a Meta 4 se divide por
+// MATERIAL, e o material e do ITEM (`pp.tipo_midia_id`). Os pedidos 140 e 154
+// sao mistos (tyvek da 4.2 e sulfite da 4.1 no mesmo pedido), e com a meta so
+// no pedido as 12 folhas de tyvek deles caiam na 4.1. O comentario da coluna em
+// er/mapoteca.sql diz a mesma frase: "Quem le usa
+// COALESCE(pp.meta_pit_id, p.meta_pit_id)".
+//
+// MORA AQUI, e nao em cada consulta, porque as leituras da impressao TEM de
+// concordar: as tres do PIT (planejado, realizado e diagnostico do cadastro) e a
+// do relatorio detalhado, que e a aba META4_DETALHADA do RTM que sobe para a
+// DSG todo mes. Enquanto o relatorio repetia `p.meta_pit_id` a mao, a tela do
+// PIT contava as folhas de tyvek na 4.2 e o documento as reportava na 4.1, sem
+// nada acusar.
+//
+// Aliases esperados: pp = mapoteca.produto_pedido, p = mapoteca.pedido.
+const META_DO_ITEM = "COALESCE(pp.meta_pit_id, p.meta_pit_id)";
+
 // NAO existe fragmento de "data efetiva de entrega": a data de entrega e do
 // PEDIDO, e chama-se `data_atendimento`. Quem precisa dela escreve
 // `ped.data_atendimento`, sem COALESCE e sem fragmento.
@@ -241,6 +261,7 @@ const filtroPeriodoMes = (coluna, { cumulativo = false } = {}) => {
 module.exports = {
   QTD_EFETIVA,
   MIDIA_EFETIVA,
+  META_DO_ITEM,
   ESCALA_DISPLAY,
   ESCALA_DISPLAY_ITEM,
   JOIN_PRODUTO_ITEM,

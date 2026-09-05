@@ -10,6 +10,11 @@ const generateLocalizador = require("../utils/generate_localizador");
 // e nao daqui: dois controllers escrevendo na mesma tabela com entidades
 // diferentes seria divergencia que nada acusa.
 const auditoriaCtrl = require("../auditoria/auditoria_ctrl");
+// So pela lista de colunas auditaveis do anexo: `deletePedidos` le os anexos que
+// caem por cascata, e a lista tem de ser a MESMA que o proprio anexo_pedido_ctrl
+// usa (o BYTEA `conteudo` de fora). Nao ha ciclo: aquele modulo so importa db,
+// utils e a auditoria.
+const anexoPedidoCtrl = require("./anexo_pedido_ctrl");
 const {
   ESCALA_DISPLAY,
   ESCALA_DISPLAY_ITEM,
@@ -129,6 +134,29 @@ const PRODUTO_PEDIDO_COLS = [
  *
  * `null` é sempre válido: significa "este item cumpre a meta do pedido".
  */
+// A META DO PIT QUE O PEDIDO APONTA TEM DE EXISTIR.
+//
+// `mapoteca.pedido.meta_pit_id` e BIGINT REFERENCES pit.meta_item (id), e o Joi
+// so sabe que o valor e um inteiro: quais ids existem e pergunta de banco. Sem
+// esta conferencia o 23503 da chave estrangeira sobe ao handler generico e o
+// operador le "Erro no servidor" para um engano de cinco segundos (a tela ficou
+// aberta enquanto o administrador do PIT apagou aquele item de meta).
+//
+// E a MESMA conferencia amigavel que `cliente_id` ja tinha na criacao do
+// pedido, e que `tipo_material_id` ganhou no livro de material.
+const conferirMetaExiste = async (t, metaPitId) => {
+  if (metaPitId === null || metaPitId === undefined) return;
+
+  const meta = await t.oneOrNone(
+    `SELECT id FROM pit.meta_item WHERE id = $1`,
+    [metaPitId]
+  );
+
+  if (!meta) {
+    throw new AppError('Meta do PIT não encontrada', httpCode.NotFound);
+  }
+};
+
 const conferirMetaDoItem = async (t, pedidoId, metaPitId) => {
   if (metaPitId === null || metaPitId === undefined) return;
 
@@ -438,9 +466,17 @@ controller.deleteClientes = async (clienteIds, usuarioUuid, contexto) => {
     );
 
     if (associatedOrders.length > 0) {
-      const clientsWithOrders = associatedOrders.map(o => o.cliente_id);
+      // PELO NOME, e nao pelo id: quem selecionou as linhas na tela viu
+      // "3º GAC Ap", e nunca o id 33. Uma recusa que so cita numero obriga a
+      // pessoa a descobrir sozinha qual das fichas escolhidas travou o lote.
+      const nomePorId = new Map(
+        existingClients.map(c => [String(c.id), c.nome])
+      );
+      const clientsWithOrders = associatedOrders.map(
+        o => nomePorId.get(String(o.cliente_id)) || `id ${o.cliente_id}`
+      );
       throw new AppError(
-        `Não é possível excluir os clientes com IDs: ${clientsWithOrders.join(', ')} pois possuem pedidos associados`,
+        `Não é possível excluir estes clientes pois possuem pedidos associados: ${clientsWithOrders.join(', ')}`,
         httpCode.BadRequest
       );
     }
@@ -938,6 +974,10 @@ controller.criaPedido = async (pedido, usuarioUuid, contexto) => {
       throw new AppError('Cliente não encontrado', httpCode.NotFound);
     }
 
+    // A meta do PIT, pela mesma razão do cliente acima: 404 com frase, e não o
+    // 500 cru da chave estrangeira.
+    await conferirMetaExiste(t, pedido.meta_pit_id);
+
     // Gerar localizador único
     let localizador;
     let isUnique = false;
@@ -1033,6 +1073,11 @@ controller.atualizaPedido = async (pedido, usuarioUuid, contexto) => {
         httpCode.BadRequest
       );
     }
+
+    // DEPOIS do preserveOmitted, e não antes: é ele quem resolve o valor final
+    // da chave ausente, e conferir o corpo cru aprovaria um `undefined` e
+    // recusaria a meta que o pedido já tem.
+    await conferirMetaExiste(t, pedido.meta_pit_id);
 
     pedido.usuario_atualizacao_id = usuarioId;
     pedido.data_atualizacao = new Date();
@@ -1365,6 +1410,55 @@ controller.deletePedidos = async (pedidoIds, usuarioUuid, contexto) => {
         registroId: item.id,
         operacao: 'D',
         antes: item,
+        usuarioUuid,
+        contexto
+      });
+    }
+
+    // O ANEXO e a ETIQUETA caem pelo mesmo ON DELETE CASCADE das impressoes, e
+    // pelo mesmo motivo se leem AGORA: depois do DELETE nao ha de onde tira-los.
+    //
+    // Sem estas duas leituras a trilha ficava coerente por um caminho e furada
+    // pelo outro: o DELETE individual do anexo audita direito, e o historico do
+    // pedido mostrava o DIEx e a etiqueta NASCENDO e nunca morrendo. Quem lesse
+    // `GET /api/auditoria/mapoteca/pedido/N` concluiria que os dois documentos
+    // continuam por ai.
+    //
+    // NAO ha `entidadeId` aqui, ao contrario do bloco da impressao acima: o
+    // agregado das duas sai de `linha.pedido_id`, que ja vem na propria linha
+    // lida, e nao de uma consulta a uma tabela ja esvaziada.
+    //
+    // A lista de colunas do anexo e a do proprio anexo_pedido_ctrl: o BYTEA
+    // `conteudo` fica de fora da LEITURA, e nao so do JSON, para um anexo de
+    // dezenas de MB nao atravessar a conexao so para ser descartado.
+    const anexos = await t.any(
+      `SELECT ${anexoPedidoCtrl.COLUNAS_AUDITAVEIS}
+         FROM mapoteca.anexo_pedido WHERE pedido_id IN ($1:csv)`,
+      [pedidoIds]
+    );
+
+    for (const anexo of anexos) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'mapoteca.anexo_pedido',
+        registroId: anexo.id,
+        operacao: 'D',
+        antes: anexo,
+        usuarioUuid,
+        contexto
+      });
+    }
+
+    const etiquetas = await t.any(
+      `SELECT * FROM mapoteca.etiqueta_envio WHERE pedido_id IN ($1:csv)`,
+      [pedidoIds]
+    );
+
+    for (const etiqueta of etiquetas) {
+      await auditoriaCtrl.registrar(t, {
+        tabela: 'mapoteca.etiqueta_envio',
+        registroId: etiqueta.id,
+        operacao: 'D',
+        antes: etiqueta,
         usuarioUuid,
         contexto
       });
@@ -2254,10 +2348,15 @@ controller.deleteTiposMaterial = async (tipoMaterialIds, usuarioUuid, contexto) 
       [tipoMaterialIds]
     );
 
+    // PELO NOME, e nao pelo id, nas duas recusas abaixo: a tela do material
+    // lista "Papel Sulfite 120g", e o id nao aparece em lugar nenhum dela.
+    const nomePorId = new Map(existingTypes.map(tipo => [String(tipo.id), tipo.nome]));
+    const nomeDoTipo = id => nomePorId.get(String(id)) || `id ${id}`;
+
     if (associatedMovement.length > 0) {
-      const typesWithMovement = associatedMovement.map(c => c.tipo_material_id);
+      const typesWithMovement = associatedMovement.map(c => nomeDoTipo(c.tipo_material_id));
       throw new AppError(
-        `Não é possível excluir os tipos de material com IDs: ${typesWithMovement.join(', ')} pois possuem movimentos lançados. Desative o material em vez de excluí-lo: apagá-lo apagaria o histórico que explica o saldo.`,
+        `Não é possível excluir estes tipos de material pois possuem movimentos lançados: ${typesWithMovement.join(', ')}. Desative o material em vez de excluí-lo: apagá-lo apagaria o histórico que explica o saldo.`,
         httpCode.BadRequest
       );
     }
@@ -2273,9 +2372,9 @@ controller.deleteTiposMaterial = async (tipoMaterialIds, usuarioUuid, contexto) 
     );
 
     if (associatedStock.length > 0) {
-      const typesWithStock = associatedStock.map(s => s.tipo_material_id);
+      const typesWithStock = associatedStock.map(s => nomeDoTipo(s.tipo_material_id));
       throw new AppError(
-        `Não é possível excluir os tipos de material com IDs: ${typesWithStock.join(', ')} pois possuem estoque associado. Desative o material em vez de excluí-lo.`,
+        `Não é possível excluir estes tipos de material pois possuem estoque associado: ${typesWithStock.join(', ')}. Desative o material em vez de excluí-lo.`,
         httpCode.BadRequest
       );
     }
@@ -2636,6 +2735,20 @@ controller.atualizaMovimentoMaterial = async (movimento, usuarioUuid, contexto) 
       t, 'mapoteca.movimento_material', movimento.id, 'Movimento de material'
     );
 
+    // A MESMA CONFERENCIA QUE `criaMovimentoMaterial` FAZ, e a assimetria era
+    // acidente: sem ela, corrigir o material de um lancamento para um id que
+    // nao existe estoura a chave estrangeira (23503), que
+    // `traduzirErroMovimento` nao traduz -- o mesmo engano devolvia 404 com
+    // frase na criacao e 500 "Erro no servidor" na alteracao.
+    const tipoMaterialExiste = await t.oneOrNone(
+      `SELECT id FROM mapoteca.tipo_material WHERE id = $<id>`,
+      { id: movimento.tipo_material_id }
+    );
+
+    if (!tipoMaterialExiste) {
+      throw new AppError('Tipo de material não encontrado', httpCode.NotFound);
+    }
+
     const lados = ladosTocados(antes, movimento);
     const estoqueAntes = await lerLados(t, lados);
 
@@ -2673,7 +2786,12 @@ controller.deleteMovimentosMaterial = async (movimentoIds, usuarioUuid, contexto
     );
 
     if (existentes.length !== movimentoIds.length) {
-      const achados = existentes.map(m => m.id);
+      // `Number()`, como nas outras cinco exclusoes deste arquivo:
+      // `movimento_material.id` e BIGSERIAL, e o driver devolve int8 como
+      // TEXTO. Sem a normalizacao, `includes(parseInt(id))` nunca casa e a
+      // mensagem lista TODOS os ids pedidos como ausentes -- inclusive os que
+      // existem, que o lote ia apagar.
+      const achados = existentes.map(m => Number(m.id));
       const faltando = movimentoIds.filter(id => !achados.includes(parseInt(id)));
       throw new AppError(
         `Os seguintes movimentos não foram encontrados: ${faltando.join(', ')}`,

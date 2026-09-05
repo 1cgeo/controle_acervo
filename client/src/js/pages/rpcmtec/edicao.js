@@ -479,11 +479,20 @@ export async function renderRpcmtecEdicao(container, ctx) {
    * NUMA EDIÇÃO FECHADA ele vira só texto. A marca continua VISÍVEL, porque ela
    * conta quem conferiu antes de assinar, e deixa de ser clicável, porque
    * conferir depois do congelamento não muda documento nenhum.
+   *
+   * FORA DO SEU MÓDULO, IDEM. Conferir é do gerente DAQUELA subseção: o
+   * servidor cobra `verifyGerente` MAIS `verifyModuloSubsecao()`
+   * (`rpcmtec_route.js:664-667`), a mesma régua dos botões de edição logo
+   * abaixo. Sem este recorte, o gerente de um módulo via caixa clicável nas 33
+   * subseções, marcava a de outro, e a caixa desmarcava sozinha com um 403 --
+   * exatamente o "oferecer um botão que responderia 403" que o comentário de
+   * `podeEditarSubsecao` diz querer evitar. Ele continua LENDO quem conferiu,
+   * que é o que a marca conta.
    */
   function conferencia(sub) {
     const r = sub.revisao;
 
-    if (documento.fechada) {
+    if (documento.fechada || !podeEditarSubsecao(sub)) {
       if (!r) return null;
       return el('div', { className: 'rpcm-revisao rpcm-revisao--lida' }, [
         svgIcon(ICONS.check),
@@ -994,7 +1003,11 @@ export async function renderRpcmtecEdicao(container, ctx) {
 
     const ok = await confirmDialog({
       title: 'Fechar e congelar a edição',
-      message: 'Os 34 blocos são gravados como estão AGORA, inclusive os calculados. '
+      // 33, e o número vem de `rpcmtec_estrutura.js` (`BLOCOS.length`), que é a
+      // definição única de que saem o gerador, esta tela, o PDF e o fechamento.
+      // A confirmação dizia 34: quem contasse os blocos da tela antes de
+      // congelar o documento que o chefe assina achava que faltava um.
+      message: 'Os 33 blocos são gravados como estão AGORA, inclusive os calculados. '
         + 'A partir daí o documento não muda quando o banco mudar, que é o que torna '
         + 'a edição reproduzível. Reabrir depois é possível e fica no rastro.'
         // A pendência de conferência entra na MESMA confirmação, e não numa

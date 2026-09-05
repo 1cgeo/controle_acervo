@@ -76,27 +76,54 @@ function tabela(colunas, linhas) {
  * do outro sem que nada acusasse. Ver os comentários de `getInfoLote` e
  * `getInfoSubfaseLote` em `acompanhamento_producao_ctrl.js`.
  *
- * TRÊS CHAMADAS, TRÊS GUARDAS, TRÊS `catch`. Esta é a tela em que a regra de
- * 2026-08-08 mais importa, porque as três respostas vêm de lugares com
- * autorizações diferentes:
+ * TRÊS CHAMADAS, TRÊS GUARDAS, TRÊS `catch`. As três estão no MESMO piso desta
+ * tela, `consulta` em `producao`:
  *
- *   `/informacoes/:lote`            consulta em `producao`  -- é a tela
- *   `/projetos/lote`                consulta em ACERVO      -- só a lista
- *   `/producao/lote/:id/subfases`   GERENTE em `producao`   -- só o seletor
+ *   `/acompanhamento/informacoes/:lote`     consulta em `producao`  -- é a tela
+ *   `/acompanhamento/lotes`                 consulta em `producao`  -- só a lista
+ *   `/acompanhamento/lotes/:lote/subfases`  consulta em `producao`  -- só o seletor
  *
  * Num `Promise.all` a falha de qualquer uma derrubaria as três, e a mensagem que
- * sobraria seria a dela: quem tem `consulta` só em `producao` abriria a tela e
- * leria "necessita do perfil consulta no módulo acervo", sobre um lote que ele
- * pode ver. Então cada uma carrega SOZINHA e a falha fica na seção dela.
+ * sobraria seria a dela: a queda do seletor de subfase apagaria o quadro de
+ * fases, que é a resposta principal da tela, e a pessoa leria o erro do seletor
+ * no lugar dele. Então cada uma carrega SOZINHA e a falha fica na seção dela.
+ *
+ * O LOTE E A SUBFASE VIVEM NA URL, e não em variáveis desta função. Achar o
+ * lote, descer até a subfase, sair para conferir outra coisa e voltar devolvia
+ * a tela pedindo "escolha um lote"; e sem nada na barra de endereço não havia
+ * como mandar a alguém o acompanhamento de um lote, só a instrução de como
+ * chegar nele. A escrita é por `history.replaceState`, e não pelo hash, que
+ * faria o roteador remontar a tela. A tela pelada continua sendo
+ * '#/producao/lote'.
  *
  * @param {HTMLElement} container
+ * @param {{params?:Object, query?:URLSearchParams}} [ctx]
  * @returns {Function} cleanup
  */
-export async function renderLoteAcompanhamento(container) {
+export async function renderLoteAcompanhamento(container, ctx = {}) {
   let disposed = false;
 
-  let loteSelecionado = null;
-  let subfaseSelecionada = null;
+  const consulta = (ctx && ctx.query) || new URLSearchParams();
+  /** O parâmetro como id, ou nulo: `?lote=abc` não é um lote. */
+  const idDaUrl = (nome) => {
+    const valor = Number(consulta.get(nome));
+    return Number.isInteger(valor) && valor > 0 ? valor : null;
+  };
+
+  let loteSelecionado = idDaUrl('lote');
+  let subfaseSelecionada = loteSelecionado === null ? null : idDaUrl('subfase');
+
+  function sincronizarUrl() {
+    const params = new URLSearchParams();
+    if (loteSelecionado !== null) params.set('lote', String(loteSelecionado));
+    // A SUBFASE SÓ EXISTE DENTRO DE UM LOTE: sem o lote na URL, ela abriria uma
+    // seção de etapas sobre um lote que ninguém escolheu.
+    if (loteSelecionado !== null && subfaseSelecionada !== null) {
+      params.set('subfase', String(subfaseSelecionada));
+    }
+    const texto = params.toString();
+    history.replaceState(null, '', `#/producao/lote${texto ? `?${texto}` : ''}`);
+  }
 
   const loteFilter = createSelectField({
     label: 'Lote',
@@ -108,6 +135,7 @@ export async function renderLoteAcompanhamento(container) {
       subfaseSelecionada = null;
       subfaseFilter.setOptions([]);
       subfaseFilter.setValue(null);
+      sincronizarUrl();
       carregarFases();
       carregarSubfases();
       desenharEtapas(null);
@@ -121,6 +149,7 @@ export async function renderLoteAcompanhamento(container) {
     value: null,
     onChange: (v) => {
       subfaseSelecionada = v === null || v === '' ? null : Number(v);
+      sincronizarUrl();
       carregarEtapas();
     },
   });
@@ -173,16 +202,46 @@ export async function renderLoteAcompanhamento(container) {
   // --- A lista de lotes -----------------------------------------------------
 
   /**
-   * O cadastro de lotes é do ACERVO, e o piso dele é o do acervo.
+   * A lista de lotes, com uma queda.
    *
-   * Quem tem `consulta` só em `producao` leva 403 ali, e isso é normal: o
-   * cadastro de lote não é assunto deste módulo. A queda é para
-   * `/acompanhamento/dashboard/execucao`, que é `consulta` em `producao` e
-   * devolve `lote_id` e `lote` -- só que apenas dos lotes COM VERSÃO EM
-   * EXECUÇÃO. É uma lista menor, e a tela DIZ que é menor: uma lista curta
-   * calada se leria como "o resto dos lotes não existe".
+   * A PRIMEIRA É `GET /acompanhamento/lotes`, o SELETOR, que é `consulta` em
+   * `producao` -- o mesmo piso desta tela. Quem chega aqui passa por ela, então
+   * uma falha dela NÃO é falta de perfil: é o servidor ou a rede. A queda é
+   * `/acompanhamento/dashboard/execucao`, do mesmo piso, que devolve `lote_id` e
+   * `lote` -- só que apenas dos lotes COM VERSÃO EM EXECUÇÃO. É uma lista menor,
+   * e a tela DIZ que é menor: uma lista curta calada se leria como "o resto dos
+   * lotes não existe".
+   *
+   * A MENSAGEM DO SERVIDOR VAI JUNTO, e não some no `catch`. Ela dizia que o
+   * cadastro de lotes é do módulo acervo e que a pessoa não tem perfil nele --
+   * herança de quando a primeira chamada era `/projetos/lote`. Como diagnóstico
+   * de hoje aquilo é falso, e manda procurar um perfil que não é o que faltou.
    */
+  /**
+   * O lote que veio da URL, depois de a lista chegar.
+   *
+   * ELE SÓ VALE SE EXISTIR NA LISTA. Um `?lote=` de um recorte que acabou (ou de
+   * um lote que a queda de `/dashboard/execucao` não traz) deixaria as duas
+   * seções pedindo "escolha um lote" enquanto o seletor mostrasse um nome, ou
+   * pior, mandaria uma consulta por um id que a pessoa não escolheu. Sobrando,
+   * o seletor nasce marcado e as duas cargas saem sozinhas -- é o que faz o
+   * link colado na barra de endereço abrir a tela pronta.
+   */
+  function escolherDaUrl(idsDisponiveis) {
+    if (loteSelecionado === null) return;
+    if (!idsDisponiveis.some(id => Number(id) === loteSelecionado)) {
+      loteSelecionado = null;
+      subfaseSelecionada = null;
+      sincronizarUrl();
+      return;
+    }
+    loteFilter.setValue(loteSelecionado);
+    carregarFases();
+    carregarSubfases();
+  }
+
   async function carregarLotes() {
+    let falhaDaLista = null;
     try {
       const lotes = await getLotesComProducao();
       if (disposed) return;
@@ -190,12 +249,12 @@ export async function renderLoteAcompanhamento(container) {
         value: l.id,
         label: l.projeto ? `${l.nome} — ${l.projeto}` : l.nome,
       })));
+      escolherDaUrl((lotes || []).map(l => l.id));
       nota(avisoLotes, '');
       return;
-    } catch {
+    } catch (err) {
       if (disposed) return;
-      // Silêncio de propósito: o 403 aqui é esperado, e um toast a cada abertura
-      // da tela viraria ruído sobre uma condição normal.
+      falhaDaLista = err;
     }
 
     try {
@@ -205,10 +264,16 @@ export async function renderLoteAcompanhamento(container) {
         value: l.lote_id,
         label: `${l.lote} (${l.em_execucao} em execução)`,
       })));
-      nota(avisoLotes, 'A lista traz só os lotes com versão em execução: o cadastro '
-        + 'completo de lotes é do módulo acervo, e você não tem perfil nele.');
+      escolherDaUrl((emExecucao || []).map(l => l.lote_id));
+      nota(avisoLotes, 'A lista traz só os lotes com versão em execução, porque a lista '
+        + `completa de lotes não respondeu${falhaDaLista && falhaDaLista.message
+          ? `: ${falhaDaLista.message}` : '.'}`);
     } catch (err) {
       if (disposed) return;
+      // SEM LISTA NENHUMA, o lote da URL não se confirma, e uma tela que
+      // carregasse por ele estaria consultando um id que ninguém escolheu e que
+      // o seletor não mostra.
+      escolherDaUrl([]);
       nota(avisoLotes, err.message || 'Não foi possível carregar a lista de lotes.');
     }
   }
@@ -261,34 +326,48 @@ export async function renderLoteAcompanhamento(container) {
     ], linhas));
   }
 
+  /**
+   * O LOTE PEDIDO É FOTOGRAFADO ANTES DO `await` E CONFERIDO DEPOIS.
+   *
+   * Trocar o seletor duas vezes depressa dispara duas cargas, e a do primeiro
+   * lote pode chegar depois: sem esta guarda ela pintaria a tabela DELA sob um
+   * seletor que já marca o outro lote. Nada na tabela repete o nome do lote,
+   * então não haveria como perceber. A resposta que não é mais a pedida é
+   * descartada, inclusive no `catch` -- senão o erro de um lote apaga a tabela
+   * boa do outro.
+   */
   async function carregarFases() {
     if (!loteSelecionado) {
       pedirLote(areaFases, 'um lote');
       return;
     }
+    const pedido = loteSelecionado;
     clearChildren(areaFases);
     areaFases.appendChild(el('p', { className: 'lote-acomp__vazio', textContent: 'Carregando…' }));
     try {
-      const fases = await getInfoLote(loteSelecionado);
-      if (disposed) return;
+      const fases = await getInfoLote(pedido);
+      if (disposed || pedido !== loteSelecionado) return;
       desenharFases(fases || []);
     } catch (err) {
-      if (disposed) return;
+      if (disposed || pedido !== loteSelecionado) return;
       clearChildren(areaFases);
       areaFases.appendChild(estadoErro(err, carregarFases));
     }
   }
 
-  // --- As subfases do lote (a lista, que é de gerente) ----------------------
+  // --- As subfases do lote (a lista que alimenta o seletor) ----------------
 
   /**
-   * O seletor de subfase depende de uma rota de GERENTE, e não há substituta.
+   * O seletor de subfase, e o que ele faz quando a lista não vem.
    *
-   * Nenhuma rota de piso `consulta` publica `subfase_id` com o nome: as de
-   * acompanhamento trazem o NOME da subfase, que não serve para montar
-   * `/informacoes/:lote/:subfase`. Então, para quem só consulta, esta seção
-   * fica fechada e DIZ o motivo com as palavras do servidor -- um seletor vazio
-   * e mudo se leria como lote sem subfase nenhuma, que é outra afirmação.
+   * `GET /acompanhamento/lotes/:lote/subfases` é `consulta` em `producao`, o
+   * mesmo piso desta tela: quem chega aqui passa por ela, então uma falha dela
+   * NÃO é falta de perfil, é o servidor ou a rede. Ela é também a única que
+   * publica o `subfase_id` junto com o nome -- as outras de acompanhamento
+   * trazem só o NOME, que não serve para montar `/informacoes/:lote/:subfase`.
+   * Quando ela cai, esta seção fica fechada e DIZ o motivo com as palavras do
+   * servidor -- um seletor vazio e mudo se leria como lote sem subfase nenhuma,
+   * que é outra afirmação.
    *
    * E a falha fica AQUI: a tabela de fases acima já carregou, e é a resposta
    * principal da tela.
@@ -298,22 +377,34 @@ export async function renderLoteAcompanhamento(container) {
       nota(avisoSubfases, '');
       return;
     }
+    const pedido = loteSelecionado;
     try {
-      const subfases = await getSubfasesComProducao(loteSelecionado);
-      if (disposed) return;
+      const subfases = await getSubfasesComProducao(pedido);
+      if (disposed || pedido !== loteSelecionado) return;
       const opcoes = (subfases || []).map(s => ({
         value: s.id,
         label: s.fase ? `${s.nome} — ${s.fase}` : s.nome,
       }));
       subfaseFilter.setOptions(opcoes);
+      // A SUBFASE DA URL, pelo mesmo critério do lote: só vale a que existe
+      // nesta lista, e ela abre a seção de etapas sozinha.
+      if (subfaseSelecionada !== null) {
+        if (opcoes.some(o => Number(o.value) === subfaseSelecionada)) {
+          subfaseFilter.setValue(subfaseSelecionada);
+          carregarEtapas();
+        } else {
+          subfaseSelecionada = null;
+          sincronizarUrl();
+        }
+      }
       nota(avisoSubfases, opcoes.length
         ? ''
         : 'Este lote ainda não tem subfase com etapa cadastrada.');
     } catch (err) {
-      if (disposed) return;
+      if (disposed || pedido !== loteSelecionado) return;
       subfaseFilter.setOptions([]);
       nota(avisoSubfases, `${err.message || 'Não foi possível carregar as subfases do lote.'} `
-        + 'A lista de subfases é da gerência da produção; o quadro de fases acima não depende dela.');
+        + 'O quadro de fases acima não depende dela.');
     }
   }
 
@@ -378,16 +469,20 @@ export async function renderLoteAcompanhamento(container) {
       desenharEtapas(null);
       return;
     }
+    const pedidoLote = loteSelecionado;
+    const pedidaSubfase = subfaseSelecionada;
     clearChildren(areaEtapas);
     areaEtapas.appendChild(el('p', { className: 'lote-acomp__vazio', textContent: 'Carregando…' }));
+    const mesmoPedido = () => pedidoLote === loteSelecionado
+      && pedidaSubfase === subfaseSelecionada;
     try {
       // A ORDEM É (lote, subfase). Invertida, os dois filtros vão para a coluna
       // errada e a resposta vem VAZIA, sem erro: é o defeito que a origem tinha.
-      const etapas = await getInfoSubfaseLote(loteSelecionado, subfaseSelecionada);
-      if (disposed) return;
+      const etapas = await getInfoSubfaseLote(pedidoLote, pedidaSubfase);
+      if (disposed || !mesmoPedido()) return;
       desenharEtapas(etapas || []);
     } catch (err) {
-      if (disposed) return;
+      if (disposed || !mesmoPedido()) return;
       clearChildren(areaEtapas);
       areaEtapas.appendChild(estadoErro(err, carregarEtapas));
     }

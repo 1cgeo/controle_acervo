@@ -132,9 +132,25 @@ router.get(
   })
 )
 
+// AS TRES LEITURAS DO DIAGNOSTICO, em `consulta` desde 2026-09-05.
+//
+// Cobravam `gerente`, que e o piso mais alto do modulo, sem registro em
+// `docs/decisoes.md` e sem teste que o fixasse. Pela regua de 2026-08-08
+// (`consulta` LE as telas do modulo, `operador` LANCA, `gerente` responde pela
+// area), leitura pura e `consulta`, e nenhuma das duas excecoes deliberadas da
+// regua cobre este caso.
+//
+// O QUE ISSO ALARGA, e fica dito: as tres devolvem `acervo.volume_armazenamento.
+// volume`, o caminho do share. Nao e exposicao nova -- `POST
+// /api/acervo/prepare-download/arquivos` ja e `consulta` e devolve o mesmo
+// caminho montado em `file_path`.
+//
+// O RECORTE DA TELA NAO MUDA: quem as consome e `#/acervo/administracao`, que e
+// do ADMINISTRADOR e continua sendo. O piso da rota e o minimo que o servidor
+// cobra, e nao o publico da tela.
 router.get(
   '/arquivos_deletados',
-  verifyPerfil('gerente'),
+  verifyPerfil('consulta'),
   schemaValidation({
     query: gerenciaSchema.paginationParams
   }),
@@ -166,7 +182,7 @@ router.post(
 
 router.get(
   '/arquivos_incorretos',
-  verifyPerfil('gerente'),
+  verifyPerfil('consulta'),
   schemaValidation({
     query: gerenciaSchema.paginationParams
   }),
@@ -186,7 +202,7 @@ router.get(
 
 router.get(
   '/downloads_deletados',
-  verifyPerfil('gerente'),
+  verifyPerfil('consulta'),
   schemaValidation({
     query: gerenciaSchema.paginationParams
   }),

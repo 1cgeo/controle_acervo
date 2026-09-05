@@ -48,6 +48,12 @@ class DownloadManager(QObject):
         # QTimer de retentativa) não devem mais confirmar com o servidor nem
         # emitir sinais, porque o diálogo dono provavelmente já foi destruído
         self._shutdown = False
+        # Confirmação já enviada nesta rodada. Cancelar durante a espera de uma
+        # retentativa de checksum fazia `cancel_downloads` confirmar e, logo
+        # depois, o QTimer chamar `_download_next_file`, que confirmava DE NOVO:
+        # o servidor recusava os tokens já processados e a tela anunciava
+        # "N token(s) expiraram" no fim de um download que fora cancelado.
+        self._confirmado = False
         # Referências fortes a TODAS as threads de transferência até que cada
         # uma termine de fato (sinal finished). Se a única referência for
         # descartada com a thread ainda rodando, o GC destrói o QThread em
@@ -101,6 +107,7 @@ class DownloadManager(QObject):
 
         self.is_cancelled = False
         self._shutdown = False
+        self._confirmado = False
         self.download_results = []
         self._destination_dir = destination_dir
         self._total_files = len(file_infos)
@@ -114,15 +121,41 @@ class DownloadManager(QObject):
                 self.download_error.emit(f"Não foi possível criar a pasta de destino: {e}")
                 return
 
-        # Preparar fila de arquivos pendentes
+        # Preparar fila de arquivos pendentes.
+        #
+        # O NOME DE DESTINO É DESAMBIGUADO AQUI. O nome físico é único POR
+        # VOLUME, então dois arquivos de volumes diferentes chegam com o mesmo
+        # basename: gravando os dois com o nome que vem do servidor, o segundo
+        # sobrescreve o primeiro, os dois passam no checksum (cada um é
+        # conferido logo depois da própria cópia) e a tela anuncia dois arquivos
+        # baixados numa pasta que tem um.
+        #
+        # O laço olha TAMBÉM o disco, e não só os nomes desta rodada: a pasta de
+        # destino costuma ser reusada, e sobrescrever em silêncio um arquivo que
+        # já estava lá apaga o que o operador tenha anotado ou substituído à mão.
+        used_names = set()
         self._pending_files = []
         for file_info in file_infos:
+            base_name = os.path.basename(file_info.get('download_path') or '')
+            dest_name = base_name
+            suffix = 2
+            while dest_name and (
+                dest_name in used_names
+                or os.path.exists(os.path.join(destination_dir, dest_name))
+            ):
+                root, ext = os.path.splitext(base_name)
+                dest_name = f"{root}_{suffix}{ext}"
+                suffix += 1
+            if dest_name:
+                used_names.add(dest_name)
+
             self._pending_files.append({
                 'arquivo_id': file_info['arquivo_id'],
                 'nome': file_info['nome'],
                 'download_path': file_info['download_path'],
                 'download_token': file_info['download_token'],
                 'checksum': file_info['checksum'],
+                'dest_name': dest_name,
                 'checksum_retries': 0
             })
 
@@ -160,8 +193,11 @@ class DownloadManager(QObject):
         nome_arquivo = file_info['nome']
         download_token = file_info['download_token']
 
-        # Caminho de destino
-        dest_file_path = os.path.join(self._destination_dir, os.path.basename(file_path))
+        # Caminho de destino, já desambiguado em start_download
+        dest_file_path = os.path.join(
+            self._destination_dir,
+            file_info.get('dest_name') or os.path.basename(file_path)
+        )
         file_info['dest_file_path'] = dest_file_path
 
         # Emitir progresso geral
@@ -223,7 +259,7 @@ class DownloadManager(QObject):
                     file_info['checksum_retries'] += 1
                     retry_count = file_info['checksum_retries']
 
-                    if retry_count < self.MAX_CHECKSUM_RETRIES:
+                    if retry_count < self.MAX_CHECKSUM_RETRIES and not self.is_cancelled:
                         delay = self.CHECKSUM_RETRY_BASE_DELAY * (2 ** (retry_count - 1))
                         logging.warning(
                             f"Checksum falhou para '{file_info['nome']}' "
@@ -242,15 +278,18 @@ class DownloadManager(QObject):
                         QTimer.singleShot(delay_ms, self._download_next_file)
                         return
                     else:
-                        # Excedeu retentativas
+                        # Excedeu retentativas, ou o download foi cancelado
+                        # durante a espera da próxima.
                         success = False
                         error_message = (
+                            "Download cancelado com o arquivo ainda íntegro por conferir"
+                            if self.is_cancelled else
                             f"Falha na verificação de integridade após "
                             f"{self.MAX_CHECKSUM_RETRIES} tentativas (checksum não corresponde)"
                         )
                         logging.error(
                             f"Checksum falhou definitivamente para '{file_info['nome']}' "
-                            f"após {self.MAX_CHECKSUM_RETRIES} tentativas"
+                            f"após {retry_count} tentativa(s)"
                         )
                         # Descartar arquivo corrompido
                         try:
@@ -288,7 +327,11 @@ class DownloadManager(QObject):
         self._download_next_file()
 
     def confirm_downloads(self):
-        """Confirm downloads with the server."""
+        """Confirm downloads with the server. Uma vez só por rodada."""
+        if self._confirmado:
+            return
+        self._confirmado = True
+
         if not self.download_results:
             self.download_complete.emit([])
             return
@@ -306,7 +349,12 @@ class DownloadManager(QObject):
             response = self.api_client.post('acervo/confirm-download', {'confirmations': confirmations})
 
             if not response:
-                self.download_error.emit("Falha ao confirmar os downloads com o servidor.")
+                self.download_error.emit(
+                    "Os arquivos foram baixados e conferidos, mas o servidor não "
+                    "registrou a confirmação do download.\n\n"
+                    "Os arquivos na pasta de destino estão íntegros e podem ser "
+                    "usados. Avise o gerente do acervo, porque o histórico de "
+                    "download destes arquivos vai constar como falha.")
                 return
 
             # Detectar tokens que o servidor recusou (ex: expirados/limpos pelo cron após 24h)

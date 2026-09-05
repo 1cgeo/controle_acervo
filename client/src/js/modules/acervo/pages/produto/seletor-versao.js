@@ -71,6 +71,16 @@ export function abrirSeletorVersao({
 
     const painelVersoes = el('div', { className: 'seletor-versao__versoes' });
 
+    // O botao "Escolher" nao fecha sem uma versao marcada, e ate aqui ele nao
+    // dizia nada: o clique nao fazia efeito nenhum, e a leitura possivel era
+    // "o botao esta quebrado". Esta linha diz o que falta.
+    //
+    // `role="alert"` porque o aviso nasce ESCONDIDO e so aparece depois do
+    // clique: sem a regiao viva, quem usa leitor de tela aperta "Escolher", nada
+    // acontece e nada e anunciado. O `role` fica no no que ja existe, e nao no
+    // texto, senao a frase seria lida de novo a cada nova tentativa.
+    const avisoEscolha = el('p', { className: 'form-field__error hidden', role: 'alert' });
+
     const conteudo = el('div', { className: 'seletor-versao' }, [
       el('div', { className: 'seletor-versao__campo' }, [
         el('label', { className: 'form-field__label', textContent: 'Produto' }),
@@ -78,6 +88,7 @@ export function abrirSeletorVersao({
         lista,
       ]),
       painelVersoes,
+      avisoEscolha,
     ]);
 
     pintarVersoes();
@@ -231,6 +242,7 @@ export function abrirSeletorVersao({
             title: proibida ? 'É a própria versão' : `Escolher ${v.versao}`,
             onClick: () => {
               escolhido = id;
+              avisoEscolha.classList.add('hidden');
               pintarVersoes();
             },
           }, [
@@ -254,6 +266,7 @@ export function abrirSeletorVersao({
       fechar();
       escolhido = null;
       produtoEscolhido = null;
+      avisoEscolha.classList.add('hidden');
       pintarVersoes('carregando');
 
       const meuToken = ++requisicao;
@@ -290,7 +303,13 @@ export function abrirSeletorVersao({
           label: 'Escolher',
           variant: 'primary',
           onClick: ({ close }) => {
-            if (!escolhido) return;
+            if (!escolhido) {
+              avisoEscolha.textContent = produtoEscolhido
+                ? 'Escolha uma das versões acima.'
+                : 'Busque um produto e escolha uma das versões dele.';
+              avisoEscolha.classList.remove('hidden');
+              return;
+            }
             const versao = (produtoEscolhido.versoes || [])
               .find(v => Number(v.versao_id) === escolhido);
             confirmado = {
