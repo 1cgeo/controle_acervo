@@ -54,7 +54,10 @@ const FLAG_DE_PARAM = {
   numero: 'numero',
   metaId: 'meta',
   revisaoId: 'revisao',
-  anexoId: 'anexo'
+  anexoId: 'anexo',
+  // O GRUPO se endereça por ano e número, como o documento o apresenta
+  // ("Meta 5 - ..."), e não pelo `id` da linha de `pit.meta`.
+  numeroMeta: 'numero-meta'
 }
 
 const COL_META = [
@@ -214,6 +217,18 @@ const RECURSOS = {
         nota: 'edita a linha da revisão EM VIGOR e exige motivo. É para quem ' +
           'digitou 53 onde o documento diz 35, sem inventar revisão que a DSG ' +
           'não emitiu'
+      },
+      renomear: {
+        metodo: 'PUT',
+        caminho: '/metas/grupos/:ano/:numeroMeta',
+        params: 'grupoParams',
+        corpo: 'renomearGrupo',
+        acesso: 'admin',
+        envelope: 'registro',
+        nota: 'renomeia o GRUPO ("Meta 5 - Serviços de Estágio..."), e não o ' +
+          'item. O nome do grupo é identidade, não declaração, então não cai ' +
+          'em revisão; exige motivo. A DSG renomeia meta: o PIT 2026 R2 trocou ' +
+          'Capacitação por Estágio na Meta 5'
       },
       excluir: {
         metodo: 'DELETE',

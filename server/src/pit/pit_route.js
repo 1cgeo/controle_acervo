@@ -692,6 +692,28 @@ router.get(
   })
 )
 
+// RENOMEAR O GRUPO. Antes de '/:id' pela mesma razão de '/anos' e '/exercicios':
+// o Express casa na ordem de declaração, e 'grupos' cairia na rota do id.
+//
+// O nome do grupo é identidade, e o `resolverMeta` se recusa a sobrescrevê-lo no
+// cadastro de um item. Esta é a porta própria, e ela existe porque a DSG de fato
+// renomeia meta: o PIT 2026 R2 rebatizou a Meta 5 de Capacitação para Estágio.
+router.put(
+  '/grupos/:ano/:numeroMeta',
+  verifyAdmin,
+  schemaValidation({
+    params: pitSchema.grupoParams,
+    body: pitSchema.renomearGrupo
+  }),
+  asyncHandler(async (req, res, next) => {
+    const dados = await pitCtrl.renomearGrupo(
+      req.params.ano, req.params.numeroMeta, req.body, req.usuarioUuid, req.contexto
+    )
+
+    return res.sendJsonAndLog(true, 'Meta do PIT renomeada com sucesso', httpCode.OK, dados)
+  })
+)
+
 // CORRIGIR TRANSCRIÇÃO, e não alterar o PIT. Edita a linha da revisão em vigor,
 // exigindo motivo, para quem digitou 53 onde o documento diz 35 não precisar
 // inventar uma revisão que a DSG não emitiu.

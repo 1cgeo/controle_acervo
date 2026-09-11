@@ -168,8 +168,9 @@ const { motivoDaCorrecao } = require('./motivo_correcao')
 // quando o grupo ainda não existe.
 //
 // O NOME NÃO SE SOBRESCREVE quando o grupo já existe. Corrigir o nome da Meta 1
-// é ato próprio, e fazê-lo de carona no cadastro de um item deixaria a última
-// linha digitada mandando no nome do bloco inteiro.
+// é ato próprio (`controller.renomearGrupo`, PUT /metas/grupos/:ano/:numeroMeta),
+// e fazê-lo de carona no cadastro de um item deixaria a última linha digitada
+// mandando no nome do bloco inteiro.
 const resolverMeta = async (t, { ano, numeroMeta, nome, usuarioUuid, contexto }) => {
   const existente = await t.oneOrNone(
     `SELECT * FROM pit.meta WHERE ano = $<ano> AND numero_meta = $<numeroMeta>`,
@@ -649,6 +650,66 @@ controller.declararNaRevisao = async (revisaoId, metaId, dados, usuarioUuid, con
     })
 
     return { id: linha.id, meta_id: linha.meta_item_id, revisao_id: linha.revisao_id }
+  })
+}
+
+// RENOMEAR O GRUPO, que é o ato próprio prometido no `resolverMeta`.
+//
+// O nome da meta é IDENTIDADE, e não declaração: a tabela de itens do documento
+// não o repete, e por isso ele não mora em `pit.meta_item_revisao`. Mas
+// identidade também se corrige, e o PIT 2026 R2 provou que ela MUDA: a DSG
+// rebatizou a Meta 5 de "Serviços de Capacitação em Geoinformação e Apoio de
+// Levantamento Topográfico" para "Serviços de Estágio em ...", com os mesmos
+// itens embaixo. Até aqui não havia porta nenhuma, e o nome do grupo, que sai
+// impresso no RPCMTec, ficava preso ao que a primeira carga escreveu.
+//
+// NÃO É ATO DE REVISÃO, e por isso não pede revisão aberta: o grupo não promete
+// nada, então não há o que declarar. O que ele pede é MOTIVO, porque quem ler a
+// auditoria depois precisa saber se a DSG renomeou ou se alguém digitou errado.
+controller.renomearGrupo = async (ano, numeroMeta, dados, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    await conferirExercicio(t, ano)
+
+    const antes = await t.oneOrNone(
+      'SELECT * FROM pit.meta WHERE ano = $<ano> AND numero_meta = $<numeroMeta>',
+      { ano, numeroMeta }
+    )
+    if (!antes) {
+      throw new AppError(
+        `A Meta ${numeroMeta} de ${ano} não existe.`,
+        httpCode.NotFound
+      )
+    }
+
+    const nome = String(dados.nome).trim()
+    if (nome.length === 0) {
+      throw new AppError(
+        'O nome da meta não pode ser vazio: toda meta do PIT tem nome no documento assinado.',
+        httpCode.BadRequest
+      )
+    }
+
+    const depois = await t.one(
+      `UPDATE pit.meta
+       SET nome = $<nome>, data_modificacao = $<dataModificacao>,
+           usuario_modificacao_uuid = $<usuarioUuid>
+       WHERE id = $<id>
+       RETURNING *`,
+      { id: antes.id, nome, dataModificacao: new Date(), usuarioUuid }
+    )
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'pit.meta',
+      registroId: depois.id,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto,
+      motivo: dados.motivo
+    })
+
+    return { id: depois.id, ano: depois.ano, numero_meta: depois.numero_meta, nome: depois.nome }
   })
 }
 

@@ -107,10 +107,16 @@ CREATE TABLE pit.meta(
   ano SMALLINT NOT NULL REFERENCES pit.pit (ano),
   numero_meta SMALLINT NOT NULL,
   -- O NOME DO GRUPO, como o documento o escreve. É IDENTIDADE, e não declaração:
-  -- a tabela de itens do documento não o repete, e revisão nenhuma o altera.
-  -- Enquanto ele morava numa `descricao` de revisão, o grupo só tinha nome
-  -- depois que alguma revisão o declarasse, e o nome de uma coisa não depende de
-  -- ela ter sido revisada.
+  -- a tabela de itens do documento não o repete, e por isso ele não mora em
+  -- `pit.meta_item_revisao`. Enquanto ele morava numa `descricao` de revisão, o
+  -- grupo só tinha nome depois que alguma revisão o declarasse, e o nome de uma
+  -- coisa não depende de ela ter sido revisada.
+  --
+  -- MAS ELE MUDA, e dizer "revisão nenhuma o altera" era premissa, não medida: o
+  -- PIT 2026 R2 rebatizou a Meta 5 de "Serviços de Capacitação em Geoinformação
+  -- e Apoio de Levantamento Topográfico" para "Serviços de Estágio em ...", com
+  -- os mesmos itens embaixo. Identidade que muda se corrige por ato próprio, e
+  -- não por declaração: PUT /metas/grupos/:ano/:numeroMeta, com motivo.
   nome VARCHAR(255) NOT NULL,
   -- A DESCRIÇÃO, A QUANTIDADE, O PRAZO E O DEMANDANTE NÃO MORAM AQUI, e agora
   -- nem no mesmo nível: eles são o que a DSG declara SOBRE UM ITEM, e vivem em

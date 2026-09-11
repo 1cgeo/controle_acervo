@@ -314,6 +314,25 @@ models.publicarRevisao = Joi.object().keys({
   data_vigencia: dia.required()
 })
 
+// RENOMEAR O GRUPO. O nome da meta é IDENTIDADE, e o `resolverMeta` se recusa a
+// sobrescrevê-lo de carona no cadastro de um item, para que a última linha
+// digitada não mande no nome do bloco inteiro. Este é o ato próprio que faltava.
+//
+// O grupo se endereça por ANO e NÚMERO, e não por `id`: é assim que o documento
+// o apresenta ("Meta 5 - ..."), e é o par que a UNIQUE do banco garante.
+models.grupoParams = Joi.object().keys({
+  ano: Joi.number().integer().min(2000).max(2100).required(),
+  numeroMeta: Joi.number().integer().min(1).max(99).required()
+})
+
+// O motivo é OBRIGATÓRIO pela mesma razão da correção de transcrição: separa "a
+// DSG renomeou a meta na revisão" de "digitei errado", e é o que sobra na
+// auditoria para quem ler depois.
+models.renomearGrupo = Joi.object().keys({
+  nome: Joi.string().max(255).required(),
+  motivo: Joi.string().min(5).required()
+})
+
 // CORRIGIR TRANSCRIÇÃO, e não alterar o PIT. O motivo é OBRIGATÓRIO: é ele que
 // separa "digitei errado" de "a DSG mudou", que é a distinção inteira.
 models.corrigirTranscricao = Joi.object().keys({
