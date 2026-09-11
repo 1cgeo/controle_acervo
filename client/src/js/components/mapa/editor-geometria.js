@@ -1,7 +1,7 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { createTextField, createNumberField } from '@components/form-fields/form-fields.js';
-import { openModal, LIMITES_MAPA } from '@components/modal/modal-base.js';
-import { carregarMapLibre, ESTILO_OSM, BRASIL, caixaDe } from './base.js';
+import { openModal } from '@components/modal/modal-base.js';
+import { carregarMapLibre, ESTILO_OSM, BRASIL, caixaDe, LIMITES_MAPA } from './base.js';
 import { criarDesenhoDeArea } from './desenho-area.js';
 import {
   criarModeloDesenho,
