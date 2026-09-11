@@ -1,6 +1,6 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { createTextField, createNumberField } from '@components/form-fields/form-fields.js';
-import { openModal } from '@components/modal/modal-base.js';
+import { openModal, LIMITES_MAPA } from '@components/modal/modal-base.js';
 import { carregarMapLibre, ESTILO_OSM, BRASIL, caixaDe } from './base.js';
 import { criarDesenhoDeArea } from './desenho-area.js';
 import {
@@ -415,6 +415,7 @@ export function criarEditorGeometria({ ewktAtual = null, tipoEscalaId, mi = '', 
     mapa = new maplibre.Map({
       container: canvas,
       style: ESTILO_OSM,
+      ...LIMITES_MAPA,
       bounds: BRASIL,
       fitBoundsOptions: { padding: 20 },
       attributionControl: false,

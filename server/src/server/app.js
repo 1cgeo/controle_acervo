@@ -138,10 +138,25 @@ app.use(express.json({ limit: '60mb' })) // parsear POST em JSON
 // COOP e Origin-Agent-Cluster ficam DESLIGADOS enquanto o serviço responder em
 // http por IP: fora de origem confiável o navegador ignora os dois e escreve
 // aviso no console a cada carga. Ligue-os de volta se o serviço for para https.
+// REFERRER-POLICY EXPLÍCITA, e não o `no-referrer` que o helmet põe por padrão.
+//
+// O padrão apagava o `Referer` de TODO pedido que saísse das nossas páginas,
+// inclusive dos tiles do mapa. A política de uso da OpenStreetMap
+// (osm.wiki/Blocked) cobra identificação, e a frase dela é literal: "all tile
+// requests must be identifiable to a particular website or application. For
+// websites, Referer is required". Sem o cabeçalho, os servidores deles viam um
+// cliente anônimo pedindo tile o dia inteiro, e em 2026-09-11 passaram a
+// devolver o tile de "Access blocked", 403, nas seis telas do SAP que têm mapa.
+//
+// `strict-origin-when-cross-origin` é o padrão dos navegadores e é o mínimo que
+// identifica: manda só a ORIGEM (sem caminho e sem query) para destino de outra
+// origem, e não manda nada ao descer de https para http. O caminho das nossas
+// telas não vaza, e o token da tile MVT vive na query, que também não vai.
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginOpenerPolicy: false,
-  originAgentCluster: false
+  originAgentCluster: false,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
 }))
 app.use(noCache())
 

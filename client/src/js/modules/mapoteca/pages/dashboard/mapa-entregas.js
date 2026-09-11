@@ -1,6 +1,6 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
 import { formatNumber } from '@utils/format.js';
-import { ESTILO_OSM, BRASIL, carregarMapLibre, caixaDeVarias } from '@components/mapa/base.js';
+import { ESTILO_OSM, BRASIL, carregarMapLibre, caixaDeVarias, LIMITES_MAPA } from '@components/mapa/base.js';
 import './mapa-entregas.css';
 
 /**
@@ -128,6 +128,7 @@ export function criarMapaEntregas() {
     mapa = new maplibregl.Map({
       container,
       style: ESTILO_OSM,
+      ...LIMITES_MAPA,
       bounds: BRASIL,
       fitBoundsOptions: { padding: 24 },
       attributionControl: { compact: true },

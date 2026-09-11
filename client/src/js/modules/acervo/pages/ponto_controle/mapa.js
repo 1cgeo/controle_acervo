@@ -1,5 +1,5 @@
 import { el } from '@utils/dom.js';
-import { ESTILO_OSM, BRASIL, carregarMapLibre } from '@components/mapa/base.js';
+import { ESTILO_OSM, BRASIL, carregarMapLibre, LIMITES_MAPA } from '@components/mapa/base.js';
 import { criarDesenhoDeArea } from '@components/mapa/desenho-area.js';
 import { criarDestaqueDeLimite } from '@components/mapa/limite-destaque.js';
 
@@ -181,6 +181,7 @@ export function criarMapaPontos({
     mapa = new maplibregl.Map({
       container,
       style: ESTILO_OSM,
+      ...LIMITES_MAPA,
       bounds: BRASIL,
       fitBoundsOptions: { padding: 24 },
       attributionControl: true,

@@ -31,6 +31,12 @@ export const ESTILO_OSM = {
       type: 'raster',
       tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
       tileSize: 256,
+      // A OSM SERVE ATE O ZOOM 19, e sem declarar isto o MapLibre assume 22 e
+      // pede z20, z21 e z22, que nao existem. Sao pedidos que os servidores
+      // deles tem de recusar um a um, e e assim que um aplicativo entra no
+      // perfil de mal-comportado da politica de uso. Com `maxzoom`, o MapLibre
+      // AMPLIA o tile do 19 em vez de pedir o que nao ha.
+      maxzoom: 19,
       attribution: '© OpenStreetMap',
     },
   },
@@ -39,6 +45,29 @@ export const ESTILO_OSM = {
 
 /** Brasil inteiro: o enquadramento de partida, antes de haver dado na tela. */
 export const BRASIL = [[-74, -34], [-34, 6]];
+
+/**
+ * Os LIMITES que todo mapa da casa carrega, e por que eles existem.
+ *
+ * Em 2026-09-11 a OSM passou a devolver o tile de "Access blocked", 403, nas
+ * telas com mapa. A politica de uso dela (osm.wiki/Blocked) cobra identificacao
+ * e comportamento, e o SAP falhava nos dois: o `Referrer-Policy: no-referrer`
+ * do helmet apagava o Referer de TODO pedido (corrigido no `server/app.js`), e
+ * o mapa nascia sem limite nenhum.
+ *
+ * SEM LIMITE, afastar o zoom pede o MUNDO. O MapLibre repete o globo na
+ * horizontal (`renderWorldCopies`), entao uma tela larga em z0 pedia varias
+ * copias do planeta inteiro, e o acervo da Divisao e sul-americano: nenhuma
+ * dessas imagens tinha para que ser buscada.
+ *
+ * A CAIXA E A AMERICA DO SUL, e nao o Brasil: ela precisa conter o bloco
+ * W058N06 do MGCP e a faixa de fronteira, que sao trabalho nosso.
+ */
+export const LIMITES_MAPA = {
+  minZoom: 3,
+  maxBounds: [[-100, -60], [-10, 20]],
+  renderWorldCopies: false,
+};
 
 /**
  * Carrega o MapLibre sob demanda.

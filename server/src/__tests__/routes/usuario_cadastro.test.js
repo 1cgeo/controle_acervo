@@ -908,7 +908,14 @@ const COBERTAS = new Set([
   // A DECLARACAO da meta dentro de uma revisao, que e por onde o PIT passa a
   // ser alterado. O rastro sai de gravarDeclaracao, e nao da funcao de rota:
   // a que a rota chama delega, e o registro mora no gravador comum.
-  'PUT /metas/revisoes/:revisaoId/meta/:metaId'
+  'PUT /metas/revisoes/:revisaoId/meta/:metaId',
+
+  // RENOMEAR O GRUPO da meta ("Meta 5 - Servicos de Estagio..."). Escreve em
+  // `pit.meta`, que e outra tabela e outro agregado: a declaracao acima mexe no
+  // que a meta PROMETE, e esta mexe no NOME do grupo, que e identidade. O
+  // rastro sai do proprio controlador, com o motivo junto, porque a rota exige
+  // motivo para separar "a DSG renomeou" de "digitei errado".
+  'PUT /metas/grupos/:ano/:numeroMeta'
 ])
 
 describe('Rastreabilidade: varredura das rotas de escrita da plataforma', () => {

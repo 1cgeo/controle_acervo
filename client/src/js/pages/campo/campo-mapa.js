@@ -1,5 +1,5 @@
 import { el } from '@utils/dom.js';
-import { ESTILO_OSM, BRASIL, carregarMapLibre, caixaDeVarias } from '@components/mapa/base.js';
+import { ESTILO_OSM, BRASIL, carregarMapLibre, caixaDeVarias, LIMITES_MAPA } from '@components/mapa/base.js';
 import './campo.css';
 
 /**
@@ -180,6 +180,7 @@ export function criarMapaCampos({ onSelecionar } = {}) {
     mapa = new maplibregl.Map({
       container,
       style: ESTILO_OSM,
+      ...LIMITES_MAPA,
       bounds: BRASIL,
       fitBoundsOptions: { padding: 24 },
       attributionControl: { compact: true },

@@ -42,6 +42,10 @@ const mapaFalso = {
 };
 
 vi.mock('@components/mapa/base.js', () => ({
+  // Os limites reais do `base.js`. O mock precisa deles porque todo mapa da
+  // casa os espalha no construtor, e sem eles o vitest para com "No
+  // LIMITES_MAPA export is defined on the mock".
+  LIMITES_MAPA: { minZoom: 3, maxBounds: [[-100, -60], [-10, 20]], renderWorldCopies: false },
   ESTILO_OSM: { version: 8, sources: {}, layers: [] },
   BRASIL: [[-74, -34], [-34, 6]],
   caixaDe: vi.fn(() => [[-51, -31], [-50, -29]]),

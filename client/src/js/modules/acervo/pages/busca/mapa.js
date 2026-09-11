@@ -1,5 +1,5 @@
 import { el, svgIcon, ICONS } from '@utils/dom.js';
-import { ESTILO_OSM, BRASIL, carregarMapLibre, caixaDe } from '@components/mapa/base.js';
+import { ESTILO_OSM, BRASIL, carregarMapLibre, caixaDe, LIMITES_MAPA } from '@components/mapa/base.js';
 import { criarDesenhoDeArea } from '@components/mapa/desenho-area.js';
 import { criarDestaqueDeLimite } from '@components/mapa/limite-destaque.js';
 
@@ -134,6 +134,7 @@ export function criarMapa({ onAlternarSelecao, onApontar, onAreaDesenhada, onAre
     mapa = new maplibregl.Map({
       container,
       style: ESTILO_OSM,
+      ...LIMITES_MAPA,
       bounds: BRASIL,
       fitBoundsOptions: { padding: 24 },
       attributionControl: { compact: true },

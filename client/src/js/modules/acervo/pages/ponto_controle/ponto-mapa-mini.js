@@ -1,5 +1,5 @@
 import { el } from '@utils/dom.js';
-import { ESTILO_OSM, carregarMapLibre } from '@components/mapa/base.js';
+import { ESTILO_OSM, carregarMapLibre, LIMITES_MAPA } from '@components/mapa/base.js';
 
 /**
  * O mapinha da ficha do ponto de controle.
@@ -54,6 +54,7 @@ export function criarMapaDoPonto(lat, lon) {
     mapa = new maplibregl.Map({
       container: elemento,
       style: ESTILO_OSM,
+      ...LIMITES_MAPA,
       center: [lon, lat],
       zoom: ZOOM,
       // A ficha rola; sem isto, rolar por cima do mapa daria zoom em vez de
