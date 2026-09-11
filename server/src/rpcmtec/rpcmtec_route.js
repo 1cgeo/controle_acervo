@@ -56,7 +56,9 @@ const instituicaoCtrl = require('../instituicao/instituicao_ctrl')
 const anuarioCtrl = require('../mapoteca/anuario_ctrl')
 const mapotecaRelatorioCtrl = require('../mapoteca/relatorio_ctrl')
 const { gerarAnuarioOds } = require('./anuario_ods')
-const { gerarRtmOds } = require('./rtm_ods')
+const { gerarRtmOds, gerarMeta1Ods, gerarExtraPitOds } = require('./rtm_ods')
+const rtmMeta1Ctrl = require('./rtm_meta1_ctrl')
+const rtmExtraPitCtrl = require('./rtm_extra_pit_ctrl')
 
 const router = express.Router()
 
@@ -170,6 +172,50 @@ router.get(
     res.setHeader('Content-Disposition', `attachment; filename="${nome}"`)
     res.setHeader('Content-Length', String(buffer.length))
     return res.end(buffer)
+  })
+)
+
+// ---------------------------------------------------------------------------
+// As outras DUAS abas detalhadas do RTM, irmãs da META4 acima.
+//
+// AS TRÊS SÃO ARQUIVOS SEPARADOS, e não um .ods de três abas. É como o RTM é
+// montado: quem o preenche abre a aba que falta e cola por cima da que já
+// existe, uma de cada vez. Um arquivo com as três obrigaria a separá-las de
+// novo do outro lado.
+//
+// ACUMULADAS ATÉ O MÊS, como a META4: o RTM de agosto reporta o ano até agosto.
+// ---------------------------------------------------------------------------
+
+const enviarOds = (res, nome, buffer) => {
+  res.setHeader('Content-Type', 'application/vnd.oasis.opendocument.spreadsheet')
+  res.setHeader('Content-Disposition', `attachment; filename="${nome}"`)
+  res.setHeader('Content-Length', String(buffer.length))
+  return res.end(buffer)
+}
+
+router.get(
+  '/rtm/meta1/ods',
+  verifyGerente,
+  schemaValidation({ query: rpcmtecSchema.gerarQuery }),
+  asyncHandler(async (req, res, next) => {
+    const { ano, mes } = req.query
+    const dados = await rtmMeta1Ctrl.buscarMeta1Detalhada(ano, mes)
+    const buffer = gerarMeta1Ods(rtmMeta1Ctrl.paraAbaMeta1(dados))
+
+    return enviarOds(res, `META1_DETALHADA_${ano}_ate_${doisDigitos(mes)}.ods`, buffer)
+  })
+)
+
+router.get(
+  '/rtm/extra_pit/ods',
+  verifyGerente,
+  schemaValidation({ query: rpcmtecSchema.gerarQuery }),
+  asyncHandler(async (req, res, next) => {
+    const { ano, mes } = req.query
+    const dados = await rtmExtraPitCtrl.buscarExtraPitDetalhado(ano, mes)
+    const buffer = gerarExtraPitOds(rtmExtraPitCtrl.paraAbaExtraPit(dados))
+
+    return enviarOds(res, `EXTRA_PIT_${ano}_ate_${doisDigitos(mes)}.ods`, buffer)
   })
 )
 

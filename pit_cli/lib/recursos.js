@@ -878,7 +878,7 @@ const RECURSOS = {
   },
 
   anuario: {
-    nome: 'Anuário Estatístico e a aba META4_DETALHADA do RTM',
+    nome: 'Anuário Estatístico e as abas detalhadas do RTM',
     schema: carregar('rpcmtec/rpcmtec_schema'),
     validacao: VALIDACAO.STRIP,
     operacoes: {
@@ -886,7 +886,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/rpcmtec/anuario',
         query: 'gerarQuery',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'registro',
         nota: 'a prévia em tela, no envelope JSON. O arquivo que sobe para a DSG ' +
           'é o da operação ods'
@@ -895,7 +895,7 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/rpcmtec/anuario/ods',
         query: 'gerarQuery',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'binario',
         nota: 'a planilha do Anuário, do MÊS, com o nome que a DSG já recebe'
       },
@@ -903,10 +903,31 @@ const RECURSOS = {
         metodo: 'GET',
         caminho: '/rpcmtec/rtm/ods',
         query: 'gerarQuery',
-        acesso: 'admin',
+        acesso: 'gerente',
         envelope: 'binario',
         nota: 'a aba META4_DETALHADA, ACUMULADA até o mês pedido. É o único ' +
           'download desta área que acumula; os outros são do mês'
+      },
+      'rtm-meta1-ods': {
+        metodo: 'GET',
+        caminho: '/rpcmtec/rtm/meta1/ods',
+        query: 'gerarQuery',
+        acesso: 'gerente',
+        envelope: 'binario',
+        nota: 'a aba META1_DETALHADA, uma folha PLANEJADA da Meta 1 por linha, ' +
+          'acumulada até o mês. A folha ainda não pronta aparece com as colunas ' +
+          'do fim vazias, e a Data da Carga (BDGEx) sai SEMPRE em branco, para ' +
+          'preenchimento à mão: ela não existe no banco'
+      },
+      'rtm-extra-pit-ods': {
+        metodo: 'GET',
+        caminho: '/rpcmtec/rtm/extra_pit/ods',
+        query: 'gerarQuery',
+        acesso: 'gerente',
+        envelope: 'binario',
+        nota: 'a aba EXTRA_PIT, acumulada até o mês. Cruza DUAS fontes: a ' +
+          'demanda autorizada do PIT e os pedidos da mapoteca de cliente LAI e ' +
+          'de órgão público'
       }
     }
   }

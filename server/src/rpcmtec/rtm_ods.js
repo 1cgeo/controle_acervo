@@ -38,8 +38,8 @@ const ESTILO_DATA = 'ce156'
 const ESTILO_OBSERVACAO = 'ce134'
 
 // O modelo fecha cada linha com uma célula repetida que preenche o resto da
-// planilha. Sem ela a linha gerada tem largura diferente das do modelo.
-const COLUNAS_DE_SOBRA = 1007
+// planilha. Sem ela a linha gerada tem largura diferente das do modelo. Quanto
+// ela repete sai de `ABAS[<aba>].largura`, porque as três abas diferem.
 
 const escaparXml = texto => String(texto)
   .replace(/&/g, '&amp;')
@@ -88,7 +88,7 @@ const celulaData = valor => {
     `<text:p>${visivel}</text:p></table:table-cell>`
 }
 
-// As 15 colunas da aba, na ordem do modelo. A chave é a que
+// As 15 colunas da aba META4, na ordem do modelo. A chave é a que
 // `mapoteca/relatorio_ctrl.paraAbaMeta4` devolve.
 const COLUNAS = [
   { key: 'omds' },
@@ -108,28 +108,99 @@ const COLUNAS = [
   { key: 'observacao', estilo: ESTILO_OBSERVACAO }
 ]
 
-const montarLinha = linha => {
-  const celulas = COLUNAS.map(coluna => {
+// As 13 colunas da aba META1_DETALHADA, medidas no RTM de agosto de 2026.
+//
+// `data_carga_bdgex` SAI SEMPRE VAZIA, e é decisão do Chefe da DGEO de
+// 2026-09-11. A data da carga no BDGEx não existe no banco: a busca no `er/`
+// inteiro por `data_carga|data_carregamento|bdgex_id|id_bdgex|data_publicacao`
+// devolve zero, e o que existe (`acervo.arquivo.situacao_carregamento_id`) diz
+// o ONDE e nunca o QUANDO. Em vez de criar coluna, o chefe preferiu deixar a
+// célula em branco para preenchimento à mão, como é hoje. A coluna fica aqui,
+// na posição certa, para a aba abrir com a mesma forma de sempre.
+//
+// `meta` é TEXTO de propósito, mesmo valendo "1.1". No RTM de agosto uma linha
+// saiu como número, porque alguém digitou `2` sem ponto, e aí o Calc alinha à
+// direita e a coluna deixa de casar com as outras.
+const COLUNAS_META1 = [
+  { key: 'omds' },
+  { key: 'demandante' },
+  { key: 'meta' },
+  { key: 'produto' },
+  { key: 'mi' },
+  { key: 'escala' },
+  { key: 'projeto_sap' },
+  { key: 'lote_sap' },
+  { key: 'bloco_sap' },
+  { key: 'data_carga_bdgex', tipo: 'data' },
+  { key: 'id_carga_bdgex' },
+  { key: 'local_carga' },
+  { key: 'observacao', estilo: ESTILO_OBSERVACAO }
+]
+
+// As 7 colunas da aba EXTRA_PIT. `quantidade` é NÚMERO: é coluna que a DSG soma.
+const COLUNAS_EXTRA_PIT = [
+  { key: 'omds' },
+  { key: 'demandante' },
+  { key: 'descricao' },
+  { key: 'quantidade', tipo: 'numero' },
+  { key: 'data_conclusao', tipo: 'data' },
+  { key: 'documento_autorizacao' },
+  { key: 'observacao', estilo: ESTILO_OBSERVACAO }
+]
+
+// UMA SEMENTE POR ABA, e não uma semente com três tabelas. É como o RTM é
+// colado: quem monta o relatório abre a aba que falta e cola por cima da que já
+// existe, uma de cada vez.
+//
+// A LARGURA TOTAL difere entre as abas (1022, 1023 e 1024 colunas), medida no
+// RTM preenchido. Ela não é enfeite: a célula repetida que fecha a linha tem de
+// casar com a declaração de colunas da semente, senão a linha gerada fica mais
+// estreita que as do modelo e o Calc desenha a borda no lugar errado.
+const ABAS = {
+  meta4: {
+    nome: 'META4_DETALHADA',
+    semente: path.join(__dirname, 'modelos', 'rtm_meta4_detalhada.ods'),
+    colunas: COLUNAS,
+    largura: 1022
+  },
+  meta1: {
+    nome: 'META1_DETALHADA',
+    semente: path.join(__dirname, 'modelos', 'rtm_meta1_detalhada.ods'),
+    colunas: COLUNAS_META1,
+    largura: 1023
+  },
+  extraPit: {
+    nome: 'EXTRA_PIT',
+    semente: path.join(__dirname, 'modelos', 'rtm_extra_pit.ods'),
+    colunas: COLUNAS_EXTRA_PIT,
+    largura: 1024
+  }
+}
+
+const montarLinha = (aba, linha) => {
+  const celulas = aba.colunas.map(coluna => {
     const valor = linha[coluna.key]
     if (coluna.tipo === 'numero') return celulaNumero(valor)
     if (coluna.tipo === 'data') return celulaData(valor)
     return celulaTexto(valor, coluna.estilo)
   })
 
+  const sobra = aba.largura - aba.colunas.length
   return `<table:table-row table:style-name="${ESTILO_LINHA}">` +
     celulas.join('') +
-    `<table:table-cell table:number-columns-repeated="${COLUNAS_DE_SOBRA}"/>` +
+    `<table:table-cell table:number-columns-repeated="${sobra}"/>` +
     '</table:table-row>'
 }
 
 /**
- * Gera o .ods da aba META4_DETALHADA a partir da semente.
+ * Gera o .ods de UMA aba do RTM a partir da semente dela.
  *
- * @param {Array<Object>} linhas - o que mapoteca/relatorio_ctrl.paraAbaMeta4 devolve
+ * @param {Object} aba - uma entrada de ABAS
+ * @param {Array<Object>} linhas - objetos com as chaves que `aba.colunas` declara
  * @returns {Buffer}
  */
-const gerarRtmOds = linhas => {
-  const semente = fs.readFileSync(CAMINHO_SEMENTE)
+const gerarAbaOds = (aba, linhas) => {
+  const semente = fs.readFileSync(aba.semente)
   const conteudo = desziparParaMapa(semente).get('content.xml').toString('utf8')
 
   // A semente tem UMA linha, a do cabeçalho. As de dados entram logo depois
@@ -138,17 +209,52 @@ const gerarRtmOds = linhas => {
   const linhasNaSemente = (conteudo.match(/<table:table-row/g) || []).length
   if (linhasNaSemente !== 1) {
     throw new AppError(
-      `A planilha-semente do RTM deveria ter só a linha de cabeçalho, e tem ${linhasNaSemente}`,
+      `A planilha-semente de ${aba.nome} deveria ter só a linha de cabeçalho, e tem ${linhasNaSemente}`,
+      httpCode.InternalError
+    )
+  }
+
+  // A SEMENTE CERTA para a aba certa. Sem esta guarda, trocar o caminho por
+  // engano gera um arquivo que abre, com o cabeçalho de uma aba e os dados de
+  // outra: o Calc não reclama, e quem cola no RTM só descobre depois.
+  if (!conteudo.includes(`table:name="${aba.nome}"`)) {
+    throw new AppError(
+      `A planilha-semente de ${aba.nome} não traz uma tabela com esse nome`,
       httpCode.InternalError
     )
   }
 
   const fimCabecalho = conteudo.indexOf('</table:table-row>') + '</table:table-row>'.length
   const novoConteudo = conteudo.slice(0, fimCabecalho) +
-    linhas.map(montarLinha).join('') +
+    linhas.map(linha => montarLinha(aba, linha)).join('') +
     conteudo.slice(fimCabecalho)
 
   return reescreverOds(semente, { 'content.xml': novoConteudo })
 }
 
-module.exports = { gerarRtmOds, CAMINHO_SEMENTE, COLUNAS }
+/**
+ * Gera o .ods da aba META4_DETALHADA. Mantida com a assinatura de sempre porque
+ * duas rotas a chamam (a da mapoteca e a do rpcmtec).
+ *
+ * @param {Array<Object>} linhas - o que mapoteca/relatorio_ctrl.paraAbaMeta4 devolve
+ * @returns {Buffer}
+ */
+const gerarRtmOds = linhas => gerarAbaOds(ABAS.meta4, linhas)
+
+/** A aba META1_DETALHADA, uma folha MI da Meta 1 por linha. */
+const gerarMeta1Ods = linhas => gerarAbaOds(ABAS.meta1, linhas)
+
+/** A aba EXTRA_PIT, uma demanda autorizada fora do plano por linha. */
+const gerarExtraPitOds = linhas => gerarAbaOds(ABAS.extraPit, linhas)
+
+module.exports = {
+  gerarRtmOds,
+  gerarMeta1Ods,
+  gerarExtraPitOds,
+  gerarAbaOds,
+  ABAS,
+  CAMINHO_SEMENTE,
+  COLUNAS,
+  COLUNAS_META1,
+  COLUNAS_EXTRA_PIT
+}

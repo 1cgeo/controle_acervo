@@ -84,7 +84,11 @@ const LEITURAS = [
   '/rpcmtec/anexo/1/download',
   '/rpcmtec/anuario?ano=2026&mes=7',
   '/rpcmtec/anuario/ods?ano=2026&mes=7',
-  '/rpcmtec/rtm/ods?ano=2026&mes=7'
+  '/rpcmtec/rtm/ods?ano=2026&mes=7',
+  // As outras duas abas detalhadas do RTM, pela mesma razão das de cima: são
+  // botões da MESMA barra, e o gerente que baixa a META4 baixa as três.
+  '/rpcmtec/rtm/meta1/ods?ano=2026&mes=7',
+  '/rpcmtec/rtm/extra_pit/ods?ano=2026&mes=7'
 ]
 
 describe('LER o RPCMTec é de QUALQUER gerente', () => {
