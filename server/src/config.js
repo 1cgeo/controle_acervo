@@ -290,8 +290,15 @@ dotenv.config({
 // CALADO uma funcionalidade inteira: o que uma instalação sem a migração perde é
 // uma garantia sobre o DADO dela, e migrar para ganhá-la é escolha de quem opera
 // o banco.
-const VERSION = '3.14.0'
-const MIN_DATABASE_VERSION = '3.2.0'
+//
+// A 3.15.0 SOBE O PISO. Ela cria `rpcmtec.capacitacao_imagem`, e este código
+// passa a LER a tabela em cinco rotas de cada tipo de capacitação: a galeria, o
+// arquivo, o envio, a edição da descrição e a remoção. E a contagem dela entra
+// no SELECT da LISTA (`total_imagens`), que é a tela de abertura das duas: num
+// banco 3.14.0 não falharia só a foto, falharia a lista inteira da 2.6 e da 6.2
+// com "relation rpcmtec.capacitacao_imagem does not exist".
+const VERSION = '3.15.0'
+const MIN_DATABASE_VERSION = '3.15.0'
 
 /**
  * Tira do objeto as chaves cujo valor e vazio (ausente, '' ou so espaco).

@@ -190,47 +190,21 @@ models.campoQuery = Joi.object().keys({
 // Imagem
 // ---------------------------------------------------------------------------
 
-// O TETO E 56 MB DE BASE64, que sao ~40 MB de binario, e ele veio MEDIDO: o
-// maior video do dump do SAP tem 37 MB. Base64 cresce o arquivo em um terco,
-// entao o teto do texto tem de ser maior que o teto que se quer do arquivo.
+// O TETO E A LISTA DE TIPOS SAO DE `utils/midia.js`, e nao daqui, desde
+// 2026-09-15. A capacitacao passou a aceitar foto e video no mesmo dia, e a
+// alternativa era copiar a lista para `rpcmtec_schema.js`: duas listas de MIME
+// permitido divergem na primeira que alguem acrescentar a uma so, e o esquecido
+// no lado da SAIDA e um tipo perigoso servido na origem da aplicacao, calado.
 //
-// E o unico ponto do SCA que aceita um corpo desse tamanho. O `express.json` e
-// UM SO, global, em `server/app.js`, e o teto dele (60mb desde 2026-08-08) TEM
-// de caber este numero: com o teto do Express menor, o corpo grande morre num
-// 413 do body parser antes de chegar ao Joi, e a mensagem nao diz qual campo
-// excedeu. Mexer num dos dois sem o outro reabre esse buraco.
-const MAX_BASE64 = 58720256
-
-// OS TIPOS QUE A ROTA DE ARQUIVO PODE DECLARAR, e a razao de a lista existir.
+// A RAZAO DE CADA NUMERO continua escrita la, e nao se repete aqui: o teto de
+// 56 MB de base64 (~42 MiB de binario) veio do maior video do dump do SAP e tem
+// de caber no `express.json` de 60mb, e a lista de tipos fecha a porta de
+// entrada da mesma forma que a rota do arquivo fecha a de saida.
 //
-// `mime_type` vem do CORPO do pedido (`file.type` do navegador, em
-// `campo-midia.js`), e ate 2026-09-05 ele era texto livre: um operador do modulo
-// `pit` podia gravar `mime_type: 'text/html'` com bytes de uma pagina, e
-// `GET /api/campo/imagem/:id/arquivo` os devolvia com esse `Content-Type` na
-// ORIGEM da propria aplicacao. O CSP esta desligado por decisao
-// (`server/app.js`, "aplicacao de intranet") e o `nosniff` do helmet nao ajuda:
-// ele impede ADIVINHAR o tipo, nao impede honrar o que foi declarado. O que
-// evitava a exploracao era acidental -- a rota exige `Authorization` no
-// cabecalho, e uma navegacao do navegador leva 401 --, e bastaria um fallback de
-// token por query (como a tile MVT ja tem) para o buraco abrir.
-//
-// FOTO E VIDEO, e nada mais: e o que a tela envia e o que a tabela guarda. SVG
-// fica de FORA de proposito, porque ele executa script; `image/gif` entra porque
-// a carga do SAP o adivinha pelo numero magico (`scripts/carregar_campo_sap.py`)
-// e as linhas dele sao antigas e legitimas.
-//
-// A MESMA LISTA e usada na hora de SERVIR (`campo_route.js`): fechar so a
-// entrada deixaria de fora as 143 linhas que ja vieram do dump.
-const MIME_IMAGEM_PERMITIDOS = [
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'image/heic',
-  'video/mp4',
-  'video/quicktime',
-  'video/webm'
-]
+// OS DOIS NOMES ANTIGOS CONTINUAM EXPORTADOS no fim deste arquivo:
+// `campo_route.js` e os testes do campo os leem daqui, e renomea-los seria
+// mexer em coisa que esta certa.
+const { MAX_BASE64, MIME_MIDIA_PERMITIDOS } = require('../utils/midia')
 
 models.imagem = Joi.object().keys({
   descricao: Joi.string().allow(null, ''),
@@ -239,7 +213,7 @@ models.imagem = Joi.object().keys({
   // ANULAVEL de proposito: 133 das 143 imagens do dump do SAP estao sem, e
   // inventar 'image/jpeg' para todas seria gravar um palpite. Quem nao manda
   // recebe o tipo generico na hora de servir.
-  mime_type: Joi.string().valid(...MIME_IMAGEM_PERMITIDOS).allow(null, ''),
+  mime_type: Joi.string().valid(...MIME_MIDIA_PERMITIDOS).allow(null, ''),
   conteudo_base64: Joi.string().base64().max(MAX_BASE64).required()
 })
 
@@ -286,4 +260,4 @@ models.trackUpdate = Joi.object().keys({
 module.exports = models
 module.exports.MAX_VERTICES = MAX_VERTICES
 module.exports.MAX_BASE64 = MAX_BASE64
-module.exports.MIME_IMAGEM_PERMITIDOS = MIME_IMAGEM_PERMITIDOS
+module.exports.MIME_IMAGEM_PERMITIDOS = MIME_MIDIA_PERMITIDOS

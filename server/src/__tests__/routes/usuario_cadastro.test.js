@@ -873,6 +873,20 @@ const COBERTAS = new Set([
   'POST /rpcmtec/capacitacao/recebida',
   'PUT /rpcmtec/capacitacao/recebida/:id',
   'DELETE /rpcmtec/capacitacao/recebida/:id',
+  // A FOTO E O VIDEO da capacitacao, desde 2026-09-15, e sao SEIS escritas
+  // novas -- tres por tipo. Elas caem no agregado da CAPACITACAO, como a lista
+  // de militares: ninguem abre "imagem n.o 87", abre a capacitacao e olha o que
+  // voltou dela. E o mesmo desenho de `campo.imagem`.
+  //
+  // O EVENTO NAO LEVA OS BYTES: o `omitir: ['conteudo']` do mapa e o RETURNING
+  // do controlador deixam o arquivo de fora, senao a trilha cresceria mais que
+  // a tabela que ela audita.
+  'POST /rpcmtec/capacitacao/ministrada/:id/imagem',
+  'PUT /rpcmtec/capacitacao/ministrada/imagem/:imagemId',
+  'DELETE /rpcmtec/capacitacao/ministrada/imagem/:imagemId',
+  'POST /rpcmtec/capacitacao/recebida/:id/imagem',
+  'PUT /rpcmtec/capacitacao/recebida/imagem/:imagemId',
+  'DELETE /rpcmtec/capacitacao/recebida/imagem/:imagemId',
   // Efetivo por INTERVALO. Ele nasceu sob /rpcmtec como retrato mensal e mudou
   // para /efetivo no mesmo dia: "quem esteve na Divisao" nao existe por causa do
   // relatorio, e o relatorio e um leitor. As duas tabelas sao auditadas no

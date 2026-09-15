@@ -32,7 +32,7 @@
 
 const express = require('express')
 
-const { asyncHandler, httpCode } = require('../utils')
+const { asyncHandler, httpCode, midia: { tipoParaServir } } = require('../utils')
 
 // O validador ESTRITO, e nao o tolerante de `utils/schema_validation.js`. Ele
 // recusa a chave desconhecida no corpo com 400 e sugere o nome declarado mais
@@ -112,17 +112,10 @@ router.get(
     // O TIPO SO SAI DAQUI SE ESTIVER NA LISTA, e a conferencia se repete na
     // saida por um motivo: o schema fecha a porta de ENTRADA, e as 143 linhas do
     // dump do SAP entraram por outra (a carga adivinha o tipo pelo numero
-    // magico). Sem esta linha, um `mime_type` gravado antes da lista continuaria
-    // sendo declarado ao navegador na origem da propria aplicacao.
-    //
-    // O tipo generico cobre os dois casos: `mime_type` nulo (133 das 143 imagens
-    // do dump estao sem ele) e tipo fora da lista. 'application/octet-stream'
-    // faz o navegador baixar em vez de tentar desenhar -- ou EXECUTAR -- algo
-    // que nao sabe o que e.
-    const tipo = campoSchema.MIME_IMAGEM_PERMITIDOS.includes(imagem.mime_type)
-      ? imagem.mime_type
-      : 'application/octet-stream'
-    res.setHeader('Content-Type', tipo)
+    // magico). Sem `tipoParaServir`, um `mime_type` gravado antes da lista
+    // continuaria sendo declarado ao navegador na origem da propria aplicacao.
+    // A regra e de `utils/midia.js`, e a capacitacao le a MESMA.
+    res.setHeader('Content-Type', tipoParaServir(imagem.mime_type))
     return res.send(imagem.conteudo)
   })
 )

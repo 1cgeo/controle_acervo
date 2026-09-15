@@ -458,6 +458,29 @@ module.exports = {
     }
   },
 
+  // A FOTO E O VIDEO DA CAPACITACAO, desde 2026-09-15. Espelha `campo.imagem`,
+  // inclusive no agregado: ninguem abre "imagem n.o 87", abre a CAPACITACAO e
+  // olha o que voltou dela. O `tipo_id` do pai e quem diz se a foto e da 2.6
+  // (ministrada) ou da 6.2 (recebida), e por isso nao ha coluna de tipo aqui.
+  'rpcmtec.capacitacao_imagem': {
+    modulo: 'plataforma',
+    entidade: 'capacitacao',
+    agregado: (t, linha) => linha.capacitacao_id,
+    resumo: linha => `${linha.tipo === 'video' ? 'Vídeo' : 'Foto'}: ${linha.descricao || 'sem descrição'}`,
+    // OS BYTES FICAM DE FORA, e nao e opcional: sao ate 42 MiB por arquivo, e
+    // grava-los dentro de `auditoria.evento` faria a trilha crescer mais que a
+    // tabela que ela audita. O controller ja nao os traz no RETURNING; esta
+    // linha e a segunda tranca. Mesma razao de `campo.imagem`.
+    omitir: ['conteudo'],
+    campos: {
+      tipo: { rotulo: 'Tipo' },
+      descricao: { rotulo: 'Descrição' },
+      data_imagem: { rotulo: 'Data da imagem', tipo: 'data' },
+      mime_type: { rotulo: 'Tipo do arquivo' },
+      capacitacao_id: { rotulo: 'Capacitação', entidade: 'capacitacao' }
+    }
+  },
+
   // --- Agregado: campo -------------------------------------------------------
   //
   // UM AGREGADO SO, E SEIS TABELAS. A regra e a da casa: o agregado e a FICHA

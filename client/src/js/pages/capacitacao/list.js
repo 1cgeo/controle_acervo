@@ -16,6 +16,7 @@ import {
 } from '@services/plataforma-service.js';
 import { temPerfil } from '@store/auth-store.js';
 import { openCapacitacaoDialog, MINISTRADA, RECEBIDA } from './capacitacao-dialog.js';
+import { abrirMidiaCapacitacao } from './capacitacao-midia.js';
 
 const dia = (valor) => (valor
   ? String(valor).slice(0, 10).split('-').reverse().join('/')
@@ -195,27 +196,58 @@ function criarTela(tipoId, textos) {
           label: textos.colunaMilitares,
           render: (row) => row.militares_texto || '-',
         },
+        // QUANTAS FOTOS E VÍDEOS, para a lista dizer onde há o que ver sem abrir
+        // uma por uma. É a mesma coluna que a lista de campo tem, e é o que
+        // torna o botão da galeria útil: sem ela, clicar é o único jeito de
+        // descobrir que a capacitação não tem nada.
+        {
+          key: 'total_imagens',
+          label: 'Mídia',
+          sortable: true,
+          sortValue: (row) => Number(row.total_imagens || 0),
+          render: (row) => (Number(row.total_imagens) > 0
+            ? String(row.total_imagens)
+            : '-'),
+        },
       ],
       rows: [],
       searchable: true,
       pageSize: 25,
       loading: true,
       emptyMessage: VAZIO,
-      actions: podeEscrever ? [
+      // A GALERIA É DE TODO MUNDO, e editar e excluir continuam do operador.
+      // Quem só consulta VÊ a foto da instrução que a Divisão deu: ela não é
+      // segredo dentro dela, e escondê-la de quem não lança deixaria a tela sem
+      // o registro visual para quem mais o procura. Quem barra o ENVIO é o
+      // servidor, e o `podeEditar` abaixo é ergonomia.
+      actions: [
         {
-          icon: ICONS.edit,
-          title: 'Editar',
-          onClick: (row) => openCapacitacaoDialog({
-            capacitacao: row, tipoId, usuarios, metas, onSaved: load,
+          icon: ICONS.fotos,
+          title: 'Fotos e vídeos',
+          onClick: (row) => abrirMidiaCapacitacao({
+            capacitacao: row,
+            podeEditar: podeEscrever,
+            // A CONTAGEM DA COLUNA ACOMPANHA: sem recarregar, a linha continua
+            // dizendo 3 depois de a quarta foto entrar.
+            aoMudar: load,
           }),
         },
-        {
-          icon: ICONS.delete,
-          title: 'Excluir',
-          variant: 'danger',
-          onClick: (row) => handleDelete(row),
-        },
-      ] : [],
+        ...(podeEscrever ? [
+          {
+            icon: ICONS.edit,
+            title: 'Editar',
+            onClick: (row) => openCapacitacaoDialog({
+              capacitacao: row, tipoId, usuarios, metas, onSaved: load,
+            }),
+          },
+          {
+            icon: ICONS.delete,
+            title: 'Excluir',
+            variant: 'danger',
+            onClick: (row) => handleDelete(row),
+          },
+        ] : []),
+      ],
     });
 
     // A tabela OU o painel de erro, no mesmo lugar. Ver `mostrar()`.
@@ -377,8 +409,15 @@ function criarTela(tipoId, textos) {
     async function handleDelete(row) {
       const ok = await confirmDialog({
         title: 'Excluir capacitação',
+        // AS FOTOS VÃO JUNTO, pelo ON DELETE CASCADE, e os bytes só existem
+        // aqui. A frase o diz quando há o que perder, e cala quando não há: um
+        // aviso sobre zero arquivo treina a pessoa a ignorar o aviso.
         message: `Excluir "${row.nome}"? Se ela foi cancelada, prefira mudar a `
-          + 'situação para "Cancelada".',
+          + 'situação para "Cancelada".'
+          + (Number(row.total_imagens) > 0
+            ? ` As ${row.total_imagens} foto(s)/vídeo(s) vão junto, e os bytes só`
+              + ' existem aqui.'
+            : ''),
         confirmLabel: 'Excluir',
         danger: true,
       });

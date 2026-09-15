@@ -2,6 +2,8 @@
 
 const Joi = require('joi')
 
+const { MAX_BASE64, MIME_MIDIA_PERMITIDOS } = require('../utils/midia')
+
 const models = {}
 
 // Query do Anuário e do RTM: ano e mês de corte, sempre os dois.
@@ -233,5 +235,39 @@ const capacitacao = {
 
 models.criarCapacitacao = Joi.object().keys({ ...capacitacao })
 models.atualizarCapacitacao = Joi.object().keys({ ...capacitacao })
+
+// --- Foto e vídeo da capacitação --------------------------------------------
+//
+// O MESMO CONTRATO DA MÍDIA DO CAMPO (`campo_schema.imagem`), e é o ponto: a
+// galeria da tela é UMA só para os dois lugares, e ela manda o mesmo corpo nos
+// dois. Um contrato diferente aqui obrigaria a uma segunda galeria.
+//
+// O TETO E A LISTA DE TIPOS vêm de `utils/midia.js`, e não são copiados: duas
+// listas de MIME permitido divergem na primeira que alguém acrescentar a uma
+// só, e o esquecido no lado da SAÍDA é um tipo perigoso servido na origem da
+// aplicação, calado.
+
+models.capacitacaoImagemIdParams = Joi.object().keys({
+  imagemId: Joi.number().integer().positive().required()
+})
+
+models.capacitacaoImagem = Joi.object().keys({
+  descricao: Joi.string().allow(null, ''),
+  data_imagem: dia.allow(null, ''),
+  tipo: Joi.string().valid('foto', 'video').default('foto'),
+  // ANULÁVEL de propósito, como no campo: o navegador nem sempre sabe declarar
+  // o tipo do arquivo, e inventar 'image/jpeg' para quem não mandou seria
+  // gravar um palpite. Quem não manda recebe o tipo genérico na hora de servir.
+  mime_type: Joi.string().valid(...MIME_MIDIA_PERMITIDOS).allow(null, ''),
+  conteudo_base64: Joi.string().base64().max(MAX_BASE64).required()
+})
+
+// SÓ A DESCRIÇÃO E A DATA. Trocar os BYTES de uma imagem já gravada não é
+// editar, é outra imagem: quem subiu o arquivo errado remove e sobe o certo, e
+// aí o rastro diz o que aconteceu. É o mesmo recorte de `campo_schema`.
+models.capacitacaoImagemUpdate = Joi.object().keys({
+  descricao: Joi.string().allow(null, ''),
+  data_imagem: dia.allow(null, '')
+})
 
 module.exports = models

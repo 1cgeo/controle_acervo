@@ -42,6 +42,7 @@
 const express = require('express')
 
 const { schemaValidation, asyncHandler, httpCode, AppError, enviarArquivo } = require('../utils')
+const { midia: { tipoParaServir } } = require('../utils')
 const { domainConstants: { TIPO_CAPACITACAO } } = require('../utils')
 const { verifyAdmin, verifyGerente, verifyPerfil } = require('../login')
 
@@ -306,6 +307,77 @@ const rotasDeCapacitacao = (caminho, tipoId, leitura, escrita) => {
     })
   )
 
+  // --- Foto e vídeo da capacitação ------------------------------------------
+  //
+  // MORAM DENTRO DO MOLDE, e é o que as guarda. A permissão da mídia é a da
+  // capacitação dona: a foto de uma ministrada é do operador do PIT e a de uma
+  // recebida é do de Efetivo. Um par de rotas fora do molde
+  // (`/capacitacao/imagem/:id`) não teria como saber de quem é a imagem antes de
+  // ir ao banco, e a guarda de rota não vai ao banco.
+  //
+  // O CONTROLADOR COBRA O TIPO DE NOVO, e não é redundância: a guarda daqui
+  // aprova o operador de Efetivo em TODA rota da recebida, e o id que ele manda
+  // pode ser o de uma imagem da ministrada. Ver `rpcmtec_capacitacao_ctrl.js`.
+  //
+  // A ORDEM É A DO CAMPO (`campo_route.js`): as rotas de imagem por id PRÓPRIO
+  // vêm antes de `/:id`, embora tenham dois segmentos e não pudessem colidir com
+  // ela. Manter o bloco junto é o que evita que alguém acrescente `/imagem` (um
+  // segmento só) no fim e descubra o 400 em produção.
+
+  // OS BYTES SAEM AQUI, e só aqui. Um arquivo por vez, e nunca numa listagem.
+  router.get(
+    `${base}/imagem/:imagemId/arquivo`,
+    leitura,
+    schemaValidation({ params: rpcmtecSchema.capacitacaoImagemIdParams }),
+    asyncHandler(async (req, res, next) => {
+      const imagem = await capacitacaoCtrl.lerImagem(req.params.imagemId, tipoId)
+
+      // `res.send` CRU, e não `sendJsonAndLog`: o corpo aqui é binário. É a
+      // mesma exceção que as rotas de anexo do orçamento e da mapoteca já abrem.
+      //
+      // O TIPO SÓ SAI SE ESTIVER NA LISTA (`utils/midia.js`), e a conferência se
+      // repete na saída de propósito: o schema fecha a porta de ENTRADA, e o que
+      // já está gravado entrou antes dela existir. Sem isso, um `mime_type`
+      // qualquer seria declarado ao navegador na origem da própria aplicação.
+      res.setHeader('Content-Type', tipoParaServir(imagem.mime_type))
+      return res.send(imagem.conteudo)
+    })
+  )
+
+  router.put(
+    `${base}/imagem/:imagemId`,
+    escrita,
+    schemaValidation({
+      params: rpcmtecSchema.capacitacaoImagemIdParams,
+      body: rpcmtecSchema.capacitacaoImagemUpdate
+    }),
+    asyncHandler(async (req, res, next) => {
+      const dados = await capacitacaoCtrl.atualizarImagem(
+        req.params.imagemId, tipoId, req.body, req.usuarioUuid, req.contexto
+      )
+
+      return res.sendJsonAndLog(
+        true, 'Imagem atualizada com sucesso', httpCode.OK, dados
+      )
+    })
+  )
+
+  // APAGAR A IMAGEM É DE OPERADOR, e não de gerente como apagar o CAMPO inteiro.
+  // Não é incoerência: quem subiu o arquivo errado há um minuto tem de poder
+  // tirá-lo, e o alcance é UMA linha. É a mesma régua do campo.
+  router.delete(
+    `${base}/imagem/:imagemId`,
+    escrita,
+    schemaValidation({ params: rpcmtecSchema.capacitacaoImagemIdParams }),
+    asyncHandler(async (req, res, next) => {
+      await capacitacaoCtrl.apagarImagem(
+        req.params.imagemId, tipoId, req.usuarioUuid, req.contexto
+      )
+
+      return res.sendJsonAndLog(true, 'Imagem removida com sucesso', httpCode.OK)
+    })
+  )
+
   router.get(
     `${base}/:id`,
     leitura,
@@ -369,6 +441,39 @@ const rotasDeCapacitacao = (caminho, tipoId, leitura, escrita) => {
 
       return res.sendJsonAndLog(
         true, 'Capacitação excluída com sucesso', httpCode.OK
+      )
+    })
+  )
+
+  // As rotas FILHAS de uma capacitação: a galeria dela. Dois segmentos, então
+  // não competem com `/:id`, e a ordem aqui é a da LEITURA.
+  router.get(
+    `${base}/:id/imagem`,
+    leitura,
+    schemaValidation({ params: rpcmtecSchema.idParams }),
+    asyncHandler(async (req, res, next) => {
+      const dados = await capacitacaoCtrl.listarImagens(req.params.id, tipoId)
+
+      return res.sendJsonAndLog(
+        true, 'Imagens da capacitação retornadas com sucesso', httpCode.OK, dados
+      )
+    })
+  )
+
+  router.post(
+    `${base}/:id/imagem`,
+    escrita,
+    schemaValidation({
+      params: rpcmtecSchema.idParams,
+      body: rpcmtecSchema.capacitacaoImagem
+    }),
+    asyncHandler(async (req, res, next) => {
+      const dados = await capacitacaoCtrl.criarImagem(
+        req.params.id, tipoId, req.body, req.usuarioUuid, req.contexto
+      )
+
+      return res.sendJsonAndLog(
+        true, 'Imagem enviada com sucesso', httpCode.Created, dados
       )
     })
   )

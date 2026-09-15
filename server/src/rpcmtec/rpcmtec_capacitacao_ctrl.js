@@ -57,6 +57,7 @@ const colunas = `c.id, c.ano, c.nome, c.tipo_id, t.nome AS tipo,
   c.meta_pit_id, mp.item AS meta_pit_item, mg.numero_meta AS meta_pit_numero,
   mg.nome AS meta_pit_nome,
   COALESCE(mil.lista, '[]'::json) AS militares,
+  COALESCE(img.total, 0) AS total_imagens,
   c.data_cadastramento, c.usuario_cadastramento_uuid,
   c.data_modificacao, c.usuario_modificacao_uuid`
 
@@ -82,7 +83,14 @@ const de = `FROM rpcmtec.capacitacao AS c
     INNER JOIN dgeo.usuario AS u ON u.uuid = cm.usuario_uuid
     INNER JOIN dominio.tipo_posto_grad AS pg ON pg.code = u.tipo_posto_grad_id
     WHERE cm.capacitacao_id = c.id
-  ) AS mil ON TRUE`
+  ) AS mil ON TRUE
+  -- QUANTAS FOTOS E VIDEOS a capacitacao tem, para a lista dizer onde ha o que
+  -- ver sem abrir uma por uma. Os BYTES nao vem aqui: eles saem um por vez,
+  -- pela rota do arquivo. E a mesma contagem que a lista de campo faz.
+  LEFT JOIN LATERAL (
+    SELECT count(*) AS total FROM rpcmtec.capacitacao_imagem AS i
+    WHERE i.capacitacao_id = c.id
+  ) AS img ON TRUE`
 
 // `tipoId` é OBRIGATÓRIO e vem da ROTA. Era filtro opcional de `req.query`, e
 // aí a mesma rota devolvia ministrada, recebida ou as duas conforme o que o
@@ -416,6 +424,206 @@ controller.deletar = async (id, tipoId, usuarioUuid, contexto) => {
       usuarioUuid,
       contexto
     })
+  })
+}
+
+// --- Foto e vídeo da capacitação --------------------------------------------
+//
+// ESPELHA `campo_ctrl.js`, que já guardava foto e vídeo da atividade de campo. A
+// capacitação ganhou a mesma coisa em 2026-09-15, a pedido do chefe: a
+// MINISTRADA (2.6) tem a foto da instrução que a Divisão deu, e a RECEBIDA (6.2)
+// a do curso que o militar fez.
+//
+// TODA FUNÇÃO DAQUI RECEBE `tipoId`, e ele não é organização: é GUARDA. A
+// permissão da mídia é a da capacitação dona (ministrada é do operador do PIT,
+// recebida é do de Efetivo), e a guarda da rota não enxerga de quem é a imagem.
+// Sem o recorte aqui, o operador de Efetivo apagaria a foto de uma capacitação
+// MINISTRADA mandando o id dela para `DELETE /capacitacao/recebida/imagem/:id`:
+// a guarda o aprovaria, porque a rota é a dele. É a mesma razão, e a mesma
+// forma, de `exigirDoTipo` acima.
+//
+// O RECORTE VAI NA CONSULTA, e não num `if` depois de ler: a imagem do outro
+// tipo não é um registro proibido, é um registro que NÃO ESTÁ LÁ por este
+// caminho, e o 404 é a resposta certa. Dizer "proibido" confirmaria a existência
+// dela a quem não pode vê-la.
+
+/**
+ * A capacitação existe E é do tipo desta rota?
+ *
+ * Vale para a rota que pendura mídia num id de capacitação. Sem ela, subir foto
+ * para um id inexistente morreria na chave estrangeira, com um 500 cru.
+ *
+ * @param {object} t - a transação, ou `db.conn` para leitura solta
+ * @param {number} capacitacaoId
+ * @param {number} tipoId - o tipo que a ROTA fixou
+ */
+const garantirCapacitacao = async (t, capacitacaoId, tipoId) => {
+  const existe = await t.oneOrNone(
+    `SELECT id FROM rpcmtec.capacitacao
+      WHERE id = $<capacitacaoId> AND tipo_id = $<tipoId>`,
+    { capacitacaoId, tipoId }
+  )
+  if (!existe) {
+    throw new AppError('Capacitação não encontrada', httpCode.NotFound)
+  }
+}
+
+/**
+ * As imagens de uma capacitação, SEM os bytes.
+ *
+ * `octet_length(conteudo)` no lugar do conteúdo: a tela precisa do tamanho para
+ * decidir o que mostra, e trafegar dezenas de megabytes para listar nomes seria
+ * pagar o arquivo inteiro para desenhar uma legenda. Os bytes saem UM POR VEZ,
+ * pela rota do arquivo.
+ */
+controller.listarImagens = async (capacitacaoId, tipoId) => {
+  await garantirCapacitacao(db.conn, capacitacaoId, tipoId)
+
+  return db.conn.any(
+    `SELECT i.id, i.capacitacao_id, i.descricao, i.data_imagem::text AS data_imagem,
+            i.tipo, i.mime_type, octet_length(i.conteudo) AS bytes,
+            i.data_cadastramento
+       FROM rpcmtec.capacitacao_imagem AS i
+      WHERE i.capacitacao_id = $<capacitacaoId>
+      ORDER BY i.data_imagem NULLS LAST, i.id`,
+    { capacitacaoId }
+  )
+}
+
+// OS BYTES. O JOIN com a capacitação é o recorte por tipo, e não enfeite: é o
+// que impede a rota de um tipo de servir o arquivo do outro.
+controller.lerImagem = async (imagemId, tipoId) => {
+  const imagem = await db.conn.oneOrNone(
+    `SELECT i.id, i.tipo, i.mime_type, i.conteudo
+       FROM rpcmtec.capacitacao_imagem AS i
+      INNER JOIN rpcmtec.capacitacao AS c ON c.id = i.capacitacao_id
+      WHERE i.id = $<imagemId> AND c.tipo_id = $<tipoId>`,
+    { imagemId, tipoId }
+  )
+  if (!imagem) {
+    throw new AppError('Imagem não encontrada', httpCode.NotFound)
+  }
+  return imagem
+}
+
+/**
+ * A linha da imagem para o RASTRO, sem os bytes, já recortada por tipo.
+ *
+ * NÃO USA `auditoriaCtrl.lerAntes`, e a divergência é deliberada. Aquele monta
+ * `SELECT t.*`, que aqui traria o `conteudo` inteiro -- até 42 MiB carregados na
+ * memória do processo para registrar a troca de uma descrição. O `omitir:
+ * ['conteudo']` do mapa impede que os bytes entrem no EVENTO, e não que sejam
+ * LIDOS. Além disso `lerAntes` não sabe filtrar por tipo, e o filtro é a guarda.
+ *
+ * As colunas abaixo são exatamente as que o mapa de auditoria declara.
+ */
+const lerImagemParaRastro = async (t, imagemId, tipoId) => {
+  const antes = await t.oneOrNone(
+    `SELECT i.id, i.capacitacao_id, i.descricao, i.data_imagem, i.tipo,
+            i.mime_type, i.data_cadastramento, i.usuario_cadastramento_uuid
+       FROM rpcmtec.capacitacao_imagem AS i
+      INNER JOIN rpcmtec.capacitacao AS c ON c.id = i.capacitacao_id
+      WHERE i.id = $<imagemId> AND c.tipo_id = $<tipoId>`,
+    { imagemId, tipoId }
+  )
+  if (!antes) {
+    throw new AppError('Imagem não encontrada', httpCode.NotFound)
+  }
+  return antes
+}
+
+controller.criarImagem = async (capacitacaoId, tipoId, dados, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    await garantirCapacitacao(t, capacitacaoId, tipoId)
+
+    const criada = await t.one(
+      `INSERT INTO rpcmtec.capacitacao_imagem
+         (capacitacao_id, descricao, data_imagem, tipo, mime_type, conteudo,
+          usuario_cadastramento_uuid)
+       VALUES ($<capacitacaoId>, $<descricao>, $<dataImagem>, $<tipo>, $<mimeType>,
+               decode($<conteudo>, 'base64'), $<usuarioUuid>)
+       RETURNING id, capacitacao_id, descricao, data_imagem, tipo, mime_type,
+                 data_cadastramento, usuario_cadastramento_uuid`,
+      {
+        capacitacaoId,
+        descricao: nulo(dados.descricao),
+        dataImagem: nulo(dados.data_imagem),
+        tipo: dados.tipo,
+        mimeType: nulo(dados.mime_type),
+        conteudo: dados.conteudo_base64,
+        usuarioUuid
+      }
+    )
+
+    // `conteudo` NÃO volta do RETURNING, e o mapa de auditoria também o omite:
+    // gravar o arquivo dentro de `auditoria.evento` faria a trilha crescer mais
+    // que a tabela que ela audita.
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'rpcmtec.capacitacao_imagem',
+      registroId: criada.id,
+      operacao: 'I',
+      depois: criada,
+      usuarioUuid,
+      contexto
+    })
+
+    return { id: criada.id }
+  })
+}
+
+// SÓ A DESCRIÇÃO E A DATA. Trocar os BYTES de uma imagem já gravada não é
+// editar, é outra imagem: quem subiu o arquivo errado remove e sobe o certo, e
+// aí o rastro diz o que aconteceu.
+controller.atualizarImagem = async (imagemId, tipoId, dados, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    const antes = await lerImagemParaRastro(t, imagemId, tipoId)
+
+    const depois = await t.one(
+      `UPDATE rpcmtec.capacitacao_imagem SET
+         descricao = $<descricao>, data_imagem = $<dataImagem>
+       WHERE id = $<imagemId>
+       RETURNING id, capacitacao_id, descricao, data_imagem, tipo, mime_type,
+                 data_cadastramento, usuario_cadastramento_uuid`,
+      {
+        imagemId,
+        descricao: nulo(dados.descricao),
+        dataImagem: nulo(dados.data_imagem)
+      }
+    )
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'rpcmtec.capacitacao_imagem',
+      registroId: imagemId,
+      operacao: 'U',
+      antes,
+      depois,
+      usuarioUuid,
+      contexto
+    })
+
+    return { id: imagemId }
+  })
+}
+
+controller.apagarImagem = async (imagemId, tipoId, usuarioUuid, contexto) => {
+  return db.conn.tx(async t => {
+    const antes = await lerImagemParaRastro(t, imagemId, tipoId)
+
+    await t.none(
+      'DELETE FROM rpcmtec.capacitacao_imagem WHERE id = $<imagemId>',
+      { imagemId }
+    )
+
+    await auditoriaCtrl.registrar(t, {
+      tabela: 'rpcmtec.capacitacao_imagem',
+      registroId: imagemId,
+      operacao: 'D',
+      antes,
+      usuarioUuid,
+      contexto
+    })
+
+    return { id: imagemId }
   })
 }
 

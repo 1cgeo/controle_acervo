@@ -1124,6 +1124,35 @@ mesma chave aparece quatro vezes na fila normal, o que o PS não aceita.
   não se gravam aqui".** Aquilo vale para tabela CALCULADA, e esta é DIGITADA: reconsultar não
   recupera nada, porque não há de onde.
 
+### Foto e vídeo da capacitação (chefe, 2026-09-15)
+
+- **As duas telas aceitam mídia, e a tabela é `rpcmtec.capacitacao_imagem`, espelho de
+  `campo.imagem`** (chefe). O pedido foi explícito: fazer na capacitação o que a atividade de campo
+  já fazia. O espelho coluna a coluna não é preguiça, é o que permite UMA galeria servir as duas
+  telas; uma tabela com outro desenho obrigaria a uma segunda, e a que ficasse de fora da correção
+  seguinte seria a que todo mundo vê.
+- **As cinco rotas nascem DENTRO do molde `rotasDeCapacitacao`, uma cópia por tipo.** É o que as faz
+  herdar as duas guardas do tipo (a ministrada é do PIT, a recebida é do Efetivo). Um par de rotas
+  fora do molde (`/capacitacao/imagem/:id`) não teria como saber de quem é a imagem antes de ir ao
+  banco, e guarda de rota não vai ao banco.
+- **O controlador cobra o tipo OUTRA VEZ, na consulta, e não é redundância.** A guarda aprova o
+  operador de Efetivo em toda rota da recebida, e o id que ele manda pode ser o de uma foto da
+  MINISTRADA. Quem recusa é o `INNER JOIN ... AND c.tipo_id`, e a resposta é 404: por aquele caminho
+  a imagem não está lá, e dizer "proibido" confirmaria a existência dela.
+- **A galeria abre pela LINHA da lista, num modal próprio, e não dentro do formulário de edição.**
+  Duas razões: quem só CONSULTA tem de ver a foto da instrução que a Divisão deu, e o formulário é do
+  operador; e a galeria grava NA HORA, enquanto o formulário grava no "Salvar" -- os dois no mesmo
+  diálogo fariam parecer que a foto enviada espera o Salvar e que Cancelar a desfaz. A capacitação
+  não tem ficha como o campo tem, e este modal é o lugar onde se vê.
+- **O teto do arquivo e a lista de MIME vivem em `server/src/utils/midia.js`, lidos pelos dois
+  módulos.** Copiar a lista para o schema da capacitação criaria duas que divergem na primeira que
+  alguém editar, e o estrago é assimétrico: esquecer de ACRESCENTAR num lado dá upload recusado
+  (barulhento), esquecer de REMOVER dá tipo perigoso servido na origem da aplicação (silencioso).
+- **A galeria virou `components/midia/galeria-midia.js`, e as classes trocaram de `campo-` para
+  `midia-`.** O componente serve os dois donos, e um prefixo com o nome de uma das telas seria um
+  rótulo mentindo sobre onde a regra vale. `pages/campo/campo-midia.js` ficou como a AMARRAÇÃO do
+  campo: o endereço das rotas dele e as frases de tela vazia.
+
 ## RPCMTec e relatórios
 
 - **O RPCMTec é UM gerador só, fora dos módulos.** É o relatório da

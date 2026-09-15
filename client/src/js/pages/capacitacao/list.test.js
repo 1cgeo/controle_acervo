@@ -182,7 +182,14 @@ describe('capacitação em duas telas', () => {
   // É ERGONOMIA, e não a guarda: quem barra a escrita é o `verifyPerfil`, que
   // lê o perfil do banco a cada requisição.
   // ---------------------------------------------------------------------------
-  const acoesDaLinha = (container) => [...container.querySelectorAll('.data-table__action-btn')];
+  //
+  // A GALERIA NÃO ENTRA NESSE RECORTE, desde 2026-09-15: "Fotos e vídeos" é uma
+  // ação de LEITURA, e quem tem consulta a vê. Por isso os casos abaixo passaram
+  // a conferir QUAIS ações a linha tem, e não quantas: com a contagem, a ação
+  // nova fazia o caso reprovar sem dizer qual delas apareceu a mais, e uma
+  // contagem certa também aprova o conjunto errado.
+  const acoesDaLinha = (container) => [...container.querySelectorAll('.data-table__action-btn')]
+    .map(b => b.getAttribute('title'));
   const botaoNovo = (container) => [...container.querySelectorAll('.page__actions button')]
     .find(b => b.textContent.includes('Nova capacitação'));
 
@@ -193,7 +200,9 @@ describe('capacitação em duas telas', () => {
     const { container, cleanup } = await montar(renderCapacitacaoMinistrada);
 
     expect(botaoNovo(container)).toBeUndefined();
-    expect(acoesDaLinha(container)).toHaveLength(0);
+    // A GALERIA FICA, e editar e excluir somem: ver a foto da instrução que a
+    // Divisão deu é LER.
+    expect(acoesDaLinha(container)).toEqual(['Fotos e vídeos']);
     // A LISTA CONTINUA: consulta LÊ, e é para isso que a rota a deixa entrar.
     expect(container.querySelectorAll('tbody tr')).toHaveLength(1);
 
@@ -207,7 +216,7 @@ describe('capacitação em duas telas', () => {
     const { container, cleanup } = await montar(renderCapacitacaoMinistrada);
 
     expect(botaoNovo(container)).toBeDefined();
-    expect(acoesDaLinha(container)).toHaveLength(2);
+    expect(acoesDaLinha(container)).toEqual(['Fotos e vídeos', 'Editar', 'Excluir']);
 
     if (typeof cleanup === 'function') cleanup();
   });
@@ -222,7 +231,7 @@ describe('capacitação em duas telas', () => {
     const { container, cleanup } = await montar(renderCapacitacaoRecebida);
 
     expect(botaoNovo(container)).toBeUndefined();
-    expect(acoesDaLinha(container)).toHaveLength(0);
+    expect(acoesDaLinha(container)).toEqual(['Fotos e vídeos']);
 
     if (typeof cleanup === 'function') cleanup();
   });

@@ -64,12 +64,22 @@ const TIPOS = [
   ['recebida', 'efetivo']
 ]
 
-// As três que só respondem, e as três que gravam.
-const LEITURAS = ['', '/anos', '/1']
+// AS ROTAS DE CADA LADO, e a mídia entrou nas duas em 2026-09-15.
+//
+// A FOTO SEGUE A REGUA DA CAPACITACAO DONA, e e por isso que ela entra nesta
+// varredura em vez de ter uma propria: VER a foto da instrucao e leitura
+// (consulta), e enviar, renomear e remover e lancamento (operador). O par de
+// rotas mora DENTRO do molde `rotasDeCapacitacao` justamente para herdar as duas
+// guardas; um par escrito fora dele ficaria com a permissao de um dos dois tipos
+// para os dois, e nada acusaria.
+const LEITURAS = ['', '/anos', '/1', '/1/imagem', '/imagem/1/arquivo']
 const ESCRITAS = [
   ['post', ''],
   ['put', '/1'],
-  ['delete', '/1']
+  ['delete', '/1'],
+  ['post', '/1/imagem'],
+  ['put', '/imagem/1'],
+  ['delete', '/imagem/1']
 ]
 
 beforeEach(() => mockDb.reset())
@@ -80,8 +90,9 @@ describe.each(TIPOS)('Capacitação %s (módulo %s)', (caminho, modulo) => {
   describe('LER é de consulta', () => {
     test.each(LEITURAS)(`GET ${base}%s aceita quem tem consulta`, async (sufixo) => {
       quemEntra({ administrador: false, perfil: PERFIL.consulta })
-      // `/:id` chama `getPorId`, que devolve 404 quando o dublê não acha nada. O
-      // que se prova aqui é a AUTORIZAÇÃO, então basta não ter sido 403.
+      // `/:id` chama `getPorId`, e as duas de mídia leem a capacitação dona: as
+      // três devolvem 404 quando o dublê não acha nada. O que se prova aqui é a
+      // AUTORIZAÇÃO, então basta não ter sido 403.
       mockDb.conn.oneOrNone.mockResolvedValueOnce({ id: 1, nome: 'Curso' })
 
       const res = await request(app).get(base + sufixo).set('Authorization', token())

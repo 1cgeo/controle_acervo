@@ -1,0 +1,267 @@
+/*
+ * A GALERIA DE FOTO E VIDEO, e a tela cheia dela.
+ *
+ * MOROU EM `pages/campo/campo.css` ATE 2026-09-15, quando a capacitacao (a 2.6
+ * ministrada e a 6.2 recebida) passou a aceitar foto e video tambem. O
+ * componente que desenha isto e UM SO
+ * (`components/midia/galeria-midia.js`), e por isso o estilo dele nao pode
+ * continuar com nome de uma das duas telas: o prefixo `campo-galeria` numa tela
+ * de capacitacao seria um rotulo mentindo sobre onde a regra vale.
+ *
+ * O PREFIXO E `midia-`, e a troca foi mecanica: `campo-galeria` virou
+ * `midia-galeria` e `campo-luz` virou `midia-luz`. As quatro classes de estado
+ * (`__acoes`, `__carregando`, `__vazio`, `__erro`) eram emprestadas de
+ * `campo-detalhe__*`, e passam a ser do proprio componente -- as de la ficam,
+ * porque a ficha do campo e os trajetos continuam usando-as.
+ */
+
+/* --- A barra e os estados da grade ----------------------------------------- */
+
+/*
+ * NOMES PROPRIOS, e nao os de `campo-detalhe__*` que estas quatro regras
+ * copiavam. Dois dos emprestados colidiriam com regras que ja existem aqui
+ * embaixo: `__acoes` e a barra ACIMA da grade e tambem as acoes DE CADA CARTAO,
+ * e `__carregando` e o aviso da grade inteira e tambem o de uma miniatura. Duas
+ * regras com o mesmo nome e significados diferentes se sobrescrevem calado.
+ */
+
+.midia-galeria__barra {
+  margin-bottom: var(--space-md);
+}
+
+.midia-galeria__aviso,
+.midia-galeria__vazio {
+  color: var(--text-secondary);
+}
+
+.midia-galeria__erro {
+  color: var(--color-error);
+}
+
+/* --- A galeria ------------------------------------------------------------ */
+
+.midia-galeria {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-md);
+}
+
+.midia-galeria__item {
+  margin: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * ALTURA FIXA na midia, com `object-fit: contain`. Foto de campo vem em
+ * orientacoes e proporcoes muito diferentes, e sem isto a grade fica um serrote.
+ * `contain`, e nao `cover`: cortar uma foto de reambulacao pode esconder
+ * justamente o detalhe que fez alguem fotografa-la.
+ */
+.midia-galeria__midia {
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+}
+
+.midia-galeria__midia img,
+.midia-galeria__midia video {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.midia-galeria__carregando {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.midia-galeria__rodape {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-sm);
+  font-size: var(--font-size-sm);
+}
+
+.midia-galeria__rodape small {
+  color: var(--text-secondary);
+}
+
+/*
+ * A DESCRICAO QUEBRA EM ATE TRES LINHAS, e nao numa so com reticencias: ela e
+ * a UNICA identificacao do arquivo (`campo.imagem` nao guarda o nome dele), e
+ * cortada em "Instalacao da camera 360 no..." dois cartoes viram o mesmo texto.
+ * O `break-word` cobre o nome de arquivo comprido sem espaco, que estoura a
+ * coluna da grade.
+ */
+.midia-galeria__descricao {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+
+/*
+ * O rodape em modo de edicao. A caixa e a `.form-field__input` do resto do
+ * sistema, e aqui so encolhe: o cartao da grade tem 200px, e o padding de 10px
+ * do formulario come metade da largura util do texto.
+ */
+.midia-galeria__entrada {
+  padding: 4px 6px;
+  font-size: var(--font-size-sm);
+}
+
+.midia-galeria__edicao-acoes {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+/*
+ * AS ACOES FICAM NO PE DO CARTAO, e o `margin-top: auto` as cola la mesmo quando
+ * a descricao ao lado tem uma linha e a do vizinho tem tres: sem ele os botoes
+ * de dois cartoes vizinhos saem desalinhados na mesma fileira da grade.
+ */
+.midia-galeria__acoes {
+  display: flex;
+  gap: var(--space-xs);
+  margin: auto var(--space-sm) var(--space-sm);
+}
+
+/* --- A tela cheia da foto e do video -------------------------------------- */
+
+/*
+ * FUNDO PROPRIO, e nao o `openModal` da casa. O modal tem cabecalho, rodape e
+ * largura maxima, e os tres competem com a imagem: aqui o conteudo E a tela.
+ *
+ * O z-index fica ACIMA do modal (que usa 1000 na casa) porque a tela cheia abre
+ * de DENTRO da ficha, que e um modal.
+ */
+.midia-luz {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  background: rgba(0, 0, 0, 0.92);
+  padding: var(--space-md);
+}
+
+.midia-luz__barra {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  color: #fff;
+}
+
+.midia-luz__contador {
+  font-size: var(--font-size-sm);
+  opacity: 0.85;
+}
+
+.midia-luz__fechar,
+.midia-luz__nav {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  padding: var(--space-xs);
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+}
+
+.midia-luz__fechar:hover,
+.midia-luz__nav:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.midia-luz__quadro {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  max-width: 100%;
+  /*
+   * O QUADRO CEDE ALTURA para a barra de cima e a legenda de baixo: sem o
+   * desconto, a imagem alta empurra a legenda para fora da tela.
+   */
+  max-height: calc(100vh - 140px);
+}
+
+.midia-luz__midia {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 240px;
+  min-height: 240px;
+  max-height: calc(100vh - 140px);
+}
+
+.midia-luz__midia img,
+.midia-luz__midia video {
+  max-width: calc(100vw - 160px);
+  max-height: calc(100vh - 140px);
+  /* `contain`, e nao `cover`: cortar a foto pode esconder justamente o detalhe
+   * que fez alguem fotografa-la. */
+  object-fit: contain;
+}
+
+.midia-luz__carregando,
+.midia-luz__erro {
+  color: #fff;
+  opacity: 0.85;
+}
+
+.midia-luz__legenda {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: #fff;
+  text-align: center;
+  max-width: 80vw;
+}
+
+.midia-luz__legenda small {
+  opacity: 0.7;
+}
+
+/* --- A marca de video na miniatura ---------------------------------------- */
+
+.midia-galeria__midia--clicavel {
+  cursor: pointer;
+  position: relative;
+}
+
+.midia-galeria__midia--clicavel:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+/*
+ * A MARCA existe porque a miniatura do video NAO tem controles: sem ela, um
+ * quadro parado e indistinguivel de uma foto.
+ */
+.midia-galeria__marca-video {
+  position: absolute;
+  bottom: var(--space-xs);
+  right: var(--space-xs);
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  padding: 1px var(--space-xs);
+  border-radius: var(--radius-sm);
+}

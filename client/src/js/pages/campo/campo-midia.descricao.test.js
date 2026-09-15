@@ -79,7 +79,7 @@ beforeEach(() => {
 describe('o rodape do cartao', () => {
   test('sem data, mostra SO o tamanho, e nenhum traco', async () => {
     await montar();
-    const pe = document.querySelector('.campo-galeria__rodape small');
+    const pe = document.querySelector('.midia-galeria__rodape small');
     expect(pe.textContent).toBe('40.7 MB');
     expect(pe.textContent).not.toContain('-');
   });
@@ -87,7 +87,7 @@ describe('o rodape do cartao', () => {
   test('com data, mostra a data e o tamanho', async () => {
     listarImagensCampo.mockResolvedValue([COM_DATA]);
     await montar();
-    expect(document.querySelector('.campo-galeria__rodape small').textContent)
+    expect(document.querySelector('.midia-galeria__rodape small').textContent)
       .toBe('15/04/2019 · 367 kB');
   });
 });
@@ -100,7 +100,7 @@ describe('editar a descricao no cartao', () => {
     botaoPorTexto('Descrição').click();
     await flush();
 
-    const entrada = document.querySelector('.campo-galeria__entrada');
+    const entrada = document.querySelector('.midia-galeria__entrada');
     expect(entrada.value).toBe('Vídeo do levantamento com receptor GNSS');
     entrada.value = 'Levantamento GNSS no pátio da OM';
     botaoPorTexto('Salvar').click();
@@ -110,7 +110,7 @@ describe('editar a descricao no cartao', () => {
       descricao: 'Levantamento GNSS no pátio da OM',
       data_imagem: null,
     });
-    expect(document.querySelector('.campo-galeria__descricao').textContent)
+    expect(document.querySelector('.midia-galeria__descricao').textContent)
       .toBe('Levantamento GNSS no pátio da OM');
     // A GRADE NAO SE RECARREGA: seriam 40 MB de video buscados de novo para
     // trocar uma linha de texto.
@@ -126,7 +126,7 @@ describe('editar a descricao no cartao', () => {
 
     botaoPorTexto('Descrição').click();
     await flush();
-    document.querySelector('.campo-galeria__entrada').value = 'Marco geodésico da sede';
+    document.querySelector('.midia-galeria__entrada').value = 'Marco geodésico da sede';
     botaoPorTexto('Salvar').click();
     await flush();
 
@@ -141,12 +141,12 @@ describe('editar a descricao no cartao', () => {
 
     botaoPorTexto('Descrição').click();
     await flush();
-    document.querySelector('.campo-galeria__entrada').value = 'outra coisa';
+    document.querySelector('.midia-galeria__entrada').value = 'outra coisa';
     botaoPorTexto('Cancelar').click();
     await flush();
 
     expect(atualizarImagemCampo).not.toHaveBeenCalled();
-    expect(document.querySelector('.campo-galeria__descricao').textContent)
+    expect(document.querySelector('.midia-galeria__descricao').textContent)
       .toBe('Vídeo do levantamento com receptor GNSS');
   });
 

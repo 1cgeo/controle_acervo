@@ -1,5 +1,6 @@
 import { apiGet, apiPost, apiPut, apiDelete, apiUpload, apiDownload } from './api-client.js';
 import { PREFIXO_API } from '@utils/base-path.js';
+import { getToken } from '@store/auth-store.js';
 
 /**
  * Servicos de PLATAFORMA: o que nao pertence a nenhum modulo.
@@ -361,6 +362,72 @@ export const getAnosCapacitacaoRecebida = anosCapacitacao('recebida');
 export const createCapacitacaoRecebida = criarCapacitacao('recebida');
 export const updateCapacitacaoRecebida = atualizarCapacitacao('recebida');
 export const deleteCapacitacaoRecebida = excluirCapacitacao('recebida');
+
+// ---- A midia da capacitacao: foto e video, como no campo ----
+//
+// DESDE 2026-09-15, a pedido do chefe: as duas telas de capacitacao passam a
+// aceitar foto e video do jeito que a atividade de campo ja aceitava.
+//
+// O MOLDE E O MESMO das cinco funcoes acima, e pelo mesmo motivo: as rotas sao
+// duas, uma por tipo, porque a permissao e por tipo. A foto de uma MINISTRADA e
+// do operador do PIT e a de uma RECEBIDA e do operador de Efetivo, e o servidor
+// recorta pelo tipo TAMBEM no controlador -- mandar o id de uma imagem da
+// ministrada para o caminho da recebida responde 404, e nao a imagem.
+//
+// O OBJETO TEM CINCO CHAVES porque e o contrato de
+// `components/midia/galeria-midia.js`, que e a MESMA galeria do campo. Um
+// formato proprio aqui obrigaria a uma segunda galeria.
+const listarImagensCapacitacao = (tipo) => (id) =>
+  apiGet(`${caminhoCapacitacao(tipo)}/${id}/imagem`);
+const enviarImagemCapacitacao = (tipo) => (id, body) =>
+  apiPost(`${caminhoCapacitacao(tipo)}/${id}/imagem`, body);
+const atualizarImagemCapacitacao = (tipo) => (imagemId, body) =>
+  apiPut(`${caminhoCapacitacao(tipo)}/imagem/${imagemId}`, body);
+const excluirImagemCapacitacao = (tipo) => (imagemId) =>
+  apiDelete(`${caminhoCapacitacao(tipo)}/imagem/${imagemId}`);
+
+/**
+ * Os BYTES de uma imagem, como URL de blob para `<img src>` ou `<video src>`.
+ *
+ * NAO e a rota posta direto no `src`, e a razao e dura: `<img>` e `<video>` NAO
+ * mandam o cabecalho `Authorization`, e o `verifyPerfil` do SAP le o token SO de
+ * `req.headers.authorization` -- nao ha fallback por query. A tag sozinha
+ * levaria 401 em toda imagem.
+ *
+ * Entao quem busca e o `fetch`, com o cabecalho, e o que vai para o `src` e um
+ * blob local. NAO passa pelo `apiGet` porque o corpo e binario e aquele espera o
+ * envelope JSON do `sendJsonAndLog`; nem pelo `apiDownload`, que dispara um
+ * "salvar como" -- aqui a foto tem de aparecer NA TELA.
+ *
+ * QUEM CHAMA TEM DE REVOGAR (`URL.revokeObjectURL`) ao sair da tela, e a galeria
+ * ja o faz no `cleanup` dela.
+ *
+ * E a irma de `urlDaImagemCampo` (`campo-service.js`), e as duas fazem a mesma
+ * coisa em dois enderecos.
+ */
+const urlDaImagemCapacitacao = (tipo) => async (imagemId) => {
+  const token = getToken();
+  const resposta = await fetch(
+    `${PREFIXO_API}${caminhoCapacitacao(tipo)}/imagem/${imagemId}/arquivo`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+  );
+  if (!resposta.ok) {
+    throw new Error(`Não foi possível carregar o arquivo (HTTP ${resposta.status})`);
+  }
+  return URL.createObjectURL(await resposta.blob());
+};
+
+/** As cinco funcoes de um tipo, no formato que a galeria le. */
+const midiaCapacitacao = (tipo) => ({
+  listar: listarImagensCapacitacao(tipo),
+  enviar: enviarImagemCapacitacao(tipo),
+  atualizar: atualizarImagemCapacitacao(tipo),
+  excluir: excluirImagemCapacitacao(tipo),
+  url: urlDaImagemCapacitacao(tipo),
+});
+
+export const midiaCapacitacaoMinistrada = midiaCapacitacao('ministrada');
+export const midiaCapacitacaoRecebida = midiaCapacitacao('recebida');
 
 /**
  * Rotulo curto da meta, como a planilha e as telas a escrevem: '4.1' quando a

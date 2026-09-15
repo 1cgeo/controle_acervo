@@ -304,4 +304,51 @@ COMMENT ON TABLE rpcmtec.capacitacao_militar IS
 CREATE INDEX idx_capacitacao_militar_usuario
     ON rpcmtec.capacitacao_militar (usuario_uuid);
 
+-- ---------------------------------------------------------------------------
+-- O registro visual da capacitação
+-- ---------------------------------------------------------------------------
+--
+-- ESPELHA `campo.imagem`, inclusive nas colunas e no CHECK de `tipo`, e é
+-- deliberado: a capacitação e o campo guardam a mesma coisa (foto e vídeo do
+-- que a Divisão fez), e duas formas diferentes para o mesmo arquivo obrigariam
+-- a galeria da tela a existir duas vezes. Ela existe UMA
+-- (`components/midia/galeria-midia.js`), e é este espelho que a deixa servir as
+-- duas telas.
+--
+-- VALE PARA OS DOIS TIPOS. A MINISTRADA tem a foto da instrução dada, e a
+-- RECEBIDA tem a do curso que o militar fez: são a mesma tabela porque a
+-- capacitação é uma só, e o `tipo_id` do PAI é o que separa o que cada lado
+-- alcança. Quem cobra esse recorte é o controlador, e não a chave: a rota da
+-- recebida não enxerga a imagem de uma ministrada, pelo mesmo motivo que não
+-- enxerga a capacitação dela.
+--
+-- OS BYTES FICAM NO BANCO (`conteudo BYTEA`), como `campo.imagem`,
+-- `rpcmtec.anexo_edicao`, `pit.anexo_revisao` e `mapoteca.anexo_pedido` já
+-- fazem. `conteudo` NUNCA sai numa listagem: quem quer os bytes pede a rota do
+-- arquivo, um arquivo por vez.
+--
+-- `mime_type` É ANULÁVEL pela mesma razão do campo: o que a tela não souber
+-- declarar entra nulo, e a rota responde com o tipo genérico em vez de gravar
+-- um palpite.
+CREATE TABLE rpcmtec.capacitacao_imagem(
+  id BIGSERIAL NOT NULL PRIMARY KEY,
+  capacitacao_id BIGINT NOT NULL REFERENCES rpcmtec.capacitacao (id) ON DELETE CASCADE,
+  descricao TEXT,
+  data_imagem DATE,
+  -- Dois valores, e um CHECK em vez de tabela de domínio: 'foto' e 'video' não
+  -- são um catálogo que cresce, são os dois jeitos de um arquivo ser visual. É
+  -- a mesma escolha de `campo.imagem`, e os dois CHECK têm de dizer o mesmo.
+  tipo VARCHAR(10) NOT NULL DEFAULT 'foto' CHECK (tipo IN ('foto', 'video')),
+  mime_type VARCHAR(100),
+  conteudo BYTEA NOT NULL,
+  data_cadastramento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  usuario_cadastramento_uuid UUID NOT NULL REFERENCES dgeo.usuario (uuid)
+);
+
+COMMENT ON TABLE rpcmtec.capacitacao_imagem IS
+    'Foto ou vídeo da capacitação, ministrada ou recebida. Os bytes ficam aqui, como todo anexo do SAP, e nunca saem numa listagem.';
+
+CREATE INDEX idx_capacitacao_imagem_capacitacao
+    ON rpcmtec.capacitacao_imagem (capacitacao_id);
+
 COMMIT;

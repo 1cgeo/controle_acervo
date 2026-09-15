@@ -5,7 +5,7 @@ import { flush } from '@/__tests__/helpers/flush.js';
 
 // A TELA CHEIA DA GALERIA E O MODAL DE BAIXO, e quem fica com a tecla.
 //
-// Esta tela cheia (`campo-luz`) e um `<div>` solto no `body`, e nao entra na
+// Esta tela cheia (`midia-luz`) e um `<div>` solto no `body`, e nao entra na
 // pilha de `modal-base.js`. Ela SO abre de dentro de um modal: a ficha do campo
 // ou o formulario "Editar o campo". O modal registra o Escape dele na CAPTURA do
 // `document` e chama `stopPropagation`, e o ouvinte daqui morava na BOLHA do
@@ -77,12 +77,12 @@ describe('a tela cheia da galeria por cima de um modal', () => {
 
     const luz = abrirTelaCheia({ itens: ITENS, indice: 0 });
     await flush();
-    expect(document.querySelector('.campo-luz')).not.toBeNull();
+    expect(document.querySelector('.midia-luz')).not.toBeNull();
 
     escape();
 
     // A camada de cima saiu...
-    expect(document.querySelector('.campo-luz')).toBeNull();
+    expect(document.querySelector('.midia-luz')).toBeNull();
     // ...e o formulário, com o que estava digitado, ficou.
     expect(document.querySelector('.modal-overlay')).not.toBeNull();
     expect(document.querySelector('.modal__body input').value).toBe('digitado');
@@ -100,14 +100,14 @@ describe('a tela cheia da galeria por cima de um modal', () => {
     const luz = abrirTelaCheia({ itens: ITENS, indice: 0 });
     await flush();
 
-    expect(document.querySelector('.campo-luz__contador').textContent).toBe('1 de 2');
+    expect(document.querySelector('.midia-luz__contador').textContent).toBe('1 de 2');
     seta('ArrowRight');
     await flush();
-    expect(document.querySelector('.campo-luz__contador').textContent).toBe('2 de 2');
+    expect(document.querySelector('.midia-luz__contador').textContent).toBe('2 de 2');
     // Circular: a próxima volta ao começo.
     seta('ArrowRight');
     await flush();
-    expect(document.querySelector('.campo-luz__contador').textContent).toBe('1 de 2');
+    expect(document.querySelector('.midia-luz__contador').textContent).toBe('1 de 2');
     expect(document.querySelector('.modal-overlay')).not.toBeNull();
 
     // FECHADA A TELA CHEIA, o Escape volta a ser do modal. Sem remover o
@@ -128,7 +128,7 @@ describe('a tela cheia que morre sem passar por `fechar`', () => {
 
     // O Voltar do navegador repinta a area de conteudo; o `<div>` do `body`
     // sai por outro caminho, sem `fechar()`.
-    document.querySelector('.campo-luz').remove();
+    document.querySelector('.midia-luz').remove();
 
     const evento = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
     document.dispatchEvent(evento);
@@ -149,10 +149,10 @@ describe('a tela cheia que morre sem passar por `fechar`', () => {
   test('trocar de rota fecha a tela cheia', async () => {
     abrirTelaCheia({ itens: ITENS, indice: 0 });
     await flush();
-    expect(document.querySelector('.campo-luz')).not.toBeNull();
+    expect(document.querySelector('.midia-luz')).not.toBeNull();
 
     window.dispatchEvent(new HashChangeEvent('hashchange'));
 
-    expect(document.querySelector('.campo-luz')).toBeNull();
+    expect(document.querySelector('.midia-luz')).toBeNull();
   });
 });

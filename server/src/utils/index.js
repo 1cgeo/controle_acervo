@@ -15,4 +15,5 @@ module.exports = {
   csvExport: require('./csv_export'),
   enviarArquivo: require('./enviar_arquivo'),
   preserveOmitted: require('./preserve_omitted'),
+  midia: require('./midia'),
 }

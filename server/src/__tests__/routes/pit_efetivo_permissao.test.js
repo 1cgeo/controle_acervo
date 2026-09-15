@@ -532,3 +532,195 @@ describe('O caminho fixa o tipo da capacitacao, e o banco confirma', () => {
     await apagar(idR)
   })
 })
+
+// ---------------------------------------------------------------------------
+// A FOTO E O VIDEO DA CAPACITACAO seguem o tipo da capacitacao DONA.
+//
+// A mídia entrou nas duas telas em 2026-09-15, e com ela cinco rotas por tipo.
+// O risco que este bloco existe para pegar e o MESMO da capacitacao em si, uma
+// camada abaixo: a guarda da rota aprova o operador de Efetivo em TODA rota da
+// recebida, e o id que ele manda pode ser o de uma foto da MINISTRADA. Quem tem
+// de recusar e o controlador, olhando o tipo da linha DONA.
+//
+// AQUI A VERIFICACAO RELE O BANCO, e nao o retorno da rota: o 404 do servidor e
+// eco dele mesmo, e o que prova que a foto continua la e a linha em
+// `rpcmtec.capacitacao_imagem`.
+// ---------------------------------------------------------------------------
+describe('A midia da capacitacao segue o tipo dela', () => {
+  const corpoCapacitacao = (nome) => ({
+    ano: 2026,
+    nome,
+    situacao_id: 1,
+    militares: []
+  })
+
+  // UM PNG DE 1x1 DE VERDADE, e nao um base64 qualquer: os bytes atravessam
+  // `decode(..., 'base64')` no INSERT e voltam por `octet_length`, entao um
+  // texto que nao fosse base64 valido morreria no Joi e o caso nunca exercitaria
+  // o caminho dos bytes.
+  const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
+  const semearCapacitacao = async (caminho, nome) => {
+    const res = await request(app)
+      .post(caminho)
+      .set('Authorization', generateAdminToken())
+      .send(corpoCapacitacao(nome))
+    expect(res.status).toBe(201)
+    return res.body.dados.id
+  }
+
+  const semearImagem = async (caminho, capacitacaoId, descricao) => {
+    const res = await request(app)
+      .post(`${caminho}/${capacitacaoId}/imagem`)
+      .set('Authorization', generateAdminToken())
+      .send({
+        descricao,
+        tipo: 'foto',
+        mime_type: 'image/png',
+        conteudo_base64: PNG_1X1
+      })
+    expect(res.status).toBe(201)
+    return res.body.dados.id
+  }
+
+  const lerImagemNoBanco = async id =>
+    conn.oneOrNone(
+      `SELECT i.descricao, i.tipo, i.mime_type, octet_length(i.conteudo) AS bytes,
+              c.tipo_id
+         FROM rpcmtec.capacitacao_imagem AS i
+        INNER JOIN rpcmtec.capacitacao AS c ON c.id = i.capacitacao_id
+        WHERE i.id = $1`,
+      [id]
+    )
+
+  const apagarCapacitacao = async id =>
+    conn.none('DELETE FROM rpcmtec.capacitacao WHERE id = $1', [id])
+
+  // O LADO POSITIVO: o operador do modulo da tela SOBE a foto, e os BYTES
+  // chegam. Sem este caso, o bloco inteiro provaria so que ninguem consegue
+  // nada.
+  it('o operador do PIT sobe foto na ministrada, e os bytes chegam ao banco', async () => {
+    const id = await semearCapacitacao(
+      '/api/rpcmtec/capacitacao/ministrada', 'Ministrada com foto'
+    )
+    await definePerfil(MODULO.pit, NIVEL.operador)
+
+    const res = await comoUsuario(
+      'post', `/api/rpcmtec/capacitacao/ministrada/${id}/imagem`,
+      {
+        descricao: 'Turma na sala',
+        tipo: 'foto',
+        mime_type: 'image/png',
+        conteudo_base64: PNG_1X1
+      }
+    )
+    expect(res.status).toBe(201)
+
+    // RELE O DESTINO, campo a campo. O 201 e o eco da rota.
+    const gravada = await lerImagemNoBanco(res.body.dados.id)
+    expect(gravada).not.toBeNull()
+    expect(gravada.descricao).toBe('Turma na sala')
+    expect(gravada.tipo).toBe('foto')
+    expect(gravada.mime_type).toBe('image/png')
+    // O TAMANHO EM BYTES, e nao so "existe": `decode(base64)` mal aplicado
+    // gravaria o proprio texto, e a coluna teria 96 bytes em vez de 70.
+    expect(Number(gravada.bytes)).toBe(Buffer.from(PNG_1X1, 'base64').length)
+
+    // E a lista da capacitacao a mostra, SEM os bytes.
+    const lista = await comoUsuario(
+      'get', `/api/rpcmtec/capacitacao/ministrada/${id}/imagem`
+    )
+    expect(lista.status).toBe(200)
+    expect(lista.body.dados).toHaveLength(1)
+    expect(lista.body.dados[0].conteudo).toBeUndefined()
+    expect(Number(lista.body.dados[0].bytes)).toBe(
+      Buffer.from(PNG_1X1, 'base64').length
+    )
+
+    // E a contagem entra na LISTA da tela, que e de onde sai a coluna Midia.
+    const tela = await comoUsuario('get', '/api/rpcmtec/capacitacao/ministrada?ano=2026')
+    expect(tela.status).toBe(200)
+    const linha = tela.body.dados.find(c => Number(c.id) === Number(id))
+    expect(Number(linha.total_imagens)).toBe(1)
+
+    await apagarCapacitacao(id)
+  })
+
+  // O CASO QUE MOTIVA O RECORTE NO CONTROLADOR, agora para a midia.
+  it('operador de Efetivo nao alcanca a foto de uma MINISTRADA pelo caminho da recebida', async () => {
+    const idMinistrada = await semearCapacitacao(
+      '/api/rpcmtec/capacitacao/ministrada', 'Ministrada com foto alheia'
+    )
+    const idImagem = await semearImagem(
+      '/api/rpcmtec/capacitacao/ministrada', idMinistrada, 'Foto alheia'
+    )
+
+    await definePerfil(MODULO.efetivo, NIVEL.operador)
+
+    // A VARIANCIA PRIMEIRO: a foto existe e e de uma capacitacao do tipo 1. Sem
+    // isto, o "ainda esta la" do fim seria verdade sobre uma linha que nunca
+    // esteve.
+    const antes = await lerImagemNoBanco(idImagem)
+    expect(antes).not.toBeNull()
+    expect(Number(antes.tipo_id)).toBe(TIPO.MINISTRADA)
+
+    // As CINCO rotas pelo caminho errado, e as cinco respondem 404.
+    const galeria = await comoUsuario(
+      'get', `/api/rpcmtec/capacitacao/recebida/${idMinistrada}/imagem`
+    )
+    expect(galeria.status).toBe(404)
+
+    const enviada = await comoUsuario(
+      'post', `/api/rpcmtec/capacitacao/recebida/${idMinistrada}/imagem`,
+      { tipo: 'foto', mime_type: 'image/png', conteudo_base64: PNG_1X1 }
+    )
+    expect(enviada.status).toBe(404)
+
+    const arquivo = await comoUsuario(
+      'get', `/api/rpcmtec/capacitacao/recebida/imagem/${idImagem}/arquivo`
+    )
+    expect(arquivo.status).toBe(404)
+
+    const renomeada = await comoUsuario(
+      'put', `/api/rpcmtec/capacitacao/recebida/imagem/${idImagem}`,
+      { descricao: 'Renomeada indevidamente' }
+    )
+    expect(renomeada.status).toBe(404)
+
+    const apagada = await comoUsuario(
+      'delete', `/api/rpcmtec/capacitacao/recebida/imagem/${idImagem}`
+    )
+    expect(apagada.status).toBe(404)
+
+    // RELE O DESTINO: a foto continua la, com a descricao original, e nenhuma
+    // sexta linha entrou pela rota de envio.
+    const depois = await lerImagemNoBanco(idImagem)
+    expect(depois).not.toBeNull()
+    expect(depois.descricao).toBe('Foto alheia')
+    const quantas = await conn.one(
+      'SELECT count(*)::int AS total FROM rpcmtec.capacitacao_imagem WHERE capacitacao_id = $1',
+      [idMinistrada]
+    )
+    expect(quantas.total).toBe(1)
+
+    await apagarCapacitacao(idMinistrada)
+  })
+
+  // A CAPACITACAO VAI, E A MIDIA VAI JUNTO (ON DELETE CASCADE). A tela avisa
+  // disso na confirmacao de exclusao, e a frase so vale se o banco a cumprir.
+  it('apagar a capacitacao leva as fotos dela', async () => {
+    const id = await semearCapacitacao(
+      '/api/rpcmtec/capacitacao/recebida', 'Recebida que sera apagada'
+    )
+    const idImagem = await semearImagem(
+      '/api/rpcmtec/capacitacao/recebida', id, 'Certificado'
+    )
+    expect(await lerImagemNoBanco(idImagem)).not.toBeNull()
+
+    await definePerfil(MODULO.efetivo, NIVEL.operador)
+    const res = await comoUsuario('delete', `/api/rpcmtec/capacitacao/recebida/${id}`)
+    expect(res.status).toBe(200)
+
+    expect(await lerImagemNoBanco(idImagem)).toBeNull()
+  })
+})
